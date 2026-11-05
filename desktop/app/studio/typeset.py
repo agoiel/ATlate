@@ -257,6 +257,17 @@ def _colors(clean: np.ndarray, block: Block, shape: Shape) -> tuple[tuple, tuple
     return fill, stroke
 
 
+def _size_for_height(font_path: str, line_h: float) -> int:
+    """Размер шрифта, при котором строка перевода такой же высоты, как строка оригинала.
+
+    У шрифтов разная «высота при том же размере»: рукописные мельче, поэтому меряем сам шрифт.
+    """
+    f = fonts.load(font_path, 100)
+    x1, y1, x2, y2 = f.getbbox("ДАЁду")
+    full = max(1, y2 - y1)
+    return int(round(line_h * 100 / full * 1.05))
+
+
 def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[Image.Image, dict[str, Layout]]:
     """Вписать перевод во все включённые блоки. Возвращает картинку и раскладку каждого блока."""
     img = Image.fromarray(clean[..., :3].copy())
@@ -272,7 +283,7 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
         font_path = b.font or style.font or fonts.default_font()
         # без ручного размера — не крупнее оригинала, чтобы короткие реплики не становились огромными
         lines = b.lines or [b.box]
-        cap = int(round(median(l.h for l in lines) * 1.1))
+        cap = _size_for_height(font_path, median(l.h for l in lines))
         lay = layout(text, shape, font_path, style, b.size, max(style.min_size, min(style.max_size, cap)))
         info[b.id] = lay
         fill, stroke = _colors(clean, b, shape)
