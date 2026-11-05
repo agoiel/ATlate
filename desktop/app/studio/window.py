@@ -46,6 +46,7 @@ class _Signals(QObject):
     page_done = Signal(int)
     finished = Signal(str)
     rendered = Signal(int, int, object)   # страница, номер запроса, Rendered
+    failed = Signal(str)
 
 
 class _ChapterJob(QRunnable):
@@ -98,7 +99,7 @@ class _RenderJob(QRunnable):
         try:
             r = engine.render(self.project, self.project.pages[self.index], self.original)
         except Exception:  # noqa: BLE001
-            traceback.print_exc()
+            self.signals.failed.emit(traceback.format_exc())
             return
         self.signals.rendered.emit(self.index, self.token, r)
 
@@ -684,6 +685,7 @@ class StudioWindow(QWidget):
         tools = QHBoxLayout()
         tools.setSpacing(8)
         self.mode = Segmented([("original", "Оригинал"), ("clean", "Без текста"), ("result", "Перевод")], "result")
+        self.mode.setObjectName("segmentedPlain")
         self.mode.changed.connect(self._set_view_mode)
         tools.addWidget(self.mode)
         self.boxes_toggle = pill("Рамки", "tonal", "select", "Показать или скрыть рамки блоков")
@@ -1046,12 +1048,18 @@ class StudioWindow(QWidget):
         self._render_token += 1
         job = _RenderJob(self.project, self.index, self._render_token, self._original)
         job.signals.rendered.connect(self._on_rendered)
+        job.signals.failed.connect(self._on_render_failed)
         job.setAutoDelete(False)
         self._jobs.add(job)
         self.pool.start(job)
 
+    def _on_render_failed(self, tb: str) -> None:
+        self.last_error = tb
+        self._status("Не удалось нарисовать страницу: " + tb.strip().splitlines()[-1])
+
     def _on_rendered(self, index: int, token: int, r) -> None:
-        self._jobs = {j for j in self._jobs if not (isinstance(j, _RenderJob) and j.token <= token)}
+        # старые задачи отпускаем позже, не во время их же сигнала
+        QTimer.singleShot(0, lambda: self._drop_jobs(token))
         if index != self.index or token != self._render_token:
             return
         self._rendered = r
@@ -1060,6 +1068,9 @@ class StudioWindow(QWidget):
         for bid, card in self.cards.items():
             card.set_overflow(bid in over)
         self._show_rendered()
+
+    def _drop_jobs(self, token: int) -> None:
+        self._jobs = {j for j in self._jobs if not (isinstance(j, _RenderJob) and j.token < token)}
 
     def _show_rendered(self) -> None:
         if self._original is None:

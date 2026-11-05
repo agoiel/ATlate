@@ -154,6 +154,9 @@ QScrollBar::handle:vertical:hover {{ background: {c.text2}; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
 
 QDialog, QMessageBox {{ background: {c.surface}; }}
+QFrame#segmentedPlain {{ background: {c.surface_alt}; border: 1px solid {c.border}; border-radius: 21px; }}
+QFrame#segmentedPlain QPushButton[kind="segment"] {{ color: {c.text2}; }}
+QFrame#segmentedPlain QPushButton[kind="segment"]:checked {{ background: {c.primary}; color: {c.on_primary}; }}
 QFrame#studioPromo {{ background: {c.surface}; border: 2px solid {c.primary}; border-radius: 18px; }}
 QFrame#studioBar {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {INK}, stop:1 {HERO_END}); }}
 QLabel#studioTitle {{ color: {CREAM}; font-size: 13pt; font-weight: 700; }}

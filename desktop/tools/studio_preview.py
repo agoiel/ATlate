@@ -48,11 +48,17 @@ for mode in ("light", "dark"):
         win.grab().save(str(out / "studio_empty.png"))
     win.load(out / "chapter")
     settle(1200)
-    log(f"[{mode}] pages: {win.pages.count()}, blocks on page 1: {len(win.cards)}")
+    first = next((i for i, pg in enumerate(win.project.pages) if len(pg.blocks) >= 3), 0)
+    win.go(first)
+    settle(1500)
+    log(f"[{mode}] pages: {win.pages.count()}, page {first + 1} blocks: {len(win.cards)}, "
+        f"rendered: {win._rendered is not None}, status: {win.status.text()}")
+    if getattr(win, "last_error", ""):
+        log(win.last_error)
     win.grab().save(str(out / f"studio_{mode}.png"))
     if mode == "light":
         # выбрать блок кликом по его рамке
-        page = win.project.pages[0]
+        page = win.project.pages[first]
         b = page.blocks[2]
         item = win.view.items_[b.id]
         pt = win.view.mapFromScene(item.sceneBoundingRect().center())
