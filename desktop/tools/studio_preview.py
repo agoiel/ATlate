@@ -31,9 +31,13 @@ def log(msg: str) -> None:
 
 
 def settle(ms: int = 300) -> None:
-    QTest.qWait(ms)
-    for _ in range(5):
+    """Подождать, обрабатывая события. time.sleep отпускает Python для фоновых задач Студии
+    (QTest.qWait держит его, и фоновая отрисовка в тесте не шла бы вовсе)."""
+    import time
+    end = time.monotonic() + ms / 1000
+    while time.monotonic() < end:
         QApplication.processEvents()
+        time.sleep(0.02)
 
 
 app = QApplication.instance() or QApplication(sys.argv)
