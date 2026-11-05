@@ -257,15 +257,20 @@ def _colors(clean: np.ndarray, block: Block, shape: Shape) -> tuple[tuple, tuple
     return fill, stroke
 
 
+def _is_bold(font_path: str) -> bool:
+    name = fonts.name_of(font_path).lower()
+    return any(w in name for w in ("bold", "black", "heavy", "semibold", "extrabold"))
+
+
 def _size_for_height(font_path: str, line_h: float) -> int:
     """Размер шрифта, при котором строка перевода такой же высоты, как строка оригинала.
 
     У шрифтов разная «высота при том же размере»: рукописные мельче, поэтому меряем сам шрифт.
     """
     f = fonts.load(font_path, 100)
-    x1, y1, x2, y2 = f.getbbox("ДАЁду")
+    x1, y1, x2, y2 = f.getbbox("Ду")
     full = max(1, y2 - y1)
-    return int(round(line_h * 100 / full * 1.05))
+    return int(round(line_h * 100 / full))
 
 
 def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[Image.Image, dict[str, Layout]]:
@@ -283,13 +288,20 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
         font_path = b.font or style.font or fonts.default_font()
         # без ручного размера — не крупнее оригинала, чтобы короткие реплики не становились огромными
         lines = b.lines or [b.box]
-        cap = _size_for_height(font_path, median(l.h for l in lines))
+        # перевод обычно длиннее оригинала, поэтому разрешаем быть заметно крупнее строки оригинала,
+        # но не бесконечно — короткое «Что?!» в огромном облаке не должно стать гигантским
+        cap = int(_size_for_height(font_path, median(l.h for l in lines)) * 1.2)
         lay = layout(text, shape, font_path, style, b.size, max(style.min_size, min(style.max_size, cap)))
         info[b.id] = lay
         fill, stroke = _colors(clean, b, shape)
         font = fonts.load(font_path, lay.size)
-        sw = max(2, lay.size // 7) if stroke else 0
+        if stroke:
+            sw, sfill = max(2, lay.size // 7), stroke
+        elif style.bold and not _is_bold(font_path):
+            # «жирнее»: обводка цветом самого текста — тонкие рукописные шрифты читаются лучше
+            sw, sfill = max(1, lay.size // 22), fill
+        else:
+            sw, sfill = 0, None
         for t, x, y in lay.lines:
-            draw.text((x, y), t, font=font, fill=fill, anchor="mm",
-                      stroke_width=sw, stroke_fill=stroke if stroke else None)
+            draw.text((x, y), t, font=font, fill=fill, anchor="mm", stroke_width=sw, stroke_fill=sfill)
     return img, info

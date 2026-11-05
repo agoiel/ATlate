@@ -787,6 +787,9 @@ class StudioWindow(QWidget):
         self.caps = SwitchRow("ЗАГЛАВНЫМИ БУКВАМИ", "Как принято во многих переводах", False)
         self.caps.toggled.connect(lambda _v: self._on_style())
         card.add(self.caps)
+        self.bold = SwitchRow("Жирнее", "Тонкие шрифты читаются лучше", True)
+        self.bold.toggled.connect(lambda _v: self._on_style())
+        card.add(self.bold)
         self.fmt = Select()
         for k, t in (("png", "Выгружать в PNG"), ("jpg", "Выгружать в JPG"), ("same", "Формат как у оригинала")):
             self.fmt.addItem(t, k)
@@ -1230,6 +1233,7 @@ class StudioWindow(QWidget):
             w.value = v
             w._render()
         self.caps.switch.setChecked(st.caps)
+        self.bold.switch.setChecked(st.bold)
         self.fmt.setCurrentIndex(max(0, self.fmt.findData(st.fmt)))
 
     def _on_font(self, _i: int = 0) -> None:
@@ -1246,6 +1250,7 @@ class StudioWindow(QWidget):
         st.max_size = max(st.min_size, int(self.max_size.value))
         st.line_spacing = float(self.spacing.value)
         st.caps = self.caps.switch.isChecked()
+        st.bold = self.bold.switch.isChecked()
         st.fmt = self.fmt.currentData() or "png"
         self._changed(True)
 

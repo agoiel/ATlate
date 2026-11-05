@@ -105,6 +105,7 @@ class Style:
     min_size: int = 12
     max_size: int = 36
     caps: bool = False             # ЗАГЛАВНЫМИ, как принято в части переводов
+    bold: bool = True              # чуть жирнее начертание шрифта
     line_spacing: float = 1.1
     fmt: str = "png"               # png | jpg | same (как у оригинала)
 
