@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image
 from PySide6.QtCore import QObject, QRect, QRunnable, QSize, Qt, QThreadPool, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGridLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
                                QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QScrollArea,
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -221,6 +221,7 @@ class MainWindow(QWidget):
         bl.setContentsMargins(16, 14, 16, 0)
         bl.setSpacing(14)
         bl.addWidget(self._build_tiles())
+        bl.addWidget(self._build_studio_banner())
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
                                 self._build_tuning(), self._build_hotkeys(), self._build_developer()])
         bl.addWidget(self.columns)
@@ -315,6 +316,44 @@ class MainWindow(QWidget):
         tiles[2].clicked.connect(self._show_list)
         tiles[3].clicked.connect(self.show_help)
         return _TileGrid(tiles)
+
+    def _build_studio_banner(self) -> QWidget:
+        """Вход в Студию: перевод главы целиком, с клином и тайпом."""
+        box = QFrame()
+        box.setObjectName("studioPromo")
+        box.setCursor(Qt.CursorShape.PointingHandCursor)
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(16, 12, 14, 12)
+        lay.setSpacing(12)
+        ic = QLabel()
+        ic.setObjectName("badge")
+        ic.setFixedSize(40, 40)
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ic.setPixmap(theme.pixmap("brush", theme.palette().primary, 22))
+        lay.addWidget(ic)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        col.addWidget(label("Студия перевода", "cardTitle"))
+        col.addWidget(caption("Перевести главу целиком: найти текст, стереть оригинал, вписать перевод и выгрузить "
+                              "готовые страницы"))
+        lay.addLayout(col, 1)
+        btn = pill("Открыть", "primary", "brush")
+        btn.clicked.connect(self.open_studio)
+        lay.addWidget(btn)
+        return box
+
+    def open_studio(self) -> None:
+        from ..studio.window import StudioWindow
+        if getattr(self, "studio", None) is None:
+            self.studio = StudioWindow(self.cfg)
+            self.studio.settings_changed.connect(self._on_studio_settings)
+        self.studio.show()
+        self.studio.raise_()
+        self.studio.activateWindow()
+
+    def _on_studio_settings(self) -> None:
+        self.pipeline.reload()
+        self._rebuild()
 
     # ---------------------------------------------------------------- языки
     def _combo(self, items: list[tuple[str, str]], current: str, on_change) -> Select:

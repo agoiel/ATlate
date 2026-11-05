@@ -18,6 +18,7 @@ echo Building exe, this takes 1-3 minutes...
 if errorlevel 1 goto fail
 
 xcopy /E /I /Y "glossaries" "dist\agolate\glossaries" >nul
+if exist "fonts" xcopy /E /I /Y "fonts" "dist\agolate\fonts" >nul
 if exist "config.json" copy /Y "config.json" "dist\agolate\config.json" >nul
 
 echo.

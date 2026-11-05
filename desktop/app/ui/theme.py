@@ -154,6 +154,28 @@ QScrollBar::handle:vertical:hover {{ background: {c.text2}; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
 
 QDialog, QMessageBox {{ background: {c.surface}; }}
+QFrame#studioPromo {{ background: {c.surface}; border: 2px solid {c.primary}; border-radius: 18px; }}
+QFrame#studioBar {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {INK}, stop:1 {HERO_END}); }}
+QLabel#studioTitle {{ color: {CREAM}; font-size: 13pt; font-weight: 700; }}
+QLabel#studioSub {{ color: rgba(243,227,204,0.75); font-size: 9pt; }}
+QFrame#studioFooter {{ background: {c.surface}; border-top: 1px solid {c.border}; }}
+QWidget#studioEmpty, QSplitter#studioSplit, QSplitter#studioSplit > QWidget {{ background: {c.bg}; }}
+QFrame#dropZone {{ background: {c.surface}; border: 2px dashed {c.border}; border-radius: 22px; }}
+QListWidget#pageList {{ background: {c.surface}; border: none; border-right: 1px solid {c.border}; padding: 6px; }}
+QListWidget#pageList::item {{ border-radius: 10px; padding: 4px; color: {c.text2}; }}
+QListWidget#pageList::item:selected {{ background: {c.selected}; color: {c.text}; }}
+QListWidget#pageList::item:hover {{ background: {c.hover}; }}
+QGraphicsView#pageView {{ background: {_mix(c.bg, "#000000", 0.06)}; border-radius: 14px; }}
+QScrollArea#studioSide {{ background: {c.bg}; }}
+QFrame#blockCard {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 14px; }}
+QFrame#blockCard[selected="true"] {{ border: 2px solid {c.primary}; }}
+QLabel#blockNumber {{ background: {c.primary}; color: {c.on_primary}; border-radius: 12px; font-weight: 700;
+    font-size: 9pt; }}
+QPlainTextEdit#sourceEdit {{ color: {c.text2}; font-size: 9pt; }}
+QProgressBar {{ background: {c.surface_alt}; border: none; border-radius: 5px; max-height: 10px; }}
+QProgressBar::chunk {{ background: {c.primary}; border-radius: 5px; }}
+QSplitter::handle {{ background: transparent; width: 6px; }}
+QPushButton[kind="tonal"]:checked {{ background: {c.primary}; color: {c.on_primary}; }}
 QMenu {{ background: {c.surface}; border: 1px solid {c.border}; border-radius: 10px; padding: 6px; }}
 QMenu::item {{ padding: 8px 18px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {c.selected}; }}
@@ -209,6 +231,10 @@ _ICONS: dict[str, list[tuple[str, str]]] = {
                  ("stroke", "M15,11h0.01"), ("stroke", "M8,15h8")],
     "folder": [("stroke", "M3,7a1,1 0 0,1 1,-1h5l2,2h8a1,1 0 0,1 1,1v9a1,1 0 0,1 -1,1H4a1,1 0 0,1 -1,-1z")],
     "code": [("stroke", "M8,7l-5,5 5,5"), ("stroke", "M16,7l5,5 -5,5"), ("stroke", "M13.5,4.5l-3,15")],
+    "brush": [("stroke", "M14.5,4.5l5,5L9,20H4v-5z"), ("stroke", "M12.5,6.5l5,5")],
+    "trash": [("stroke", "M5,7h14"), ("stroke", "M9.5,7V4.5h5V7"), ("stroke", "M7,7l1,13h8l1,-13"),
+              ("stroke", "M10.5,11v5"), ("stroke", "M13.5,11v5")],
+    "download": [("stroke", "M12,4v11"), ("stroke", "M7,10l5,5 5,-5"), ("stroke", "M5,19.5h14")],
     "pin": [("stroke", "M9,4h6l-1,6 3,3H7l3,-3z"), ("stroke", "M12,13v7")],
 }
 

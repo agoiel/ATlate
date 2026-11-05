@@ -25,8 +25,11 @@ jobs:
       - name: Install
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-noto-core
+          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 fonts-noto-core fonts-noto-cjk fonts-dejavu-core
           python -m pip install -q PySide6-Essentials numpy Pillow requests
+      - name: Font for typesetting
+        shell: bash
+        run: bash desktop/tools/get_fonts.sh desktop/fonts
       - name: Parallel recognition gives the same result
         working-directory: desktop
         run: python tools/test_parallel.py
@@ -35,6 +38,13 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tools/ui_preview.py ../preview/linux
+      - name: Studio — clean and typeset synthetic pages
+        working-directory: desktop
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python tools/test_studio.py ../preview/linux/studio
+          python tools/studio_preview.py ../preview/linux/studio
       - uses: actions/upload-artifact@v4
         with:
           name: shots-linux
@@ -54,6 +64,9 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: python -m pip install -q PySide6-Essentials numpy Pillow requests
+      - name: Font for typesetting
+        shell: bash
+        run: bash desktop/tools/get_fonts.sh desktop/fonts
       - name: Clicks on real Windows
         working-directory: desktop
         env:
@@ -71,6 +84,16 @@ jobs:
         run: |
           python -m pip install -q -r requirements.txt || python -m pip install -q winrt-runtime winrt-Windows.Media.Ocr winrt-Windows.Globalization winrt-Windows.Graphics.Imaging winrt-Windows.Security.Cryptography winrt-Windows.Storage.Streams winrt-Windows.Foundation winrt-Windows.Foundation.Collections
           python tools/test_windows_ocr.py ../preview/win-${{ matrix.scale }}-${{ matrix.code }}
+      - name: Studio on real Windows OCR
+        if: matrix.scale == '1'
+        working-directory: desktop
+        env:
+          PYTHONIOENCODING: utf-8
+          QT_QPA_PLATFORM: windows
+        shell: bash
+        run: |
+          python tools/test_studio.py ../preview/win-1-new/studio --real
+          python tools/studio_preview.py ../preview/win-1-new/studio
       - uses: actions/upload-artifact@v4
         if: always()
         with:

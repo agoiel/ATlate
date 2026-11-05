@@ -57,6 +57,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
 
+      - name: Font for typesetting
+        shell: bash
+        run: bash tools/get_fonts.sh fonts
+
       - name: Build exe
         run: |
           python -m PyInstaller --noconfirm --clean --windowed --name agolate `
@@ -66,6 +70,7 @@ jobs:
             --exclude-module torch --exclude-module torchvision --exclude-module easyocr `
             main.py
           Copy-Item -Recurse glossaries dist/agolate/glossaries
+          if (Test-Path fonts) { Copy-Item -Recurse fonts dist/agolate/fonts }
           Compress-Archive -Path dist/agolate -DestinationPath agolate-windows.zip
 
       - uses: actions/upload-artifact@v4
