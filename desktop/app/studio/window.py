@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGraphicsItem,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
                                QScrollArea, QSplitter, QVBoxLayout, QWidget)
 
-from .. import languages
+from .. import languages, sysload
 from ..bubbles import _ring_stats
 from ..models import Box
 from ..pipeline import Pipeline
@@ -45,85 +45,152 @@ class _Signals(QObject):
     progress = Signal(int, int, str)      # сделано, всего, что сейчас
     page_done = Signal(int)
     finished = Signal(str)
-    rendered = Signal(int, int, object)   # страница, номер запроса, Rendered
+    rendered = Signal(int, int, object)   # страница, номер запроса, (Rendered, картинки для показа)
     failed = Signal(str)
+    thumb = Signal(int, object)           # страница, QImage миниатюры
 
 
 class _ChapterJob(QRunnable):
-    """Обработать страницы по очереди: найти текст, перевести."""
+    """Обработать страницы по очереди: найти текст, перевести.
+
+    Картинки здесь не рисуются (это делается только для открытой страницы и при выгрузке),
+    программа работает с пониженным приоритетом, а пауза и остановка срабатывают
+    в любой момент — между проходами распознавания, а не только между страницами.
+    """
 
     def __init__(self, pipeline: Pipeline, project: Project, indices: list[int], retranslate: bool):
         super().__init__()
         self.pipeline, self.project, self.indices, self.retranslate = pipeline, project, indices, retranslate
         self.signals = _Signals()
-        self.cancelled = False
+        self.control = sysload.Control()
+        self.priority = sysload.LowPriority()
+
+    @property
+    def cancelled(self) -> bool:
+        return self.control.cancelled
+
+    def _level(self) -> str:
+        return self.pipeline.cfg.get("studio_load", sysload.DEFAULT_LOAD)
+
+    def _checkpoint(self) -> None:
+        # нагрузку можно поменять прямо во время перевода — приоритет подстраивается сразу
+        self.priority.set(sysload.wants_low_priority(self._level()))
+        self.control.checkpoint()
 
     def run(self):
         done = 0
         errors = 0
-        for i in self.indices:
-            if self.cancelled:
-                break
-            page = self.project.pages[i]
-            self.signals.progress.emit(done, len(self.indices), page.file)
-            try:
-                if self.retranslate:
-                    for b in page.blocks:
-                        b.translation = ""
-                engine.process_page(self.pipeline, self.project, page)
-            except Exception as e:  # noqa: BLE001
-                page.status = "error"
-                page.error = str(e) or traceback.format_exc(limit=1)
-            if page.status == "error":
-                errors += 1
-            try:
-                self.project.save()
-            except OSError:
-                pass
-            done += 1
-            self.signals.page_done.emit(i)
+        try:
+            for i in self.indices:
+                page = self.project.pages[i]
+                self.signals.progress.emit(done, len(self.indices), page.file)
+                try:
+                    self._checkpoint()
+                    engine.prepare_page(self.pipeline, self.project, page, reset=self.retranslate,
+                                        checkpoint=self._checkpoint)
+                except sysload.Cancelled:
+                    break
+                except Exception as e:  # noqa: BLE001
+                    page.status = "error"
+                    page.error = str(e) or traceback.format_exc(limit=1)
+                if page.status == "error":
+                    errors += 1
+                try:
+                    self.project.save()
+                except OSError:
+                    pass
+                done += 1
+                self.signals.page_done.emit(i)
+        finally:
+            self.priority.release()
         self.signals.progress.emit(done, len(self.indices), "")
-        msg = "Остановлено." if self.cancelled else f"Готово: страниц {done}."
+        msg = f"Остановлено. Готово страниц: {done} из {len(self.indices)}." if self.cancelled \
+            else f"Готово: страниц {done}."
         if errors:
             msg += f" С ошибками: {errors} — подробности на странице."
         self.signals.finished.emit(msg)
 
 
 class _RenderJob(QRunnable):
-    def __init__(self, project: Project, page_index: int, token: int, original: np.ndarray | None):
+    """Нарисовать открытую страницу. Клин берётся готовый, если блоки не двигали."""
+
+    def __init__(self, project: Project, page_index: int, token: int, original: np.ndarray | None,
+                 clean: np.ndarray | None):
         super().__init__()
         self.project, self.index, self.token, self.original = project, page_index, token, original
+        self.clean = clean
         self.signals = _Signals()
 
     def run(self):
         try:
-            r = engine.render(self.project, self.project.pages[self.index], self.original)
+            r = engine.render(self.project, self.project.pages[self.index], self.original, self.clean)
+            # перевод в QImage тоже здесь, а не в окне: на длинной ленте это заметная работа
+            images = {"clean": to_qimage(r.clean), "result": to_qimage(np.asarray(r.result))}
         except Exception:  # noqa: BLE001
             self.signals.failed.emit(traceback.format_exc())
             return
-        self.signals.rendered.emit(self.index, self.token, r)
+        self.signals.rendered.emit(self.index, self.token, (r, images))
 
 
 class _ExportJob(QRunnable):
-    def __init__(self, project: Project):
+    def __init__(self, project: Project, level: str):
         super().__init__()
-        self.project = project
+        self.project, self.level = project, level
         self.signals = _Signals()
 
     def run(self):
         pages = self.project.pages
         failed = 0
-        for i, page in enumerate(pages):
-            self.signals.progress.emit(i, len(pages), page.file)
-            try:
-                engine.export_page(self.project, page)
-            except Exception:  # noqa: BLE001
-                failed += 1
+        prio = sysload.LowPriority()
+        prio.set(sysload.wants_low_priority(self.level))
+        try:
+            for i, page in enumerate(pages):
+                self.signals.progress.emit(i, len(pages), page.file)
+                try:
+                    engine.export_page(self.project, page)
+                except Exception:  # noqa: BLE001
+                    failed += 1
+        finally:
+            prio.release()
         self.signals.progress.emit(len(pages), len(pages), "")
         msg = f"Выгружено страниц: {len(pages) - failed}."
         if failed:
             msg += f" Не удалось: {failed}."
         self.signals.finished.emit(msg)
+
+
+THUMB_W, THUMB_H = 168, 232
+
+
+def make_thumb(path: Path) -> QImage:
+    """Миниатюра страницы; у длинной ленты — её верх."""
+    with Image.open(path) as im:
+        k = min(THUMB_W / im.width, THUMB_H / im.height)
+        size = (max(1, int(im.width * k)), max(1, int(im.height * k)))
+        # JPEG сразу читается уменьшенным — не нужно разжимать страницу целиком
+        im.draft("RGB", size)
+        small = im.convert("RGB").resize(size)
+    return to_qimage(np.asarray(small)[:THUMB_H])
+
+
+class _ThumbJob(QRunnable):
+    """Миниатюры страниц в фоне: раньше они читались в окне и подвешивали его."""
+
+    def __init__(self, project: Project):
+        super().__init__()
+        self.project = project
+        self.signals = _Signals()
+        self.stopped = False
+
+    def run(self):
+        for i, page in enumerate(list(self.project.pages)):
+            if self.stopped:
+                return
+            try:
+                img = make_thumb(self.project.image_path(page))
+            except (OSError, ValueError):
+                continue
+            self.signals.thumb.emit(i, img)
 
 
 # ==================================================================== страница с блоками
@@ -544,13 +611,22 @@ class StudioWindow(QWidget):
         self.pool.setMaxThreadCount(2)
         self.job: _ChapterJob | None = None
         self._jobs: set = set()
+        # миниатюры читаются отдельно, по одной, чтобы не мешать переводу и отрисовке
+        self.thumb_pool = QThreadPool(self)
+        self.thumb_pool.setMaxThreadCount(1)
+        self._thumb_job: _ThumbJob | None = None
+        self._thumbs: dict[int, QPixmap] = {}
         self._render_token = 0
+        self._render_running = False       # отрисовка идёт — новая подождёт её окончания
+        self._render_again = False
         self._rendered = None
+        self._images: dict[str, QImage] = {}
+        self._clean_cache: tuple | None = None   # (страница, ключ клина, картинка без текста)
         self._original: np.ndarray | None = None
         self._busy_pages: set[int] = set()
         self.view_mode = "result"
         self.cards: dict[str, BlockCard] = {}
-        self._thumb_queue: list[int] = []
+        self._progress_text = ""
 
         self.setObjectName("root")
         self.setWindowTitle("ATlate — Студия перевода")
@@ -564,8 +640,6 @@ class StudioWindow(QWidget):
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.timeout.connect(self._save)
-        self.thumb_timer = QTimer(self)
-        self.thumb_timer.timeout.connect(self._thumb_step)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -579,6 +653,10 @@ class StudioWindow(QWidget):
         root.addWidget(self._build_footer())
 
         QShortcut(QKeySequence("Ctrl+S"), self, activated=self._save)
+        app = QApplication.instance()
+        if app is not None:
+            # выход из программы, пока перевод на паузе, не должен зависнуть
+            app.aboutToQuit.connect(self._shutdown)
         QShortcut(QKeySequence(Qt.Key.Key_PageDown), self, activated=lambda: self.go(self.index + 1))
         QShortcut(QKeySequence(Qt.Key.Key_PageUp), self, activated=lambda: self.go(self.index - 1))
         QShortcut(QKeySequence("Ctrl+0"), self, activated=self.view.fit_width)
@@ -762,7 +840,13 @@ class StudioWindow(QWidget):
             tr.addItem(title, key)
         tr.setCurrentIndex(max(0, tr.findData(self.cfg["translator"])))
         tr.currentIndexChanged.connect(lambda _i: self._set_cfg("translator", tr.currentData()))
-        for cap_text, w in (("С языка", src), ("На язык", tgt), ("Переводчик", tr)):
+        load = Select()
+        for k, v in sysload.LOAD_NAMES.items():
+            load.addItem(v, k)
+        load.setCurrentIndex(max(0, load.findData(self.cfg.get("studio_load", sysload.DEFAULT_LOAD))))
+        load.setToolTip("Сколько ресурсов компьютера отдавать переводу главы. Можно менять прямо во время перевода")
+        load.currentIndexChanged.connect(lambda _i: self._set_load(load.currentData()))
+        for cap_text, w in (("С языка", src), ("На язык", tgt), ("Переводчик", tr), ("Нагрузка на ПК", load)):
             card.add(label(cap_text.upper(), "fieldLabel"))
             card.add(w)
         card.add(caption("Ключи переводчиков, глоссарий и тайтл — в главном окне."))
@@ -810,7 +894,12 @@ class StudioWindow(QWidget):
         self.progress.setTextVisible(False)
         self.progress.setVisible(False)
         lay.addWidget(self.progress)
-        self.stop_btn = pill("Остановить", "outline", "stop")
+        self.pause_btn = pill("Пауза", "outline", "pause",
+                              "Приостановить перевод — компьютер сразу освобождается. Продолжить можно в любой момент")
+        self.pause_btn.setVisible(False)
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        lay.addWidget(self.pause_btn)
+        self.stop_btn = pill("Остановить", "outline", "stop", "Прервать перевод. Готовые страницы сохранятся")
         self.stop_btn.setVisible(False)
         self.stop_btn.clicked.connect(self.stop)
         lay.addWidget(self.stop_btn)
@@ -877,8 +966,8 @@ class StudioWindow(QWidget):
             it.setToolTip(p.file)
             self.pages.addItem(it)
         self.pages.blockSignals(False)
-        self._thumb_queue = list(range(len(proj.pages)))
-        self.thumb_timer.start(0)
+        self._start_thumbs()
+        self._clean_cache = None
         self.index = -1
         self.pages.setCurrentRow(0)
         done = sum(1 for p in proj.pages if p.status == "done")
@@ -886,27 +975,28 @@ class StudioWindow(QWidget):
                                                               ". Нажмите «Перевести главу»."))
 
     # ---------------------------------------------------------------- миниатюры
-    def _thumb_step(self) -> None:
-        if not self._thumb_queue or self.project is None:
-            self.thumb_timer.stop()
+    def _start_thumbs(self) -> None:
+        if self._thumb_job is not None:
+            self._thumb_job.stopped = True
+        self._thumbs.clear()
+        job = _ThumbJob(self.project)
+        job.signals.thumb.connect(lambda i, img, j=job: self._on_thumb(j, i, img))
+        job.setAutoDelete(False)
+        self._thumb_job = job
+        self.thumb_pool.start(job)
+
+    def _on_thumb(self, job: _ThumbJob, i: int, img: QImage) -> None:
+        if job is not self._thumb_job or job.stopped:
             return
-        i = self._thumb_queue.pop(0)
+        self._thumbs[i] = QPixmap.fromImage(img)
         self._update_thumb(i)
 
     def _update_thumb(self, i: int) -> None:
-        if self.project is None or i >= self.pages.count():
+        """Значок состояния поверх готовой миниатюры (картинку заново не читаем)."""
+        if self.project is None or i >= self.pages.count() or i not in self._thumbs:
             return
         page = self.project.pages[i]
-        try:
-            with Image.open(self.project.image_path(page)) as im:
-                im = im.convert("RGB")
-                k = min(168 / im.width, 232 / im.height)
-                im = im.resize((max(1, int(im.width * k)), max(1, int(im.height * k))))
-                # длинная лента — показываем верх
-                arr = np.asarray(im)[:232]
-        except OSError:
-            return
-        pm = QPixmap.fromImage(to_qimage(arr))
+        pm = QPixmap(self._thumbs[i])
         p = QPainter(pm)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         color = {"done": "#3E9B5B", "error": "#C0392B"}.get(page.status)
@@ -933,7 +1023,8 @@ class StudioWindow(QWidget):
             self._status(f"Не удалось открыть {page.file}: {e}")
             return
         self._rendered = None
-        self.view.set_image(to_qimage(self._original), keep_view=False)
+        self._images = {"original": to_qimage(self._original)}
+        self.view.set_image(self._images["original"], keep_view=False)
         self._fill_cards()
         self._render_now()
 
@@ -1048,44 +1139,63 @@ class StudioWindow(QWidget):
         if page is None or self.index in self._busy_pages:
             self._show_rendered()
             return
+        if self._render_running:
+            # не копим отрисовки: пока рисуется одна, все новые правки дождутся её и попадут в следующую
+            self._render_again = True
+            return
+        self._render_again = False
+        self._render_running = True
         self._render_token += 1
-        job = _RenderJob(self.project, self.index, self._render_token, self._original)
+        key = engine.clean_key(page.blocks)
+        cc = self._clean_cache
+        clean = cc[2] if cc is not None and cc[0] == self.index and cc[1] == key else None
+        job = _RenderJob(self.project, self.index, self._render_token, self._original, clean)
+        job.clean_key = key
         job.signals.rendered.connect(self._on_rendered)
         job.signals.failed.connect(self._on_render_failed)
         job.setAutoDelete(False)
         self._jobs.add(job)
         self.pool.start(job)
 
+    def _render_finished(self) -> None:
+        self._render_running = False
+        if self._render_again:
+            self._render_now()
+
     def _on_render_failed(self, tb: str) -> None:
         self.last_error = tb
         self._status("Не удалось нарисовать страницу: " + tb.strip().splitlines()[-1])
+        self._render_finished()
 
-    def _on_rendered(self, index: int, token: int, r) -> None:
+    def _on_rendered(self, index: int, token: int, payload) -> None:
         # старые задачи отпускаем позже, не во время их же сигнала
         QTimer.singleShot(0, lambda: self._drop_jobs(token))
+        r, images = payload
+        job = next((j for j in self._jobs if isinstance(j, _RenderJob) and j.token == token), None)
+        if job is not None:
+            self._clean_cache = (index, job.clean_key, r.clean)
         if index != self.index or token != self._render_token:
+            self._render_finished()
             return
         self._rendered = r
+        self._images.update(images)
         over = {bid for bid, lay in r.layouts.items() if lay.overflow}
         self.view.set_overflow(over)
         for bid, card in self.cards.items():
             card.set_overflow(bid in over)
         self._show_rendered()
+        self._render_finished()
 
     def _drop_jobs(self, token: int) -> None:
-        self._jobs = {j for j in self._jobs if not (isinstance(j, _RenderJob) and j.token < token)}
+        self._jobs = {j for j in self._jobs if not (isinstance(j, _RenderJob) and j.token <= token)}
 
     def _show_rendered(self) -> None:
         if self._original is None:
             return
-        r = self._rendered
-        if self.view_mode == "original" or r is None:
-            img = to_qimage(self._original)
-        elif self.view_mode == "clean":
-            img = to_qimage(r.clean)
-        else:
-            img = to_qimage(np.asarray(r.result))
-        self.view.set_image(img)
+        mode = self.view_mode if self._rendered is not None else "original"
+        img = self._images.get(mode) or self._images.get("original")
+        if img is not None:
+            self.view.set_image(img)
 
     # ---------------------------------------------------------------- обработка
     def run_chapter(self) -> None:
@@ -1135,13 +1245,39 @@ class StudioWindow(QWidget):
         self.pool.start(job)
 
     def stop(self) -> None:
-        if self.job is not None:
-            self.job.cancelled = True
-            self._status("Останавливаю после текущей страницы…")
+        if isinstance(self.job, _ChapterJob):
+            self.job.control.cancel()
+            self.pause_btn.setEnabled(False)
+            self.stop_btn.setEnabled(False)
+            self._status("Останавливаю… Текущий шаг распознавания закончится через пару секунд.")
+
+    def toggle_pause(self) -> None:
+        job = self.job
+        if not isinstance(job, _ChapterJob) or job.cancelled:
+            return
+        if job.control.paused:
+            job.control.resume()
+            self._show_pause(False)
+            self._status(self._progress_text or "Продолжаю перевод…")
+        else:
+            job.control.pause()
+            self._show_pause(True)
+            self._status("Пауза. Перевод стоит и не нагружает компьютер — нажмите «Продолжить», когда будет удобно.")
+
+    def _show_pause(self, paused: bool) -> None:
+        from ..ui.widgets import set_pill
+        if paused:
+            set_pill(self.pause_btn, "Продолжить", "tonal", "play")
+        else:
+            set_pill(self.pause_btn, "Пауза", "outline", "pause")
 
     def _set_running(self, on: bool) -> None:
         self.progress.setVisible(on)
         self.stop_btn.setVisible(on)
+        self.stop_btn.setEnabled(True)
+        self.pause_btn.setVisible(on)
+        self.pause_btn.setEnabled(True)
+        self._show_pause(False)
         self.run_btn.setEnabled(not on)
         self.page_btn.setEnabled(not on)
         self.export_btn.setEnabled(not on)
@@ -1152,7 +1288,11 @@ class StudioWindow(QWidget):
         self.progress.setMaximum(max(1, total))
         self.progress.setValue(done)
         if current:
-            self._status(f"Страница {done + 1} из {total}: {current}")
+            self._progress_text = f"Страница {done + 1} из {total}: {current}"
+            job = self.job
+            if isinstance(job, _ChapterJob) and (job.control.paused or job.cancelled):
+                return      # не затирать «Пауза» / «Останавливаю»
+            self._status(self._progress_text)
 
     def _on_page_done(self, i: int) -> None:
         self._busy_pages.discard(i)
@@ -1179,13 +1319,14 @@ class StudioWindow(QWidget):
             QMessageBox.information(self, "Студия", "Сначала переведите главу или хотя бы одну страницу.")
             return
         self._save()
-        job = _ExportJob(self.project)
+        job = _ExportJob(self.project, self.cfg.get("studio_load", sysload.DEFAULT_LOAD))
         job.signals.progress.connect(self._on_progress)
         job.signals.finished.connect(self._on_exported)
         job.setAutoDelete(False)
         self.job = job
         self._set_running(True)
         self.stop_btn.setVisible(False)
+        self.pause_btn.setVisible(False)
         self.pool.start(job)
 
     def _on_exported(self, msg: str) -> None:
@@ -1254,6 +1395,11 @@ class StudioWindow(QWidget):
         st.fmt = self.fmt.currentData() or "png"
         self._changed(True)
 
+    def _set_load(self, level: str) -> None:
+        # переводчик и распознавание не трогаем: идущий перевод сам подхватит новую нагрузку
+        self.cfg["studio_load"] = level
+        self.cfg.save()
+
     def _set_cfg(self, key: str, value) -> None:
         self.cfg[key] = value
         self.cfg.save()
@@ -1271,8 +1417,14 @@ class StudioWindow(QWidget):
     def _status(self, text: str) -> None:
         self.status.setText(text)
 
+    def _shutdown(self) -> None:
+        if isinstance(self.job, _ChapterJob):
+            # и с паузы тоже: работа проснётся и сразу завершится
+            self.job.control.cancel()
+        if self._thumb_job is not None:
+            self._thumb_job.stopped = True
+
     def closeEvent(self, e):
-        if self.job is not None:
-            self.job.cancelled = True
+        self._shutdown()
         self._save()
         super().closeEvent(e)

@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .. import languages
+from .. import languages, sysload
 from ..bubbles import group_lines
-from ..models import TextLine
+from ..models import Box, TextLine
 from ..ocr import enhance
 from ..pipeline import Pipeline
 from .clean import clean_page
@@ -27,17 +27,31 @@ def load_image(path: Path) -> np.ndarray:
         return np.asarray(im.convert("RGB"))
 
 
-def recognize_tiled(pipeline: Pipeline, arr: np.ndarray, lang: str, mode: str) -> list[TextLine]:
-    """Распознать страницу; высокие ленты — кусками с перекрытием."""
+def _nothing() -> None:
+    pass
+
+
+def recognize_tiled(pipeline: Pipeline, arr: np.ndarray, lang: str, mode: str,
+                    checkpoint=None) -> list[TextLine]:
+    """Распознать страницу; высокие ленты — кусками с перекрытием.
+
+    checkpoint — вызывается перед каждым куском и проходом: там работа встаёт на паузу
+    или прерывается.
+    """
+    check = checkpoint or _nothing
     h = arr.shape[0]
     parallel = bool(pipeline.cfg.get("parallel_ocr", True))
+    threads = sysload.ocr_threads(pipeline.cfg.get("studio_load", sysload.DEFAULT_LOAD))
+    kw = {"max_threads": threads, "checkpoint": checkpoint}
+    check()
     if h <= TILE + OVERLAP:
-        return pipeline.recognize(Image.fromarray(arr), lang, mode, parallel)[0]
+        return pipeline.recognize(Image.fromarray(arr), lang, mode, parallel, **kw)[0]
     passes: list[list[TextLine]] = []
     y = 0
     while y < h:
+        check()
         y2 = min(h, y + TILE + OVERLAP)
-        lines = pipeline.recognize(Image.fromarray(arr[y:y2]), lang, mode, parallel)[0]
+        lines = pipeline.recognize(Image.fromarray(arr[y:y2]), lang, mode, parallel, **kw)[0]
         for ln in lines:
             ln.box.y += y
         passes.append(lines)
@@ -48,11 +62,13 @@ def recognize_tiled(pipeline: Pipeline, arr: np.ndarray, lang: str, mode: str) -
     return enhance.merge(passes)
 
 
-def detect(pipeline: Pipeline, arr: np.ndarray) -> list[Block]:
+def detect(pipeline: Pipeline, arr: np.ndarray, checkpoint=None) -> list[Block]:
     cfg = pipeline.cfg
     lang = cfg["source_lang"]
     info = languages.src(lang)
-    lines = recognize_tiled(pipeline, arr, lang, cfg.get("ocr_mode", "thorough"))
+    lines = recognize_tiled(pipeline, arr, lang, cfg.get("ocr_mode", "thorough"), checkpoint)
+    if checkpoint is not None:
+        checkpoint()
     bubbles = group_lines(lines, arr, joiner=info["joiner"], direction=info["direction"],
                           gap=float(cfg["bubble_gap"]), row_gap=float(cfg["bubble_row_gap"]),
                           border_check=bool(cfg["bubble_border_check"]),
@@ -117,21 +133,52 @@ class Rendered:
     layouts: dict[str, Layout]
 
 
-def render(project: Project, page: Page, original: np.ndarray | None = None) -> Rendered:
+def clean_key(blocks: list[Block]) -> tuple:
+    """Всё, от чего зависит клин страницы. Совпал ключ — стирать заново не нужно
+    (например, поменяли только текст перевода или шрифт)."""
+    def box(b: Box) -> tuple:
+        return round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)
+    return tuple((b.id, b.enabled, b.clean_mode(), b.kind, tuple(b.bg), box(b.box), tuple(box(l) for l in b.lines))
+                 for b in blocks)
+
+
+def render(project: Project, page: Page, original: np.ndarray | None = None,
+           clean: np.ndarray | None = None) -> Rendered:
+    """Стереть оригинал и вписать перевод. clean — уже готовый клин этой страницы, если есть."""
     arr = original if original is not None else load_image(project.image_path(page))
-    clean = clean_page(arr, page.blocks)
+    if clean is None:
+        clean = clean_page(arr, page.blocks)
     result, layouts = typeset_page(clean, page.blocks, project.style)
     return Rendered(arr, clean, result, layouts)
 
 
-def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False) -> Rendered:
-    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать."""
-    arr = load_image(project.image_path(page))
+def prepare_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False,
+                 reset: bool = False, checkpoint=None) -> None:
+    """Найти текст на странице (если ещё не искали) и перевести. Картинку не рисует.
+
+    reset — забыть прежний перевод (ручные правки) и взять перевод заново.
+    checkpoint — пауза и остановка: прерванная страница остаётся такой, какой была.
+    """
+    check = checkpoint or _nothing
     if page.status == "new" or not page.blocks:
-        page.blocks = detect(pipeline, arr)
+        check()
+        arr = load_image(project.image_path(page))
+        blocks = detect(pipeline, arr, checkpoint)
+        del arr
+        check()
+        page.blocks = blocks
+    check()
+    if reset:
+        for b in page.blocks:
+            b.translation = ""
     page.error = translate(pipeline, page.blocks, force=retranslate)
     page.status = "error" if page.error else "done"
-    return render(project, page, arr)
+
+
+def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False) -> Rendered:
+    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать."""
+    prepare_page(pipeline, project, page, retranslate)
+    return render(project, page)
 
 
 def export_page(project: Project, page: Page, rendered: Rendered | None = None) -> Path:
