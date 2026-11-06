@@ -42,21 +42,32 @@ def _height_ok(a: Box, b: Box, max_ratio: float = 1.9) -> bool:
 
 # ---------------------------------------------------------------- проверки по картинке
 
-def _has_separator(gray: np.ndarray | None, x1: float, x2: float, y1: float, y2: float,
+_GRAY = np.array([0.299, 0.587, 0.114])
+
+
+def _gray(rgb: np.ndarray) -> np.ndarray:
+    """Яркость куска картинки (uint8)."""
+    return (rgb[..., :3].astype(np.float32) @ _GRAY).astype(np.uint8)
+
+
+def _has_separator(image: np.ndarray | None, x1: float, x2: float, y1: float, y2: float,
                    axis: str) -> bool:
     """Есть ли в полосе между строками сплошная линия (контур облака).
 
     axis='rows'  — полоса горизонтальная, ищем тёмную/контрастную строку пикселей;
     axis='cols'  — полоса вертикальная, ищем такой же столбец.
+
+    Яркость считается только для самой полосы: перевод в серое всей картинки целиком
+    на длинной вебтун-ленте занимал секунды и больше гигабайта памяти.
     """
-    if gray is None:
+    if image is None:
         return False
-    h, w = gray.shape
+    h, w = image.shape[:2]
     xa, xb = max(0, int(x1)), min(w, int(round(x2)))
     ya, yb = max(0, int(y1)), min(h, int(round(y2)))
     if xb - xa < 3 or yb - ya < 2:
         return False
-    strip = gray[ya:yb, xa:xb].astype(np.int16)
+    strip = _gray(image[ya:yb, xa:xb]).astype(np.int16)
     bg = int(np.median(strip))
     diff = np.abs(strip - bg) > 60
     frac = diff.mean(axis=1 if axis == "rows" else 0)
@@ -143,9 +154,8 @@ def group_lines(
     if not lines:
         return []
 
-    gray = None
-    if image is not None and border_check:
-        gray = (image[..., :3].astype(np.float32) @ np.array([0.299, 0.587, 0.114])).astype(np.uint8)
+    # для проверки контура облака; серое считается по кусочкам, только там, где нужно
+    sep_image = image if border_check else None
 
     n = len(lines)
     parent = list(range(n))
@@ -174,7 +184,7 @@ def group_lines(
                 left, right = (a, b) if a.x <= b.x else (b, a)
                 hgap = right.x - left.x2
                 if hgap <= row_gap * hmin:
-                    if hgap > 2 and _has_separator(gray, left.x2, right.x,
+                    if hgap > 2 and _has_separator(sep_image, left.x2, right.x,
                                                    max(a.y, b.y), min(a.y2, b.y2), "cols"):
                         continue
                     unite(i, j)
@@ -192,7 +202,7 @@ def group_lines(
             if vgap > 2:
                 sx1, sx2 = (max(a.x, b.x), min(a.x2, b.x2)) if xo > 0 else \
                     (min(a.cx, b.cx), max(a.cx, b.cx))
-                if _has_separator(gray, sx1, sx2, top.y2, bot.y, "rows"):
+                if _has_separator(sep_image, sx1, sx2, top.y2, bot.y, "rows"):
                     continue
             unite(i, j)
 

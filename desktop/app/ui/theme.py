@@ -201,6 +201,7 @@ def _mix(a: str, b: str, t: float) -> str:
 _ICONS: dict[str, list[tuple[str, str]]] = {
     "play": [("fill", "M8,5.5v13l10.5,-6.5z")],
     "stop": [("fill", "M7,7h10v10H7z")],
+    "pause": [("fill", "M7,5.5h3.6v13H7zM13.4,5.5H17v13h-3.6z")],
     "image": [("stroke", "M4,5h16v14H4z"), ("stroke", "M4,16l5,-5 4,4 2,-2 5,5"),
               ("fill", "M15.5,9.5m-1.5,0a1.5,1.5 0 1,0 3,0a1.5,1.5 0 1,0 -3,0")],
     "refresh": [("stroke", "M18.5,12a6.5,6.5 0 1,1 -2,-4.7"), ("stroke", "M17.5,3.8v4h-4")],

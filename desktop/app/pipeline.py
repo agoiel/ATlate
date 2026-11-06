@@ -136,18 +136,25 @@ class Pipeline:
 
     # ------------------------------------------------------------ распознавание
     def recognize(self, image: Image.Image, lang: str, mode: str, parallel: bool,
-                  live: bool = False) -> tuple[list, list[PassInfo], dict, int]:
+                  live: bool = False, max_threads: int = 0,
+                  checkpoint=None) -> tuple[list, list[PassInfo], dict, int]:
         """Все проходы распознавания → (строки, проходы, итог объединения, сколько шло одновременно).
 
         Параллельно или по очереди — результат одинаковый: проходы не зависят друг от друга
         и объединяются всегда в одном и том же порядке.
+        max_threads — не больше стольких проходов одновременно (0 — по числу ядер);
+        checkpoint — вызывается перед каждым проходом (пауза и остановка Студии).
         """
         ocr = self.ocr
         keys = enhance.variant_keys(mode)
         src = enhance.Source(image)
         threads = parallelism(len(keys), live) if parallel and ocr.supports_parallel else 1
+        if max_threads > 0:
+            threads = max(1, min(threads, max_threads))
 
         def one(key: str) -> PassInfo:
+            if checkpoint is not None:
+                checkpoint()
             t = time.perf_counter()
             img = enhance.make(key, src)
             prep = (time.perf_counter() - t) * 1000

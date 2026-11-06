@@ -48,6 +48,7 @@ DEFAULTS: dict = {
     "window_size": None,              # размер главного окна (запоминается)
     "dev_mode": False,                # режим разработчика: время этапов, проходы, журнал
     "parallel_ocr": True,             # проходы распознавания идут одновременно
+    "studio_load": "normal",          # нагрузка на ПК при переводе главы в Студии: low | normal | high
     "debug_boxes": True,              # в режиме разработчика — рамки распознанных строк
     "translators": {
         "yandex": {"api_key": "", "folder_id": ""},

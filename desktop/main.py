@@ -10,6 +10,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+from app.sysload import limit_math_threads
+
+# до первого импорта numpy: иначе его математика займёт потоками все ядра
+limit_math_threads()
+
 
 def run_cli(args) -> int:
     from PIL import Image, ImageDraw

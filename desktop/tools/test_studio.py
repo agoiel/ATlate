@@ -160,7 +160,7 @@ def main() -> int:
         pipe._ocr_name = cfg["ocr_engine"]
         current = {}
 
-        def fake_recognize(image, lang, mode, parallel, live=False):
+        def fake_recognize(image, lang, mode, parallel, live=False, **_kw):
             arr = np.asarray(image)
             name, (full, tr) = current["page"]
             full_arr = np.asarray(full)
