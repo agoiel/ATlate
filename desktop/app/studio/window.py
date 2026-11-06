@@ -553,7 +553,7 @@ class StudioWindow(QWidget):
         self._thumb_queue: list[int] = []
 
         self.setObjectName("root")
-        self.setWindowTitle("agolate — Студия перевода")
+        self.setWindowTitle("ATlate — Студия перевода")
         self.setWindowIcon(QIcon(str(theme.resource("icon.png"))))
         self.setAcceptDrops(True)
         self.resize(1320, 860)

@@ -32,12 +32,12 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           gradle assembleRelease --stacktrace --no-daemon
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/agolate.apk
+          cp app/build/outputs/apk/release/*.apk out/ATlate.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: agolate-android
-          path: android/out/agolate.apk
+          name: ATlate-android
+          path: android/out/ATlate.apk
 
   windows:
     runs-on: windows-latest
@@ -63,20 +63,20 @@ jobs:
 
       - name: Build exe
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --name agolate `
+          python -m PyInstaller --noconfirm --clean --windowed --name ATlate `
             --icon icon.ico --add-data "icon.png;." `
             --collect-all winrt `
             --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32 `
             --exclude-module torch --exclude-module torchvision --exclude-module easyocr `
             main.py
-          Copy-Item -Recurse glossaries dist/agolate/glossaries
-          if (Test-Path fonts) { Copy-Item -Recurse fonts dist/agolate/fonts }
-          Compress-Archive -Path dist/agolate -DestinationPath agolate-windows.zip
+          Copy-Item -Recurse glossaries dist/ATlate/glossaries
+          if (Test-Path fonts) { Copy-Item -Recurse fonts dist/ATlate/fonts }
+          Compress-Archive -Path dist/ATlate -DestinationPath ATlate-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: agolate-windows
-          path: desktop/agolate-windows.zip
+          name: ATlate-windows
+          path: desktop/ATlate-windows.zip
 
   release:
     needs: [android, windows]
@@ -92,19 +92,19 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          name: agolate ${{ github.event.release.tag_name }}
+          name: ATlate ${{ github.event.release.tag_name }}
           files: files/*
           body: |
             Переводчик манхвы, манги и маньхуа прямо с экрана.
 
             ## Android
-            Скачайте **agolate.apk**, откройте его на телефоне и разрешите установку из этого источника.
+            Скачайте **ATlate.apk**, откройте его на телефоне и разрешите установку из этого источника.
             Если Play Защита предупредит о неизвестном приложении, нажмите «Подробнее» → «Всё равно установить».
             Нужны Android 8.0 или новее и сервисы Google Play.
 
             ## Windows
-            Скачайте **agolate-windows.zip**, распакуйте и запустите `agolate.exe`. Python не нужен.
+            Скачайте **ATlate-windows.zip**, распакуйте и запустите `ATlate.exe`. Python не нужен.
             Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее» → «Выполнить в любом случае».
             Нужна Windows 10 или 11.
 
-            Инструкция и описание возможностей — в [README](https://github.com/agoiel/agolate#readme).
+            Инструкция и описание возможностей — в [README](https://github.com/agoiel/ATlate#readme).

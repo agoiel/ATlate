@@ -1,8 +1,8 @@
 """Проект Студии: глава (папка с картинками), найденные блоки текста и их перевод.
 
-Всё хранится рядом с главой, в папке agolate:
-    agolate/project.json   — блоки, переводы и правки
-    agolate/translated/    — готовые страницы после выгрузки
+Всё хранится рядом с главой, в папке ATlate:
+    ATlate/project.json   — блоки, переводы и правки
+    ATlate/translated/    — готовые страницы после выгрузки
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ from ..models import Box
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 ARCHIVE_EXT = {".zip", ".cbz"}
-PROJECT_DIR = "agolate"
+PROJECT_DIR = "ATlate"
+OLD_PROJECT_DIR = "agolate"   # так папка называлась до переименования программы
 VERSION = 1
 
 
@@ -145,6 +146,12 @@ class Project:
             path = extract_archive(path)
         root = path if path.is_dir() else path.parent
         proj = cls(root)
+        old = root / OLD_PROJECT_DIR
+        if not proj.dir.exists() and (old / "project.json").exists():
+            try:
+                old.rename(proj.dir)
+            except OSError:
+                pass
         if proj.file.exists():
             proj._load()
         names = [p.name for p in (files or sorted(root.iterdir(), key=lambda p: _natural(p.name)))

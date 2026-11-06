@@ -163,7 +163,7 @@ class MainWindow(QWidget):
         self.live_on = False
         self._file_image: Image.Image | None = None
 
-        self.setWindowTitle(f"agolate {__version__}")
+        self.setWindowTitle(f"ATlate {__version__}")
         self.setObjectName("root")
         self.setMinimumSize(360, 420)
         geo = cfg.get("window_size")
@@ -225,7 +225,7 @@ class MainWindow(QWidget):
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
                                 self._build_tuning(), self._build_hotkeys(), self._build_developer()])
         bl.addWidget(self.columns)
-        foot = caption(f"agolate {__version__} · распознавание: "
+        foot = caption(f"ATlate {__version__} · распознавание: "
                        f"{'Windows OCR' if self.cfg['ocr_engine'] == 'windows' else 'EasyOCR'}")
         foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bl.addWidget(foot)
@@ -252,7 +252,7 @@ class MainWindow(QWidget):
         brand.addWidget(logo)
         names = QVBoxLayout()
         names.setSpacing(0)
-        t = QLabel("agolate")
+        t = QLabel("ATlate")
         t.setStyleSheet("color: white; font-size: 20pt; font-weight: 700; background: transparent;")
         sub = QLabel("Перевод манхвы прямо с экрана")
         sub.setStyleSheet(f"color: {theme.CREAM}; background: transparent;")
@@ -1088,7 +1088,7 @@ class MainWindow(QWidget):
             return
         if result.error:
             if "\n" in result.error:
-                QMessageBox.warning(self, "agolate", result.error)
+                QMessageBox.warning(self, "ATlate", result.error)
             self._set_status(result.error.split("\n")[0], True)
             return
         n = sum(1 for b in result.bubbles if b.translation)
@@ -1399,7 +1399,7 @@ def _excepthook(exc_type, exc, tb):
 
 def create_app() -> tuple[QApplication, Config]:
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("agolate")
+    app.setApplicationName("ATlate")
     icon = theme.resource("icon.png")
     if icon.exists():
         app.setWindowIcon(QIcon(str(icon)))

@@ -165,7 +165,7 @@ class OverlayService : Service() {
         val notif = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setColor(Brand.COCOA)
-            .setContentTitle(tr("agolate работает"))
+            .setContentTitle(tr("ATlate работает"))
             .setContentText(tr("Нажмите на кнопку «Аа», чтобы перевести область"))
             .setOngoing(true)
             .setContentIntent(openPi)
@@ -542,7 +542,7 @@ class OverlayService : Service() {
 
     private fun copy(text: String) {
         val cm = getSystemService(android.content.ClipboardManager::class.java)
-        cm?.setPrimaryClip(android.content.ClipData.newPlainText("agolate", text))
+        cm?.setPrimaryClip(android.content.ClipData.newPlainText("ATlate", text))
         toast(tr("Скопировано"))
     }
 

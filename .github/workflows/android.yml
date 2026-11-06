@@ -35,9 +35,9 @@ jobs:
       - name: Rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/agolate.apk
+          cp app/build/outputs/apk/release/*.apk out/ATlate.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: agolate-apk
-          path: android/out/agolate.apk
+          name: ATlate-apk
+          path: android/out/ATlate.apk

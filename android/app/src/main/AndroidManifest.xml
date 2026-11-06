@@ -10,7 +10,7 @@
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="agolate"
+        android:label="ATlate"
         android:supportsRtl="true"
         android:theme="@style/Theme.Manhwa">
 
@@ -27,7 +27,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Скриншот → «Поделиться» → agolate -->
+            <!-- Скриншот → «Поделиться» → ATlate -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-# В собранном exe настройки и глоссарии лежат рядом с agolate.exe
+# В собранном exe настройки и глоссарии лежат рядом с ATlate.exe
 if getattr(sys, "frozen", False):
     ROOT = Path(sys.executable).resolve().parent
 else:

@@ -70,7 +70,7 @@ class ScreenCapturer(
         }, handler)
 
         display = projection.createVirtualDisplay(
-            "agolate", width, height, density,
+            "ATlate", width, height, density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, handler,
         )
     }

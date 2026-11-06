@@ -89,7 +89,7 @@ class MainActivity : Activity() {
         content.addView(buildGlossary(), lp().margins(this, top = 14))
         content.addView(buildTuning(), lp().margins(this, top = 14))
         content.addView(buildDeveloper(), lp().margins(this, top = 14))
-        content.addView(ui.caption(tr("agolate 0.5 · распознавание: Google ML Kit")).apply {
+        content.addView(ui.caption(tr("ATlate 0.5 · распознавание: Google ML Kit")).apply {
             gravity = Gravity.CENTER
             alpha = 0.8f
         }, lp().margins(this, top = 22))
@@ -158,7 +158,7 @@ class MainActivity : Activity() {
         }
         brandRow.addView(logoFrame, LinearLayout.LayoutParams(dp(50), dp(50)))
         val titles = ui.vertical()
-        titles.addView(ui.text("agolate", 24f, android.graphics.Color.WHITE, Fonts.medium))
+        titles.addView(ui.text("ATlate", 24f, android.graphics.Color.WHITE, Fonts.medium))
         titles.addView(ui.text(tr("Перевод манхвы прямо с экрана"), 13.5f, Brand.CREAM))
         brandRow.addView(titles, lp(0, weight = 1f).margins(this, start = 14))
         heroInner.addView(brandRow)
@@ -603,7 +603,7 @@ class MainActivity : Activity() {
                 toast(tr("Журнал пуст: включите режим разработчика и выполните перевод"))
             } else {
                 getSystemService(android.content.ClipboardManager::class.java)
-                    ?.setPrimaryClip(android.content.ClipData.newPlainText("agolate log", log))
+                    ?.setPrimaryClip(android.content.ClipData.newPlainText("ATlate log", log))
                 toast(tr("Журнал скопирован"))
             }
         }

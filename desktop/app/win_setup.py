@@ -48,7 +48,7 @@ def _ps_install_script(langs: list[str]) -> str:
     names = ", ".join(f"'{capability_name(l)}'" for l in langs)
     return f"""
 $ErrorActionPreference = 'Stop'
-$Host.UI.RawUI.WindowTitle = 'agolate - установка OCR'
+$Host.UI.RawUI.WindowTitle = 'ATlate - установка OCR'
 Write-Host ''
 Write-Host 'Устанавливаю распознавание текста для Windows.' -ForegroundColor Cyan
 Write-Host 'Это может занять несколько минут. Не закрывайте окно.' -ForegroundColor Cyan
