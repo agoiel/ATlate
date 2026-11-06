@@ -1,0 +1,946 @@
+{
+ "version": 1,
+ "style": {
+  "font": "",
+  "min_size": 12,
+  "max_size": 36,
+  "caps": false,
+  "bold": true,
+  "line_spacing": 1.1,
+  "fmt": "png"
+ },
+ "pages": [
+  {
+   "file": "01_ko.png",
+   "status": "error",
+   "error": "В Windows не установлен OCR для языка «Корейский (манхва)».\nУстановленные: en-US.",
+   "blocks": []
+  },
+  {
+   "file": "02_en.png",
+   "status": "done",
+   "error": "",
+   "blocks": [
+    {
+     "id": "011f1731",
+     "box": {
+      "x": 170.0,
+      "y": 134.0,
+      "w": 139.3,
+      "h": 56.0
+     },
+     "lines": [
+      {
+       "x": 178.0,
+       "y": 134.0,
+       "w": 124.0,
+       "h": 19.3
+      },
+      {
+       "x": 170.0,
+       "y": 166.0,
+       "w": 139.3,
+       "h": 24.0
+      }
+     ],
+     "source": "Where are you going?",
+     "translation": "Куда ты собрался?",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "813fc9fc",
+     "box": {
+      "x": 67.3,
+      "y": 364.7,
+      "w": 284.7,
+      "h": 19.3
+     },
+     "lines": [
+      {
+       "x": 67.3,
+       "y": 364.7,
+       "w": 284.7,
+       "h": 19.3
+      }
+     ],
+     "source": "THE NORTHERN GATE",
+     "translation": "СЕВЕРНЫЕ ВОРОТА",
+     "kind": "box",
+     "bg": [
+      35,
+      30,
+      45
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "916d29df",
+     "box": {
+      "x": 552.9,
+      "y": 427.7,
+      "w": 144.7,
+      "h": 51.3
+     },
+     "lines": [
+      {
+       "x": 552.9,
+       "y": 427.7,
+       "w": 144.7,
+       "h": 24.0
+      },
+      {
+       "x": 565.6,
+       "y": 459.7,
+       "w": 117.3,
+       "h": 19.3
+      }
+     ],
+     "source": "I told you to wait here!",
+     "translation": "Новый текст перевода, который длиннее прежнего",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "3bb4b382",
+     "box": {
+      "x": 214.7,
+      "y": 756.7,
+      "w": 219.3,
+      "h": 89.3
+     },
+     "lines": [
+      {
+       "x": 246.0,
+       "y": 756.7,
+       "w": 156.7,
+       "h": 24.7
+      },
+      {
+       "x": 214.7,
+       "y": 790.0,
+       "w": 218.7,
+       "h": 24.0
+      },
+      {
+       "x": 216.0,
+       "y": 822.0,
+       "w": 218.0,
+       "h": 24.0
+      }
+     ],
+     "source": "Are you sure you're okay? That guy is dangerous.",
+     "translation": "Ты точно в порядке? Этот парень опасен.",
+     "kind": "bubble",
+     "bg": [
+      250,
+      250,
+      248
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "c62fe1ab",
+     "box": {
+      "x": 566.0,
+      "y": 791.3,
+      "w": 206.0,
+      "h": 55.3
+     },
+     "lines": [
+      {
+       "x": 566.0,
+       "y": 791.3,
+       "w": 206.0,
+       "h": 55.3
+      }
+     ],
+     "source": "BANGU",
+     "translation": "[BANGU]",
+     "kind": "free",
+     "bg": [
+      194,
+      176,
+      200
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "fe7a0a34",
+     "box": {
+      "x": 261.3,
+      "y": 1070.0,
+      "w": 278.0,
+      "h": 24.0
+     },
+     "lines": [
+      {
+       "x": 261.3,
+       "y": 1070.0,
+       "w": 278.0,
+       "h": 24.0
+      }
+     ],
+     "source": "He is not coming back.",
+     "translation": "Он не вернётся.",
+     "kind": "box",
+     "bg": [
+      25,
+      25,
+      30
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    }
+   ]
+  },
+  {
+   "file": "03_strip.png",
+   "status": "done",
+   "error": "",
+   "blocks": [
+    {
+     "id": "1fd89217",
+     "box": {
+      "x": 170.0,
+      "y": 134.0,
+      "w": 139.3,
+      "h": 56.0
+     },
+     "lines": [
+      {
+       "x": 178.0,
+       "y": 134.0,
+       "w": 124.0,
+       "h": 19.3
+      },
+      {
+       "x": 170.0,
+       "y": 166.0,
+       "w": 139.3,
+       "h": 24.0
+      }
+     ],
+     "source": "Where are you going?",
+     "translation": "Куда ты собрался?",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "f0361cf4",
+     "box": {
+      "x": 67.3,
+      "y": 364.7,
+      "w": 284.7,
+      "h": 19.3
+     },
+     "lines": [
+      {
+       "x": 67.3,
+       "y": 364.7,
+       "w": 284.7,
+       "h": 19.3
+      }
+     ],
+     "source": "THE NORTHERN GATE",
+     "translation": "СЕВЕРНЫЕ ВОРОТА",
+     "kind": "box",
+     "bg": [
+      35,
+      30,
+      45
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "52876c5e",
+     "box": {
+      "x": 517.3,
+      "y": 404.0,
+      "w": 144.7,
+      "h": 51.3
+     },
+     "lines": [
+      {
+       "x": 517.3,
+       "y": 404.0,
+       "w": 144.7,
+       "h": 24.0
+      },
+      {
+       "x": 530.0,
+       "y": 436.0,
+       "w": 117.3,
+       "h": 19.3
+      }
+     ],
+     "source": "I told you to wait here!",
+     "translation": "Я же сказал ждать здесь!",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "12655471",
+     "box": {
+      "x": 214.7,
+      "y": 756.7,
+      "w": 219.3,
+      "h": 89.3
+     },
+     "lines": [
+      {
+       "x": 246.0,
+       "y": 756.7,
+       "w": 156.7,
+       "h": 24.7
+      },
+      {
+       "x": 214.7,
+       "y": 790.0,
+       "w": 218.7,
+       "h": 24.0
+      },
+      {
+       "x": 216.0,
+       "y": 822.0,
+       "w": 218.0,
+       "h": 24.0
+      }
+     ],
+     "source": "Are you sure you're okay? That guy is dangerous.",
+     "translation": "Ты точно в порядке? Этот парень опасен.",
+     "kind": "bubble",
+     "bg": [
+      250,
+      250,
+      248
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "ae345ea0",
+     "box": {
+      "x": 566.0,
+      "y": 791.3,
+      "w": 206.0,
+      "h": 55.3
+     },
+     "lines": [
+      {
+       "x": 566.0,
+       "y": 791.3,
+       "w": 206.0,
+       "h": 55.3
+      }
+     ],
+     "source": "BANGU",
+     "translation": "[BANGU]",
+     "kind": "free",
+     "bg": [
+      194,
+      176,
+      201
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "6b24f513",
+     "box": {
+      "x": 261.3,
+      "y": 1070.0,
+      "w": 278.0,
+      "h": 24.0
+     },
+     "lines": [
+      {
+       "x": 261.3,
+       "y": 1070.0,
+       "w": 278.0,
+       "h": 24.0
+      }
+     ],
+     "source": "He is not coming back.",
+     "translation": "Он не вернётся.",
+     "kind": "box",
+     "bg": [
+      25,
+      25,
+      30
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "cd8172c1",
+     "box": {
+      "x": 170.0,
+      "y": 1284.0,
+      "w": 139.3,
+      "h": 56.0
+     },
+     "lines": [
+      {
+       "x": 178.0,
+       "y": 1284.0,
+       "w": 124.0,
+       "h": 19.3
+      },
+      {
+       "x": 170.0,
+       "y": 1316.0,
+       "w": 139.3,
+       "h": 24.0
+      }
+     ],
+     "source": "Where are you going?",
+     "translation": "Куда ты собрался?",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "825190d5",
+     "box": {
+      "x": 67.3,
+      "y": 1514.7,
+      "w": 284.7,
+      "h": 19.3
+     },
+     "lines": [
+      {
+       "x": 67.3,
+       "y": 1514.7,
+       "w": 284.7,
+       "h": 19.3
+      }
+     ],
+     "source": "THE NORTHERN GATE",
+     "translation": "СЕВЕРНЫЕ ВОРОТА",
+     "kind": "box",
+     "bg": [
+      35,
+      30,
+      45
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "53977427",
+     "box": {
+      "x": 517.3,
+      "y": 1554.0,
+      "w": 144.7,
+      "h": 51.3
+     },
+     "lines": [
+      {
+       "x": 517.3,
+       "y": 1554.0,
+       "w": 144.7,
+       "h": 24.0
+      },
+      {
+       "x": 530.0,
+       "y": 1586.0,
+       "w": 117.3,
+       "h": 19.3
+      }
+     ],
+     "source": "I told you to wait here!",
+     "translation": "Я же сказал ждать здесь!",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "f7b71bed",
+     "box": {
+      "x": 214.7,
+      "y": 1906.7,
+      "w": 219.3,
+      "h": 89.3
+     },
+     "lines": [
+      {
+       "x": 246.0,
+       "y": 1906.7,
+       "w": 156.7,
+       "h": 24.7
+      },
+      {
+       "x": 214.7,
+       "y": 1940.0,
+       "w": 218.7,
+       "h": 24.0
+      },
+      {
+       "x": 216.0,
+       "y": 1972.0,
+       "w": 218.0,
+       "h": 24.0
+      }
+     ],
+     "source": "Are you sure you're okay? That guy is dangerous.",
+     "translation": "Ты точно в порядке? Этот парень опасен.",
+     "kind": "bubble",
+     "bg": [
+      250,
+      250,
+      248
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "97b91bfe",
+     "box": {
+      "x": 566.0,
+      "y": 1941.3,
+      "w": 206.0,
+      "h": 55.3
+     },
+     "lines": [
+      {
+       "x": 566.0,
+       "y": 1941.3,
+       "w": 206.0,
+       "h": 55.3
+      }
+     ],
+     "source": "BANGU",
+     "translation": "[BANGU]",
+     "kind": "free",
+     "bg": [
+      194,
+      175,
+      201
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "297d5825",
+     "box": {
+      "x": 261.3,
+      "y": 2220.0,
+      "w": 278.0,
+      "h": 24.0
+     },
+     "lines": [
+      {
+       "x": 261.3,
+       "y": 2220.0,
+       "w": 278.0,
+       "h": 24.0
+      }
+     ],
+     "source": "He is not coming back.",
+     "translation": "Он не вернётся.",
+     "kind": "box",
+     "bg": [
+      25,
+      25,
+      30
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "388eccaf",
+     "box": {
+      "x": 170.0,
+      "y": 2434.0,
+      "w": 139.3,
+      "h": 56.0
+     },
+     "lines": [
+      {
+       "x": 178.0,
+       "y": 2434.0,
+       "w": 124.0,
+       "h": 19.3
+      },
+      {
+       "x": 170.0,
+       "y": 2466.0,
+       "w": 139.3,
+       "h": 24.0
+      }
+     ],
+     "source": "Where are you going?",
+     "translation": "Куда ты собрался?",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "17badd6d",
+     "box": {
+      "x": 67.3,
+      "y": 2664.7,
+      "w": 284.7,
+      "h": 19.3
+     },
+     "lines": [
+      {
+       "x": 67.3,
+       "y": 2664.7,
+       "w": 284.7,
+       "h": 19.3
+      }
+     ],
+     "source": "THE NORTHERN GATE",
+     "translation": "СЕВЕРНЫЕ ВОРОТА",
+     "kind": "box",
+     "bg": [
+      35,
+      30,
+      45
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "43869098",
+     "box": {
+      "x": 517.3,
+      "y": 2704.0,
+      "w": 144.7,
+      "h": 51.3
+     },
+     "lines": [
+      {
+       "x": 517.3,
+       "y": 2704.0,
+       "w": 144.7,
+       "h": 24.0
+      },
+      {
+       "x": 530.0,
+       "y": 2736.0,
+       "w": 117.3,
+       "h": 19.3
+      }
+     ],
+     "source": "I told you to wait here!",
+     "translation": "Я же сказал ждать здесь!",
+     "kind": "bubble",
+     "bg": [
+      255,
+      255,
+      255
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "4e68d2fc",
+     "box": {
+      "x": 214.7,
+      "y": 3056.7,
+      "w": 219.3,
+      "h": 89.3
+     },
+     "lines": [
+      {
+       "x": 246.0,
+       "y": 3056.7,
+       "w": 156.7,
+       "h": 24.7
+      },
+      {
+       "x": 214.7,
+       "y": 3090.0,
+       "w": 218.7,
+       "h": 24.0
+      },
+      {
+       "x": 216.0,
+       "y": 3122.0,
+       "w": 218.0,
+       "h": 24.0
+      }
+     ],
+     "source": "Are you sure you're okay? That guy is dangerous.",
+     "translation": "Ты точно в порядке? Этот парень опасен.",
+     "kind": "bubble",
+     "bg": [
+      250,
+      250,
+      248
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "d06f822e",
+     "box": {
+      "x": 566.0,
+      "y": 3090.7,
+      "w": 206.0,
+      "h": 56.0
+     },
+     "lines": [
+      {
+       "x": 566.0,
+       "y": 3090.7,
+       "w": 206.0,
+       "h": 56.0
+      }
+     ],
+     "source": "BANGU",
+     "translation": "[BANGU]",
+     "kind": "free",
+     "bg": [
+      194,
+      176,
+      200
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    },
+    {
+     "id": "24741533",
+     "box": {
+      "x": 261.3,
+      "y": 3370.0,
+      "w": 278.0,
+      "h": 24.0
+     },
+     "lines": [
+      {
+       "x": 261.3,
+       "y": 3370.0,
+       "w": 278.0,
+       "h": 24.0
+      }
+     ],
+     "source": "He is not coming back.",
+     "translation": "Он не вернётся.",
+     "kind": "box",
+     "bg": [
+      25,
+      25,
+      30
+     ],
+     "lang": "en",
+     "enabled": true,
+     "clean": "auto",
+     "area": null,
+     "size": 0,
+     "color": "",
+     "outline": "auto",
+     "font": "",
+     "manual": false
+    }
+   ]
+  }
+ ]
+}

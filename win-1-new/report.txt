@@ -1,0 +1,25 @@
+[start] squeezed labels: 0 
+[before] header need=69/69 got=69 title h=20 sub y=45 h=16 dropdown=75 list area visible=False h=480 list need=720 got=720
+    chain: QWidget# h=207 hfw=207 hint=255 min=0 | Card#card h=286 hfw=286 hint=334 min=0 | QWidget# h=550 hfw=535 hint=583 min=0 | Columns# h=550 hfw=550 hint=650 min=0 | QWidget# h=799 hfw=799 hint=911 min=0 | ScrollContent#content h=1297 hfw=1117 hint=1297 min=1297 | QWidget#qt_scrollarea_viewport h=749 hfw=-1 hint=-1 min=0 | QScrollArea# h=749 hfw=-1 hint=408 min=0
+[opened] header need=69/69 got=69 title h=20 sub y=45 h=16 dropdown=375 list area visible=True h=300 list need=720 got=720
+    chain: QWidget# h=507 hfw=507 hint=555 min=0 | Card#card h=586 hfw=586 hint=634 min=0 | QWidget# h=835 hfw=835 hint=883 min=0 | Columns# h=835 hfw=835 hint=948 min=0 | QWidget# h=1084 hfw=1084 hint=1209 min=0 | ScrollContent#content h=1595 hfw=1402 hint=1595 min=1595 | QWidget#qt_scrollarea_viewport h=749 hfw=-1 hint=-1 min=0 | QScrollArea# h=749 hfw=-1 hint=408 min=0
+[list open] squeezed labels: 0 
+chosen: deepl list visible after choose: False
+[chosen] header need=69/69 got=69 title h=20 sub y=45 h=16 dropdown=75 list area visible=False h=0 list need=720 got=720
+    chain: QWidget# h=269 hfw=269 hint=301 min=0 | Card#card h=348 hfw=348 hint=380 min=0 | QWidget# h=597 hfw=597 hint=629 min=0 | Columns# h=597 hfw=597 hint=678 min=0 | QWidget# h=846 hfw=846 hint=939 min=0 | ScrollContent#content h=1325 hfw=1164 hint=1325 min=1325 | QWidget#qt_scrollarea_viewport h=749 hfw=-1 hint=-1 min=0 | QScrollArea# h=749 hfw=-1 hint=408 min=0
+[after choosing DeepL] squeezed labels: 0 
+select open: area h=226 rows=18 scroll max=390 src moved=0
+[select open] squeezed labels: 0 
+select chose: index 0 -> 3 'Казахский' open=False
+[select closed] squeezed labels: 0 
+toggles moved: 0 
+tuning open: True
+[tuning open] squeezed labels: 0 
+[all cards open] squeezed labels: 0 
+[all cards open] stretched cards: 0 
+engine select open: area h=72 visible=True
+[engine select open] squeezed labels: 0 
+[engine select open] stretched cards: 0 
+toggles in open cards moved: 0 []
+[tuning closed] squeezed labels: 0 
+[narrow window] squeezed labels: 0 
