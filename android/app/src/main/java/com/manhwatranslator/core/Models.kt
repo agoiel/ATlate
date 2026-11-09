@@ -16,8 +16,14 @@ data class Box(val x: Float, val y: Float, val w: Float, val h: Float) {
     }
 }
 
-/** Строка текста, найденная OCR. */
-data class TextLine(val box: Box, val text: String)
+/**
+ * Строка текста, найденная OCR.
+ *
+ * [box] — прямая рамка. Если строка стоит под углом, рамка заметно больше самой строки, поэтому
+ * отдельно хранятся наклон и настоящие размеры: [angle] — в градусах, плюс — правый край выше
+ * левого; [len] и [thick] — длина и высота строки (0 — неизвестны, тогда берётся рамка).
+ */
+data class TextLine(val box: Box, val text: String, val angle: Float = 0f, val len: Float = 0f, val thick: Float = 0f)
 
 /** Облако: несколько строк, склеенных в одну реплику. */
 class Bubble(val box: Box, val lines: List<TextLine>, val text: String) {
@@ -29,8 +35,20 @@ class Bubble(val box: Box, val lines: List<TextLine>, val text: String) {
     /** Язык облака, определённый по символам (ko, ja, zh, en …) */
     var lang: String = ""
 
+    /**
+     * Наклон текста в градусах (плюс — правый край выше; 0 — ровно). У наклонённого облака
+     * заданы настоящие размеры текста вдоль и поперёк строк, его центр и высота строки.
+     */
+    var angle: Float = 0f
+    var tiltW: Float = 0f
+    var tiltH: Float = 0f
+    var tiltCx: Float = 0f
+    var tiltCy: Float = 0f
+    var tiltLineH: Float = 0f
+
+    val tilted: Boolean get() = angle != 0f && tiltW > 0f && tiltH > 0f
     val translatable: Boolean get() = skipReason.isEmpty() && text.isNotBlank()
-    val lineHeight: Float get() = lines.map { it.box.h }.average().toFloat()
+    val lineHeight: Float get() = if (tilted && tiltLineH > 0f) tiltLineH else lines.map { it.box.h }.average().toFloat()
 }
 
 class PageResult(

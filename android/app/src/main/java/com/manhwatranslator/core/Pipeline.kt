@@ -81,11 +81,11 @@ class Pipeline(private val ctx: Context) {
         val bubbles = if (screen) {
             // обычный текст: строки собираются в абзацы, ничего не отбрасывается из-за фона или края
             Bubbles.group(lines, img, Bubbles.Params(joiner = src.joiner, rtl = false, gap = 0.9f,
-                borderCheck = false, skipFreeText = false, skipCut = false))
+                borderCheck = false, skipFreeText = false, skipCut = false, keepTilt = s.keepTilt))
         } else {
             Bubbles.group(lines, img, Bubbles.Params(
                 joiner = src.joiner, rtl = src.rtl, gap = s.bubbleGap,
-                skipFreeText = s.skipFreeText, skipCut = s.skipCut,
+                skipFreeText = s.skipFreeText, skipCut = s.skipCut, keepTilt = s.keepTilt,
             ))
         }
         for (b in bubbles) {

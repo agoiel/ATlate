@@ -20,6 +20,8 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.math.atan2
+import kotlin.math.hypot
 
 class OcrException(message: String) : Exception(message)
 
@@ -135,7 +137,7 @@ class Ocr(private val ctx: Context) {
         }
         // порядок проходов всегда одинаковый: вариант за вариантом, распознаватель за распознавателем
         val passes = results.flatMap { it.orEmpty() }.map { p ->
-            PassInfo(p.variant, p.script, p.lines.map { l -> TextLine(Box(l.box.x / k, l.box.y / k, l.box.w / k, l.box.h / k), l.text) },
+            PassInfo(p.variant, p.script, p.lines.map { l -> TextLine(Box(l.box.x / k, l.box.y / k, l.box.w / k, l.box.h / k), l.text, l.angle, l.len / k, l.thick / k) },
                 p.prepMs, p.ocrMs, p.error)
         }
         val stats = LinkedHashMap<String, Int>()
@@ -210,7 +212,22 @@ class Ocr(private val ctx: Context) {
         for (block in result.textBlocks) {
             for (line in block.lines) {
                 val r = line.boundingBox ?: continue
-                out.add(TextLine(Box(r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat()), line.text))
+                // четыре угла строки идут по часовой стрелке от левого верхнего:
+                // верхняя сторона даёт наклон и длину строки, боковая — её высоту
+                var angle = 0f
+                var len = 0f
+                var thick = 0f
+                val pts = line.cornerPoints
+                if (pts != null && pts.size == 4) {
+                    val dx = (pts[1].x - pts[0].x).toFloat()
+                    val dy = (pts[1].y - pts[0].y).toFloat()
+                    len = hypot(dx, dy)
+                    thick = hypot((pts[2].x - pts[1].x).toFloat(), (pts[2].y - pts[1].y).toFloat())
+                    if (len > 1f && thick > 1f) angle = -Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
+                    else { len = 0f; thick = 0f }
+                }
+                out.add(TextLine(Box(r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat()),
+                    line.text, angle, len, thick))
             }
         }
         return out

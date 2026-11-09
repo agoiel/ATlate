@@ -2,9 +2,12 @@ package com.manhwatranslator.core
 
 import android.graphics.Color
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Сборка строк OCR в облака без нейросети — тот же алгоритм, что в ПК-версии (bubbles.py).
@@ -24,7 +27,16 @@ object Bubbles {
         val borderCheck: Boolean = true,
         val skipFreeText: Boolean = false,
         val skipCut: Boolean = true,
+        /** Замечать наклон текста: перевод встанет под тем же углом, что и оригинал. */
+        val keepTilt: Boolean = true,
     )
+
+    /** Наклон меньше этого считается ровным текстом — чтобы обычные реплики не «плясали». */
+    private const val MIN_TILT = 4f
+    /** Круче — это уже вертикальный текст, его не трогаем. */
+    private const val MAX_TILT = 45f
+    /** Строки, наклон которых различается сильнее, — разные надписи, даже если стоят рядом. */
+    private const val TILT_DIFF = 12f
 
     private val letterRe = Regex("\\p{L}")
     private const val CJK = "\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uf900-\\ufaff\\uff66-\\uff9f"
@@ -33,6 +45,72 @@ object Bubbles {
     private fun xOverlap(a: Box, b: Box) = min(a.x2, b.x2) - max(a.x, b.x)
     private fun yOverlap(a: Box, b: Box) = min(a.y2, b.y2) - max(a.y, b.y)
     private fun heightOk(a: Box, b: Box): Boolean = max(a.h, b.h) / max(1f, min(a.h, b.h)) <= 1.9f
+
+    // ---------------------------------------------------------------- наклонённый текст
+
+    /** Точка (от центра) → в систему, где строка с наклоном deg горизонтальна. */
+    private fun toFrame(x: Float, y: Float, deg: Float): Pair<Float, Float> {
+        val a = Math.toRadians(deg.toDouble())
+        val c = cos(a).toFloat()
+        val s = sin(a).toFloat()
+        return (x * c - y * s) to (x * s + y * c)
+    }
+
+    private fun sameTilt(a: TextLine, b: TextLine): Boolean {
+        // размеры строки неизвестны — значит, и наклон неизвестен: склейке не мешаем
+        if (a.len <= 0f || b.len <= 0f) return true
+        return abs(a.angle - b.angle) <= TILT_DIFF
+    }
+
+    /** Наклон блока: медиана наклонов его строк; 0 — текст ровный (или вертикальный). */
+    private fun blockTilt(members: List<TextLine>): Float {
+        val known = members.filter { it.len > 0f && it.thick > 0f }
+        if (known.isEmpty() || known.size < members.size) return 0f
+        val angle = known.map { it.angle }.sorted()[known.size / 2]
+        return if (abs(angle) < MIN_TILT || abs(angle) > MAX_TILT) 0f else angle
+    }
+
+    /**
+     * Строки наклонённого блока «выпрямленными»: прямые рамки наклонённых строк налезают
+     * друг на друга, и по ним не понять, какая строка выше.
+     */
+    private fun flatten(members: List<TextLine>, deg: Float): List<TextLine> = members.map { ln ->
+        val (u, t) = toFrame(ln.box.cx, ln.box.cy, deg)
+        TextLine(Box(u - ln.len / 2f, t - ln.thick / 2f, ln.len, ln.thick), ln.text)
+    }
+
+    /** Однородность и цвет фона вокруг наклонённого текста — по наклонённой рамке, а не по прямой. */
+    private fun ringStatsTilted(img: PixelImage, cx: Float, cy: Float, w: Float, h: Float, deg: Float,
+                                pad: Float): Pair<Float, Int> {
+        val reach = (hypot(w, h) / 2f + pad).toInt() + 1
+        val x1 = max(0, cx.toInt() - reach)
+        val y1 = max(0, cy.toInt() - reach)
+        val x2 = min(img.width, cx.toInt() + reach)
+        val y2 = min(img.height, cy.toInt() + reach)
+        val a = Math.toRadians(deg.toDouble())
+        val c = cos(a).toFloat()
+        val s = sin(a).toFloat()
+        val hr = IntArray(256); val hg = IntArray(256); val hb = IntArray(256)
+        val ring = ArrayList<Int>()
+        for (y in y1 until y2) for (x in x1 until x2) {
+            val dx = x - cx
+            val dy = y - cy
+            val u = abs(dx * c - dy * s)
+            val t = abs(dx * s + dy * c)
+            if (u > w / 2f + pad || t > h / 2f + pad) continue      // снаружи кольца
+            if (u <= w / 2f && t <= h / 2f) continue                // сам текст
+            val px = img.at(x, y)
+            ring.add(px)
+            hr[Color.red(px)]++; hg[Color.green(px)]++; hb[Color.blue(px)]++
+        }
+        if (ring.size < 10) return 0f to Color.WHITE
+        val mr = median(hr, ring.size); val mg = median(hg, ring.size); val mb = median(hb, ring.size)
+        var close = 0
+        for (px in ring) {
+            if (abs(Color.red(px) - mr) <= 30 && abs(Color.green(px) - mg) <= 30 && abs(Color.blue(px) - mb) <= 30) close++
+        }
+        return close.toFloat() / ring.size to Color.rgb(mr, mg, mb)
+    }
 
     // ---------------------------------------------------------------- проверки по картинке
 
@@ -143,6 +221,7 @@ object Bubbles {
             for (j in i + 1 until n) {
                 val b = lines[j].box
                 if (!heightOk(a, b)) continue
+                if (p.keepTilt && !sameTilt(lines[i], lines[j])) continue
                 val hmin = min(a.h, b.h)
 
                 // 1) куски одной строки
@@ -178,10 +257,31 @@ object Bubbles {
         val bubbles = groups.values.map { members ->
             var box = members[0].box
             for (m in members.drop(1)) box = box.union(m.box)
-            val bubble = Bubble(box, members, joinLines(members, p.joiner))
+            val tilt = if (p.keepTilt) blockTilt(members) else 0f
+            val bubble = if (tilt == 0f) Bubble(box, members, joinLines(members, p.joiner)) else {
+                // наклонённый текст: порядок строк, размеры и центр считаются в «выпрямленной» системе
+                val flat = flatten(members, tilt)
+                Bubble(box, members, joinLines(flat, p.joiner)).also { b ->
+                    val u1 = flat.minOf { it.box.x }
+                    val u2 = flat.maxOf { it.box.x2 }
+                    val t1 = flat.minOf { it.box.y }
+                    val t2 = flat.maxOf { it.box.y2 }
+                    val (cx, cy) = toFrame((u1 + u2) / 2f, (t1 + t2) / 2f, -tilt)
+                    b.angle = tilt
+                    b.tiltW = u2 - u1
+                    b.tiltH = t2 - t1
+                    b.tiltCx = cx
+                    b.tiltCy = cy
+                    b.tiltLineH = members.map { it.thick }.sorted()[members.size / 2]
+                }
+            }
             if (img != null) {
                 val lineH = members.map { it.box.h }.sorted()[members.size / 2]
-                val (uniform, color) = ringStats(img, box, max(3f, 0.4f * lineH))
+                // прямая рамка наклонённой реплики вылезает углами за облако — фон смотрим по наклонённой
+                val (uniform, color) = if (bubble.tilted)
+                    ringStatsTilted(img, bubble.tiltCx, bubble.tiltCy, bubble.tiltW, bubble.tiltH, tilt,
+                        max(3f, 0.4f * bubble.tiltLineH))
+                else ringStats(img, box, max(3f, 0.4f * lineH))
                 bubble.bgColor = color
                 val lum = (Color.red(color) + Color.green(color) + Color.blue(color)) / 3
                 bubble.kind = when {
