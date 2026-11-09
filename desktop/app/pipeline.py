@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image
 
-from . import languages, titles
+from . import angle, languages, titles
 from .bubbles import group_lines
 from .config import GLOSSARY_DIR, Config
 from .glossary import Glossary
@@ -236,6 +236,8 @@ class Pipeline:
                 skip_free_text=bool(cfg["skip_free_text"]),
                 skip_cut=bool(cfg["skip_cut_bubbles"]),
             )
+        if cfg.get("keep_tilt", True):
+            self._find_tilt(result.bubbles, arr, info["joiner"])
         for b in result.bubbles:
             b.lang = languages.detect(b.text, lang)
             if screen:
@@ -275,6 +277,25 @@ class Pipeline:
         watch.mark("перевод")
         result.debug = debug()
         return result
+
+    @staticmethod
+    def _find_tilt(bubbles, arr: np.ndarray, joiner: str) -> None:
+        """Наклон текста каждого облака: перевод встанет под тем же углом, что и оригинал."""
+        for b in bubbles:
+            boxes = [ln.box for ln in b.lines]
+            t = angle.find(arr, b.box, boxes, b.kind, b.bg_color, [ln.angle for ln in b.lines])
+            if not t.angle:
+                continue
+            b.angle, b.line_h = t.angle, t.line_h
+            b.tilt_size, b.tilt_center = (t.length, t.thick), (t.cx, t.cy)
+            if t.kind != b.kind:
+                # наклонённая реплика оказалась в облаке, а не «поверх рисунка»
+                b.kind, b.bg_color = t.kind, t.bg
+                if b.skip_reason == "текст поверх рисунка":
+                    b.skip_reason = ""
+            if len(b.lines) > 1:
+                # прямые рамки наклонённых строк налезают друг на друга — порядок строк собираем заново
+                b.text = angle.join(b.lines, t.angle, t.line_h, joiner) or b.text
 
     # ------------------------------------------------------------ сравнение
     def compare(self, image: Image.Image) -> str:

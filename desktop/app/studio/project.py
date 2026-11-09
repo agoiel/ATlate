@@ -51,6 +51,21 @@ class Block:
     color: str = ""                # цвет текста #RRGGBB, пусто — по фону
     outline: str = "auto"          # auto | on | off
     font: str = ""                 # путь к шрифту, пусто — шрифт проекта
+    angle: float = 0.0             # наклон перевода в градусах: плюс — правый край выше; 0 — ровно
+    src_angle: float = 0.0         # наклон оригинала (по нему стирается текст и меряется его размер)
+    line_h: float = 0.0            # настоящая высота строки наклонённого оригинала (0 — по рамкам строк)
+
+    def source_line_h(self) -> float:
+        """Высота строки оригинала: у наклонённого текста рамки строк выше самих строк."""
+        from statistics import median
+
+        from .. import angle
+        if self.line_h > 0:
+            return self.line_h
+        lines = self.lines or [self.box]
+        if self.src_angle:
+            return angle.line_height(lines, self.src_angle)
+        return float(median(l.h for l in lines))
     manual: bool = False           # блок добавлен вручную
 
     @staticmethod
@@ -108,6 +123,7 @@ class Style:
     caps: bool = False             # ЗАГЛАВНЫМИ, как принято в части переводов
     bold: bool = True              # чуть жирнее начертание шрифта
     line_spacing: float = 1.1
+    tilt: bool = True              # ставить перевод под тем же углом, что и оригинал
     fmt: str = "png"               # png | jpg | same (как у оригинала)
 
 

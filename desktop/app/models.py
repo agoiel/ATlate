@@ -49,6 +49,8 @@ class TextLine:
     box: Box
     text: str
     conf: float = 1.0
+    # наклон строки в градусах (плюс — правый край выше), если распознавание смогло его оценить
+    angle: float | None = None
 
 
 @dataclass
@@ -68,6 +70,12 @@ class Bubble:
     lang: str = ""
     # Причина, по которой облако не переводится (пусто — переводится)
     skip_reason: str = ""
+    # Наклон текста в градусах (плюс — правый край выше; 0 — ровно) и настоящие размеры
+    # наклонённого текста: высота строки, длина и толщина всего блока, его центр
+    angle: float = 0.0
+    line_h: float = 0.0
+    tilt_size: tuple[float, float] = (0.0, 0.0)
+    tilt_center: tuple[float, float] = (0.0, 0.0)
 
     @property
     def translatable(self) -> bool:

@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .. import languages, sysload
+from .. import angle, languages, sysload
 from ..bubbles import group_lines
 from ..models import Box, TextLine
 from ..ocr import enhance
@@ -77,10 +77,24 @@ def detect(pipeline: Pipeline, arr: np.ndarray, checkpoint=None) -> list[Block]:
     for b in bubbles:
         blk = Block.new(b.box, lines=[ln.box for ln in b.lines], source=b.text, kind=b.kind,
                         bg=tuple(b.bg_color), lang=languages.detect(b.text, lang))
+        find_angle(arr, blk, b.lines, info["joiner"], lang)
         # «...», «?!» и прочее без букв не трогаем
         blk.enabled = b.translatable
         blocks.append(blk)
     return blocks
+
+
+def find_angle(arr: np.ndarray, blk: Block, lines: list[TextLine], joiner: str, lang: str) -> None:
+    """Наклон оригинала: перевод встанет под тем же углом. Заодно правит порядок наклонённых строк."""
+    tilt = angle.find(arr, blk.box, blk.lines, blk.kind, blk.bg, [ln.angle for ln in lines])
+    blk.angle = blk.src_angle = tilt.angle
+    blk.line_h = tilt.line_h if tilt.angle else 0.0
+    blk.kind, blk.bg = tilt.kind, tilt.bg
+    if blk.angle and len(lines) > 1:
+        text = angle.join(lines, blk.angle, blk.line_h, joiner)
+        if text:
+            blk.source = text
+            blk.lang = languages.detect(text, lang)
 
 
 class _Item:
@@ -138,7 +152,8 @@ def clean_key(blocks: list[Block]) -> tuple:
     (например, поменяли только текст перевода или шрифт)."""
     def box(b: Box) -> tuple:
         return round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)
-    return tuple((b.id, b.enabled, b.clean_mode(), b.kind, tuple(b.bg), box(b.box), tuple(box(l) for l in b.lines))
+    return tuple((b.id, b.enabled, b.clean_mode(), b.kind, tuple(b.bg), box(b.box), tuple(box(l) for l in b.lines),
+                  b.src_angle, b.line_h)
                  for b in blocks)
 
 

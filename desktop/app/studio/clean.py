@@ -13,6 +13,7 @@ from statistics import median
 import numpy as np
 
 from ..models import Box
+from .. import angle
 from .project import Block
 
 
@@ -48,13 +49,29 @@ def text_mask(arr: np.ndarray, block: Block) -> tuple[np.ndarray, tuple[int, int
     """
     h, w = arr.shape[:2]
     lines = block.lines or [block.box]
-    lh = median(l.h for l in lines)
+    tilted = bool(block.src_angle)
+    # у наклонённого текста прямые рамки строк в разы выше самих строк — берём настоящую высоту
+    lh = block.source_line_h() if tilted else median(l.h for l in lines)
     pad = max(4.0, 0.6 * lh)
     x1, y1, x2, y2 = _clip(Box(block.box.x - pad, block.box.y - pad, block.box.w + 2 * pad, block.box.h + 2 * pad), w, h)
     region = arr[y1:y2, x1:x2, :3].astype(np.int16)
     mask = np.zeros(region.shape[:2], dtype=bool)
     if region.size == 0:
         return mask, (x1, y1, x2, y2)
+
+    def strips(extra: float) -> np.ndarray:
+        """Наклонённые полосы строк: прямая рамка наклонённой строки в несколько раз больше её самой
+        и задевает рисунок или контур облака."""
+        from PIL import Image, ImageDraw
+        m = Image.new("L", (x2 - x1, y2 - y1), 0)
+        d = ImageDraw.Draw(m)
+        for ln in lines:
+            pts = angle.corners(ln, block.src_angle, thick=lh, pad=extra)
+            d.polygon([(px - x1, py - y1) for px, py in pts], fill=255)
+        return np.asarray(m) > 0
+
+    if block.kind == "free" and tilted:
+        return strips(0.22 * lh), (x1, y1, x2, y2)
 
     if block.kind == "free":
         # пёстрый фон: отличить буквы от рисунка надёжно нельзя — стираем строку целиком
@@ -70,7 +87,9 @@ def text_mask(arr: np.ndarray, block: Block) -> tuple[np.ndarray, tuple[int, int
     far = np.abs(region - bg).max(axis=2) > 48
     inner = np.zeros_like(mask)
     ring = np.zeros_like(mask)
-    for ln in lines:
+    if tilted:
+        inner, ring = strips(0.12 * lh), strips(0.37 * lh)
+    for ln in ([] if tilted else lines):
         a = _clip(ln, w, h)
         inner[a[1] - y1:a[3] - y1, a[0] - x1:a[2] - x1] = True
         p = 0.25 * ln.h

@@ -130,6 +130,8 @@ object I18n {
         "Проводите только сверху вниз — ширина берётся вся" to "Swipe only from top to bottom — the full width is used",
         "Пропускать обрезанное" to "Skip cut-off text",
         "Текст, который режет край области" to "Text cut by the edge of the area",
+        "Повторять наклон текста" to "Keep the text tilt",
+        "Перевод под тем же углом, что и оригинал" to "Translation at the same angle as the original",
         "Нужно разрешение" to "Permission needed",
         "Чтобы кнопка и перевод появлялись поверх читалки, разрешите приложению «Показ поверх других приложений». Затем вернитесь сюда и снова нажмите «Запустить»." to "To show the button and translation over your reader, allow the app to “Display over other apps”. Then come back and tap “Start” again.",
         "Открыть настройки" to "Open settings",

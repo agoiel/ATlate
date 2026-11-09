@@ -241,13 +241,18 @@ class PlateRenderer(private val ctx: Context) {
             if (b.translation.isBlank()) continue
             val screen = b.kind == "screen"
             val pad = if (screen) ctx.dpF(2f) * scale else max(ctx.dpF(3f) * scale, 0.35f * b.lineHeight)
+            // наклонённый текст: плашка берёт настоящие размеры и центр текста (прямая рамка
+            // наклонённой строки заметно больше её самой) и рисуется под тем же углом
+            val tilted = b.tilted
+            val bw = if (tilted) b.tiltW else b.box.w
+            val bh = if (tilted) b.tiltH else b.box.h
             // в манхве русский текст длиннее корейского — даём плашке стать шире;
             // обычный текст на экране закрываем точно по месту
-            val w = if (screen) max(b.box.w + 2 * pad, ctx.dpF(24f) * scale)
-            else max(max(b.box.w + 2 * pad, b.box.w * 1.3f), ctx.dpF(48f) * scale)
-            var h = b.box.h + 2 * pad
-            val cx = ox + b.box.cx
-            val cy = oy + b.box.cy
+            val w = if (screen) max(bw + 2 * pad, ctx.dpF(24f) * scale)
+            else max(max(bw + 2 * pad, bw * 1.3f), ctx.dpF(48f) * scale)
+            var h = bh + 2 * pad
+            val cx = ox + (if (tilted) b.tiltCx else b.box.cx)
+            val cy = oy + (if (tilted) b.tiltCy else b.box.cy)
             val textW = max(10, (w - 2 * ctx.dpF(3f) * scale).toInt())
             // на экране шрифт подбираем под высоту исходной строки
             val maxSize = if (screen) min(maxFontPx * scale, max(b.lineHeight * 0.9f, ctx.dpF(9f) * scale)) else maxFontPx * scale
@@ -273,8 +278,10 @@ class PlateRenderer(private val ctx: Context) {
                 paint.color = if (lum > 140) Color.rgb(15, 15, 15) else Color.rgb(250, 250, 250)
             }
             val radius = ctx.dpF(if (screen) 3f else 8f) * scale
-            c.drawRoundRect(rect, radius, radius, fill)
             c.save()
+            // у Canvas плюс — по часовой стрелке, у нас — против
+            if (tilted) c.rotate(-b.angle, cx, cy)
+            c.drawRoundRect(rect, radius, radius, fill)
             c.translate(rect.left + (w - textW) / 2, rect.top + (h - layout.height) / 2)
             layout.draw(c)
             c.restore()

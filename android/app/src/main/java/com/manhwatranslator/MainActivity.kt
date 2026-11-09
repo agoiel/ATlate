@@ -556,6 +556,8 @@ class MainActivity : Activity() {
         body.addView(SwitchRow(this, tr("Пропускать обрезанное"), tr("Текст, который режет край области"), s.skipCut) {
             s.skipCut = it
         }, lp().margins(this, top = 2))
+        body.addView(SwitchRow(this, tr("Повторять наклон текста"), tr("Перевод под тем же углом, что и оригинал"),
+            s.keepTilt) { s.keepTilt = it }, lp().margins(this, top = 2))
         card.addView(body)
 
         header.setOnClickListener {

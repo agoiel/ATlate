@@ -15,6 +15,7 @@ from PIL import Image
 
 from .. import languages
 from ..models import Box, TextLine
+from ..angle import words_angle
 from .base import OcrBackend, OcrError, OcrLanguageMissing
 
 # Имена компонентов Windows с OCR для каждого языка
@@ -131,10 +132,13 @@ class WindowsOcrBackend(OcrBackend):
             if not words:
                 continue
             box = None
+            rects = []
             for wd in words:
                 r = wd.bounding_rect
                 b = Box(r.x, r.y, r.width, r.height)
+                rects.append((b.x, b.y, b.w, b.h))
                 box = b if box is None else box.union(b)
             text = joiner.join(wd.text for wd in words)
-            out.append(TextLine(box=box.scaled(1 / k), text=text, conf=1.0))
+            # рамки слов прямые, но их центры идут вдоль строки — по ним виден наклон текста
+            out.append(TextLine(box=box.scaled(1 / k), text=text, conf=1.0, angle=words_angle(rects)))
         return out

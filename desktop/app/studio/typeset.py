@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from statistics import median
 
@@ -14,6 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..models import Box
+from .. import angle
 from . import fonts
 from .project import Block, Style
 
@@ -74,17 +76,11 @@ def _flood(ok: np.ndarray, sy: int, sx: int) -> np.ndarray:
     return filled
 
 
-def text_shape(clean: np.ndarray, block: Block) -> Shape:
-    """Область для перевода: внутренность облака или плашки, иначе — рамка блока."""
-    if block.area is not None:
-        return Shape.rect(block.area)
-    lines = block.lines or [block.box]
-    lh = median(l.h for l in lines)
-    fallback = Shape.rect(Box(block.box.x - 0.3 * lh, block.box.y - 0.2 * lh,
-                              block.box.w + 0.6 * lh, block.box.h + 0.4 * lh))
-    if block.kind not in ("bubble", "box"):
-        return fallback
+def _bubble_fill(clean: np.ndarray, block: Block, lh: float):
+    """Внутренность облака или плашки вокруг блока.
 
+    Возвращает (маска, x1, y1, точка внутри облака) в окне поиска или None, если облака нет.
+    """
     h, w = clean.shape[:2]
     b = block.box
     grow = max(b.w, b.h) * 0.9 + 2 * lh
@@ -96,19 +92,28 @@ def text_shape(clean: np.ndarray, block: Block) -> Shape:
     if not ok[sy, sx]:
         ys, xs = np.nonzero(ok[int(b.y) - y1:int(b.y2) - y1, int(b.x) - x1:int(b.x2) - x1])
         if len(ys) == 0:
-            return fallback
+            return None
         i = int(np.argmin((ys + int(b.y) - y1 - sy) ** 2 + (xs + int(b.x) - x1 - sx) ** 2))
         sy, sx = int(ys[i] + int(b.y) - y1), int(xs[i] + int(b.x) - x1)
     filled = _flood(ok, sy, sx)
     rows = np.flatnonzero(filled.any(axis=1))
     cols = np.flatnonzero(filled.any(axis=0))
     if len(rows) < lh or len(cols) < lh:
-        return fallback
+        return None
     # заливка дошла до края окна поиска — облако без контура (белый фон страницы): берём рамку блока
     touches = (rows[0] == 0 and y1 > 0) + (rows[-1] == y2 - y1 - 1 and y2 < h) \
         + (cols[0] == 0 and x1 > 0) + (cols[-1] == x2 - x1 - 1 and x2 < w)
     if touches >= 2:
-        return fallback
+        return None
+    return filled, x1, y1, sx
+
+
+def _shape_from_fill(filled: np.ndarray, sx: int, ox: float, oy: float) -> Shape | None:
+    """Форма для текста по маске облака: для каждой строки пикселей — отрезок с отступом от края."""
+    rows = np.flatnonzero(filled.any(axis=1))
+    cols = np.flatnonzero(filled.any(axis=0))
+    if len(rows) == 0 or len(cols) == 0:
+        return None
     top, bottom = int(rows[0]), int(rows[-1]) + 1
     bw = cols[-1] - cols[0] + 1
     bh = bottom - top
@@ -134,8 +139,97 @@ def text_shape(clean: np.ndarray, block: Block) -> Shape:
     if inset:
         left[-inset:] = np.inf
         right[-inset:] = -np.inf
-    return Shape(top + y1, bottom + y1, left + x1, right + x1,
-                 float(cols[0] + cols[-1]) / 2 + x1, float(top + bottom) / 2 + y1)
+    return Shape(top + oy, bottom + oy, left + ox, right + ox,
+                 float(cols[0] + cols[-1]) / 2 + ox, float(top + bottom) / 2 + oy)
+
+
+def text_shape(clean: np.ndarray, block: Block) -> Shape:
+    """Область для перевода: внутренность облака или плашки, иначе — рамка блока."""
+    if block.area is not None:
+        return Shape.rect(block.area)
+    lines = block.lines or [block.box]
+    lh = median(l.h for l in lines)
+    fallback = Shape.rect(Box(block.box.x - 0.3 * lh, block.box.y - 0.2 * lh,
+                              block.box.w + 0.6 * lh, block.box.h + 0.4 * lh))
+    if block.kind not in ("bubble", "box"):
+        return fallback
+    fill = _bubble_fill(clean, block, lh)
+    if fill is None:
+        return fallback
+    filled, x1, y1, sx = fill
+    return _shape_from_fill(filled, sx, x1, y1) or fallback
+
+
+# ---------------------------------------------------------------- наклонённый текст
+
+@dataclass
+class Frame:
+    """Повёрнутая система для наклонённого блока: в ней строки перевода горизонтальны.
+
+    Кусок страницы вокруг блока (окно) мысленно поворачивается так, чтобы наклонённый текст
+    встал ровно. В этой системе текст раскладывается и рисуется как обычно, а готовый слой
+    поворачивается обратно и кладётся на страницу.
+    """
+
+    x1: int                # окно на странице
+    y1: int
+    w: int
+    h: int
+    deg: float
+    fw: int                # размер повёрнутой системы
+    fh: int
+    shape: Shape           # куда писать — в координатах повёрнутой системы
+
+    def to_frame(self, x: float, y: float) -> tuple[float, float]:
+        fx, fy = angle.to_frame(x - (self.x1 + self.w / 2), y - (self.y1 + self.h / 2), self.deg)
+        return fx + self.fw / 2, fy + self.fh / 2
+
+
+def tilted_frame(clean: np.ndarray, block: Block, deg: float, lh: float) -> Frame:
+    """Область для наклонённого перевода: облако, повёрнутое вместе с текстом, или наклонённая рамка блока."""
+    h, w = clean.shape[:2]
+    b = block.area or block.box
+    fill = None
+    if block.area is None and block.kind in ("bubble", "box"):
+        fill = _bubble_fill(clean, block, lh)
+    if fill is not None:
+        filled, x1, y1, sx = fill
+        wh, ww = filled.shape
+        mask = Image.fromarray(filled.astype(np.uint8) * 255).rotate(-deg, Image.NEAREST, expand=True)
+        fr = Frame(x1, y1, ww, wh, deg, mask.width, mask.height, Shape.rect(Box(0, 0, 1, 1)))
+        seed = fr.to_frame(x1 + sx, block.box.cy)
+        shape = _shape_from_fill(np.asarray(mask) > 127, int(seed[0]), 0, 0)
+        if shape is not None:
+            fr.shape = shape
+            return fr
+    # без облака — рамка блока (как стоит оригинал), повёрнутая на угол перевода, с небольшим запасом
+    L, T = angle.oriented_size(b.w, b.h, block.src_angle)
+    if block.area is None:
+        L, T = L + 0.6 * lh, T + 0.4 * lh
+    half = int(math.hypot(L, T) / 2 + 2 * lh + 4)
+    x1, y1 = max(0, int(b.cx) - half), max(0, int(b.cy) - half)
+    x2, y2 = min(w, int(b.cx) + half), min(h, int(b.cy) + half)
+    ww, wh = max(1, x2 - x1), max(1, y2 - y1)
+    a = math.radians(abs(deg))
+    fw = int(math.ceil(ww * math.cos(a) + wh * math.sin(a)))
+    fh = int(math.ceil(ww * math.sin(a) + wh * math.cos(a)))
+    fr = Frame(x1, y1, ww, wh, deg, fw, fh, Shape.rect(Box(0, 0, 1, 1)))
+    cx, cy = fr.to_frame(b.cx, b.cy)
+    fr.shape = Shape.rect(Box(cx - L / 2, cy - T / 2, L, T))
+    return fr
+
+
+def _paste_tilted(img: Image.Image, layer: Image.Image, fr: Frame) -> None:
+    """Повернуть слой с текстом обратно и положить на страницу."""
+    # «предумноженная» прозрачность: иначе при повороте по краям букв появляется тёмная кайма
+    back = layer.convert("RGBa").rotate(fr.deg, Image.BICUBIC, expand=True).convert("RGBA")
+    ox = int(round(fr.x1 + fr.w / 2 - back.width / 2))
+    oy = int(round(fr.y1 + fr.h / 2 - back.height / 2))
+    box = back.getbbox()
+    if box is None:
+        return
+    back = back.crop(box)
+    img.paste(back, (ox + box[0], oy + box[1]), back)
 
 
 # ---------------------------------------------------------------- раскладка текста
@@ -284,13 +378,20 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
             continue
         if style.caps:
             text = text.upper()
-        shape = text_shape(clean, b)
         font_path = b.font or style.font or fonts.default_font()
-        # без ручного размера — не крупнее оригинала, чтобы короткие реплики не становились огромными
-        lines = b.lines or [b.box]
+        deg = float(b.angle) if style.tilt else 0.0
+        line_h = b.source_line_h()
+        frame = None
+        if abs(deg) >= 0.5:
+            # наклонённый оригинал: перевод раскладывается в повёрнутой системе и ставится под тем же углом
+            frame = tilted_frame(clean, b, deg, line_h)
+            shape = frame.shape
+        else:
+            shape = text_shape(clean, b)
+        # без ручного размера — не крупнее оригинала, чтобы короткие реплики не становились огромными:
         # перевод обычно длиннее оригинала, поэтому разрешаем быть заметно крупнее строки оригинала,
         # но не бесконечно — короткое «Что?!» в огромном облаке не должно стать гигантским
-        cap = int(_size_for_height(font_path, median(l.h for l in lines)) * 1.2)
+        cap = int(_size_for_height(font_path, line_h) * 1.2)
         lay = layout(text, shape, font_path, style, b.size, max(style.min_size, min(style.max_size, cap)))
         info[b.id] = lay
         fill, stroke = _colors(clean, b, shape)
@@ -302,6 +403,14 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
             sw, sfill = max(1, lay.size // 22), fill
         else:
             sw, sfill = 0, None
+        if frame is None:
+            for t, x, y in lay.lines:
+                draw.text((x, y), t, font=font, fill=fill, anchor="mm", stroke_width=sw, stroke_fill=sfill)
+            continue
+        layer = Image.new("RGBA", (frame.fw, frame.fh), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
         for t, x, y in lay.lines:
-            draw.text((x, y), t, font=font, fill=fill, anchor="mm", stroke_width=sw, stroke_fill=sfill)
+            ld.text((x, y), t, font=font, fill=fill + (255,), anchor="mm", stroke_width=sw,
+                    stroke_fill=(sfill + (255,)) if sfill else None)
+        _paste_tilted(img, layer, frame)
     return img, info

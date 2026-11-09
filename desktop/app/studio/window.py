@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGraphicsItem,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
                                QScrollArea, QSplitter, QVBoxLayout, QWidget)
 
-from .. import languages, sysload
+from .. import angle, languages, sysload
 from ..bubbles import _ring_stats
 from ..models import Box
 from ..pipeline import Pipeline
@@ -225,6 +225,17 @@ class BlockItem(QGraphicsRectItem):
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(r)
+        if abs(self.block.angle) >= 0.5:
+            # наклонённый текст: тонкой линией — как он стоит на самом деле
+            length, thick = angle.oriented_size(r.width(), r.height(), self.block.src_angle)
+            tilt_pen = QPen(color, 1.2)
+            tilt_pen.setCosmetic(True)
+            p.save()
+            p.setPen(tilt_pen)
+            p.translate(r.center())
+            p.rotate(-self.block.angle)
+            p.drawRect(QRectF(-length / 2, -thick / 2, length, thick))
+            p.restore()
         # номер блока
         k = 1 / max(0.05, self.view.transform().m11())
         d = 22 * k
@@ -360,6 +371,7 @@ class PageView(QGraphicsView):
                        for ln in block.lines]
         if block.area is not None:
             block.area = new
+        block.line_h *= sy
         block.box = new
         self.geometry_changed.emit(block.id)
 
@@ -531,6 +543,9 @@ class BlockCard(QFrame):
                                 block.area is not None)
         self.in_box.toggled.connect(self._on_in_box)
         ml.addWidget(self.in_box)
+        self.tilt = Stepper("Наклон текста", "Плюс — правый край выше", float(block.angle),
+                            1, -90, 90, lambda v: "ровно" if abs(v) < 0.5 else f"{v:+.0f}°")
+        ml.addWidget(self.tilt)       # что делать с новым углом, решает окно: ему видна картинка
         btns = QHBoxLayout()
         btns.setSpacing(8)
         again = pill("Перевести заново", "tonal", "refresh")
@@ -874,6 +889,9 @@ class StudioWindow(QWidget):
         self.bold = SwitchRow("Жирнее", "Тонкие шрифты читаются лучше", True)
         self.bold.toggled.connect(lambda _v: self._on_style())
         card.add(self.bold)
+        self.tilt = SwitchRow("Повторять наклон", "Перевод под тем же углом, что и оригинал", True)
+        self.tilt.toggled.connect(lambda _v: self._on_style())
+        card.add(self.tilt)
         self.fmt = Select()
         for k, t in (("png", "Выгружать в PNG"), ("jpg", "Выгружать в JPG"), ("same", "Формат как у оригинала")):
             self.fmt.addItem(t, k)
@@ -1061,6 +1079,7 @@ class StudioWindow(QWidget):
             card.changed.connect(lambda _bid, redraw: self._changed(redraw))
             card.clicked.connect(lambda bid: self.view.select(bid))
             card.retranslate.connect(self._retranslate_block)
+            card.tilt.changed.connect(lambda v, blk=b: self._on_tilt(blk, float(v)))
             card.delete.connect(self._delete_block)
             self.blocks_lay.addWidget(card)
             self.cards[b.id] = card
@@ -1081,6 +1100,17 @@ class StudioWindow(QWidget):
         if redraw:
             self.render_timer.start(250)
 
+    def _on_tilt(self, b: Block, deg: float) -> None:
+        """Наклон поменяли вручную. Если оригинал и правда так наклонён — запомнить и его наклон."""
+        b.angle = deg
+        if self._original is not None:
+            found = angle.adopt(self._original, b.box, b.lines, b.kind, b.bg, deg, b.src_angle)
+            if found is not None:
+                b.src_angle, b.line_h = found
+        if b.id in self.view.items_:
+            self.view.items_[b.id].update()
+        self._changed(True)
+
     def _add_block(self, box: Box) -> None:
         page = self._page()
         if page is None or self._original is None:
@@ -1094,9 +1124,13 @@ class StudioWindow(QWidget):
             lines = self.pipeline.recognize(Image.fromarray(arr), self.cfg["source_lang"], "fast", False)[0]
             if lines:
                 from ..bubbles import _join_lines
-                b.source = _join_lines(lines, languages.src(self.cfg["source_lang"])["joiner"])
-                b.lines = [Box(ln.box.x + box.x, ln.box.y + box.y, ln.box.w, ln.box.h) for ln in lines]
+                joiner = languages.src(self.cfg["source_lang"])["joiner"]
+                b.source = _join_lines(lines, joiner)
+                for ln in lines:
+                    ln.box = Box(ln.box.x + box.x, ln.box.y + box.y, ln.box.w, ln.box.h)
+                b.lines = [ln.box for ln in lines]
                 b.lang = languages.detect(b.source, self.cfg["source_lang"])
+                engine.find_angle(self._original, b, lines, joiner, self.cfg["source_lang"])
         except Exception:  # noqa: BLE001
             pass
         page.blocks.append(b)
@@ -1375,6 +1409,7 @@ class StudioWindow(QWidget):
             w._render()
         self.caps.switch.setChecked(st.caps)
         self.bold.switch.setChecked(st.bold)
+        self.tilt.switch.setChecked(st.tilt)
         self.fmt.setCurrentIndex(max(0, self.fmt.findData(st.fmt)))
 
     def _on_font(self, _i: int = 0) -> None:
@@ -1392,6 +1427,7 @@ class StudioWindow(QWidget):
         st.line_spacing = float(self.spacing.value)
         st.caps = self.caps.switch.isChecked()
         st.bold = self.bold.switch.isChecked()
+        st.tilt = self.tilt.switch.isChecked()
         st.fmt = self.fmt.currentData() or "png"
         self._changed(True)
 
