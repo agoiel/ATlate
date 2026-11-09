@@ -13,6 +13,7 @@ from ..bubbles import group_lines
 from ..models import Box, TextLine
 from ..ocr import enhance
 from ..pipeline import Pipeline
+from . import angle
 from .clean import clean_page
 from .project import Block, Page, Project
 from .typeset import Layout, typeset_page
@@ -77,10 +78,34 @@ def detect(pipeline: Pipeline, arr: np.ndarray, checkpoint=None) -> list[Block]:
     for b in bubbles:
         blk = Block.new(b.box, lines=[ln.box for ln in b.lines], source=b.text, kind=b.kind,
                         bg=tuple(b.bg_color), lang=languages.detect(b.text, lang))
+        find_angle(arr, blk, b.lines, info["joiner"], lang)
         # «...», «?!» и прочее без букв не трогаем
         blk.enabled = b.translatable
         blocks.append(blk)
     return blocks
+
+
+def find_angle(arr: np.ndarray, blk: Block, lines: list[TextLine], joiner: str, lang: str) -> None:
+    """Наклон оригинала: перевод встанет под тем же углом. Заодно правит порядок наклонённых строк."""
+    hints = [ln.angle for ln in lines]
+    blk.angle, blk.line_h = angle.detect(arr, blk.box, blk.lines, blk.kind, blk.bg, hints)
+    if blk.angle and blk.kind == "free":
+        # прямая рамка наклонённой реплики вылезает за облако, и оно кажется «рисунком» —
+        # проверяем фон ещё раз, по наклонённой рамке
+        lh = blk.line_h or angle.line_height(blk.lines, blk.angle)
+        uniform, color = angle.ring_stats(arr, blk.box, blk.angle, max(3.0, 0.4 * lh))
+        if uniform >= 0.8:
+            blk.kind = "bubble" if sum(color) / 3 >= 170 else "box"
+            blk.bg = color
+            found = angle.detect(arr, blk.box, blk.lines, blk.kind, blk.bg, hints)
+            if found[0]:
+                blk.angle, blk.line_h = found
+    blk.src_angle = blk.angle
+    if blk.angle and len(lines) > 1:
+        text = angle.join(lines, blk.angle, blk.line_h, joiner)
+        if text:
+            blk.source = text
+            blk.lang = languages.detect(text, lang)
 
 
 class _Item:
@@ -138,7 +163,8 @@ def clean_key(blocks: list[Block]) -> tuple:
     (например, поменяли только текст перевода или шрифт)."""
     def box(b: Box) -> tuple:
         return round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)
-    return tuple((b.id, b.enabled, b.clean_mode(), b.kind, tuple(b.bg), box(b.box), tuple(box(l) for l in b.lines))
+    return tuple((b.id, b.enabled, b.clean_mode(), b.kind, tuple(b.bg), box(b.box), tuple(box(l) for l in b.lines),
+                  b.src_angle, b.line_h)
                  for b in blocks)
 
 

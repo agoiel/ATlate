@@ -49,6 +49,8 @@ class TextLine:
     box: Box
     text: str
     conf: float = 1.0
+    # наклон строки в градусах (плюс — правый край выше), если распознавание смогло его оценить
+    angle: float | None = None
 
 
 @dataclass

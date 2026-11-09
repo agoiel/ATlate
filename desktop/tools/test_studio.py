@@ -73,14 +73,18 @@ def write(d: ImageDraw.ImageDraw, lines: list[str], cx: float, cy: float, font, 
         truth.append(TextLine(Box(x1, y1, x2 - x1, y2 - y1), t))
 
 
-def page(lang: str, w: int = 800, h: int = 1150, seed: int = 1) -> tuple[Image.Image, list[TextLine]]:
+def background(w: int, h: int, seed: int) -> Image.Image:
+    """«Рисунок»: плавный градиент с пятнами."""
     rng = np.random.default_rng(seed)
-    # «рисунок»: плавный градиент с пятнами
     yy, xx = np.mgrid[0:h, 0:w]
     base = np.stack([150 + 60 * np.sin(xx / 90 + yy / 140), 140 + 50 * np.cos(yy / 70),
                      170 + 40 * np.sin((xx + yy) / 110)], axis=2)
     base += rng.normal(0, 6, base.shape)
-    img = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
+    return Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
+
+
+def page(lang: str, w: int = 800, h: int = 1150, seed: int = 1) -> tuple[Image.Image, list[TextLine]]:
+    img = background(w, h, seed)
     d = ImageDraw.Draw(img)
     truth: list[TextLine] = []
     f = font_for(lang, 26)
@@ -106,6 +110,54 @@ def page(lang: str, w: int = 800, h: int = 1150, seed: int = 1) -> tuple[Image.I
     # плавающая подпись без облака на тёмном фоне
     d.rectangle((0, 1010, w, h), fill=(25, 25, 30))
     write(d, ["그는 돌아오지 않아."] if lang == "ko" else ["He is not coming back."], 400, 1080, f, "white", truth)
+    return img, truth
+
+
+# наклонённый текст: что написано и под каким углом (плюс — правый край выше)
+TILTED = [
+    ("bubble", (50, 40, 400, 290), ["Where are you", "going?"], 15, 30, "black"),
+    ("bubble", (420, 60, 770, 320), ["I told you to", "wait here!"], -20, 32, "black"),
+    ("bubble", (60, 350, 400, 560), ["He is not", "coming back."], 0, 30, "black"),
+    ("bubble", (60, 620, 440, 900), ["Are you sure", "you're okay? That", "guy is dangerous."], 30, 24, "black"),
+    ("box", (450, 400, 780, 540), ["THE NORTHERN GATE"], -10, 24, "white"),
+    ("free", (590, 760, 0, 0), ["BANG!"], 22, 64, (250, 240, 90)),
+]
+TILT_WANT = {"Where": 15, "I": -20, "He": 0, "Are": 30, "THE": -10, "BANG!": 22}
+
+
+def write_tilted(img: Image.Image, lines: list[str], cx: float, cy: float, deg: float, font, fill, truth: list,
+                 stroke=None) -> None:
+    """Строки под углом: рисуются ровно на прозрачном слое, слой поворачивается вокруг центра блока."""
+    lh = font.size * 1.25
+    half = 420
+    for i, t in enumerate(lines):
+        tmp = Image.new("RGBA", (2 * half, 2 * half), (0, 0, 0, 0))
+        ImageDraw.Draw(tmp).text((half, half + (i + 0.5 - len(lines) / 2) * lh), t, font=font, fill=fill, anchor="mm",
+                                 stroke_width=4 if stroke else 0, stroke_fill=stroke)
+        tmp = tmp.rotate(deg, Image.BICUBIC)
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        layer.paste(tmp, (int(cx - half), int(cy - half)), tmp)
+        x1, y1, x2, y2 = layer.getbbox()
+        # распознавание отдаёт прямую рамку наклонённой строки
+        truth.append(TextLine(Box(x1, y1, x2 - x1, y2 - y1), t))
+        img.paste(layer, (0, 0), layer)
+
+
+def tilted_page(w: int = 800, h: int = 950) -> tuple[Image.Image, list[TextLine]]:
+    """Страница, где реплики и звук стоят под разными углами."""
+    img = background(w, h, 9)
+    d = ImageDraw.Draw(img)
+    truth: list[TextLine] = []
+    for kind, box, lines, deg, size, ink in TILTED:
+        f = font_for("en", size)
+        if kind == "free":
+            write_tilted(img, lines, box[0], box[1], deg, f, ink, truth, stroke=(40, 20, 10))
+            continue
+        if kind == "bubble":
+            d.ellipse(box, fill=(252, 252, 250), outline="black", width=4)
+        else:
+            d.rectangle(box, fill=(35, 30, 45), outline=(200, 190, 160), width=3)
+        write_tilted(img, lines, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, deg, f, ink, truth)
     return img, truth
 
 
@@ -150,6 +202,7 @@ def main() -> int:
         strip.paste(im, (0, 1150 * i))
         truth += [TextLine(Box(l.box.x, l.box.y + 1150 * i, l.box.w, l.box.h), l.text) for l in tr]
     pages["03_strip.png"] = (strip, truth)
+    pages["04_tilt_en.png"] = tilted_page()
     for name, (im, tr) in pages.items():
         im.save(chapter / name)
 
@@ -183,6 +236,7 @@ def main() -> int:
 
     proj = Project.open(chapter)
     report = [f"font: {fonts.name_of(fonts.default_font())} ({fonts.default_font()})"]
+    tilt_bad: list[str] = []
     for pg in proj.pages:
         if not REAL:
             current["page"] = (pg.file, pages[pg.file])
@@ -204,12 +258,23 @@ def main() -> int:
                       f"overflow {n_over}, error '{pg.error}'")
         for b in pg.blocks:
             lay = r.layouts.get(b.id)
+            tilt = f" tilt {b.angle:+.0f}" if b.angle else ""
             report.append(f"   [{b.kind:6}] {b.source[:30]!r} -> {b.translation[:30]!r} "
-                          f"size {lay.size if lay else '-'} lines {len(lay.lines) if lay else 0}")
+                          f"size {lay.size if lay else '-'} lines {len(lay.lines) if lay else 0}{tilt}")
+            if "_tilt" in pg.file and b.source.split():
+                want = TILT_WANT.get(b.source.split()[0])
+                if want is None or abs(b.angle - want) > 2:
+                    tilt_bad.append(f"{b.source[:20]!r}: tilt {b.angle:+.0f}, expected {want}")
+            elif b.angle:
+                tilt_bad.append(f"{pg.file} {b.source[:20]!r}: straight text got tilt {b.angle:+.0f}")
     proj.save()
     again = Project.open(chapter)
     ok = [len(p.blocks) for p in again.pages] == [len(p.blocks) for p in proj.pages]
     report.append(f"project reload ok: {ok}")
+    report.append("tilt ok: True" if not tilt_bad else "tilt ok: False — " + "; ".join(tilt_bad))
+    if not REAL:
+        # с настоящим распознаванием это отчёт, а не проверка: рамки строк там другие
+        ok = ok and not tilt_bad
     text = "\n".join(report)
     print(text)
     (out / "report_studio.txt").write_text(text, encoding="utf-8")

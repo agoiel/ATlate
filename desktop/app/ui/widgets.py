@@ -833,6 +833,10 @@ class Stepper(QWidget):
         self.out.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.out.setMinimumWidth(56)
         self.out.setStyleSheet("font-weight: 600;")
+        for b in (minus, plus):
+            b.setAutoRepeat(True)       # можно держать кнопку нажатой
+            b.setAutoRepeatDelay(350)
+            b.setAutoRepeatInterval(60)
         minus.clicked.connect(lambda: self._change(-step))
         plus.clicked.connect(lambda: self._change(step))
         lay.addWidget(minus)

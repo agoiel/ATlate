@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from PIL import Image
 
@@ -48,5 +50,8 @@ class EasyOcrBackend(OcrBackend):
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
             box = Box(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
-            out.append(TextLine(box=box.scaled(1 / k), text=text, conf=float(conf)))
+            # четыре угла рамки идут по часовой стрелке от левого верхнего: верхняя сторона — наклон строки
+            angle = -math.degrees(math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]))
+            out.append(TextLine(box=box.scaled(1 / k), text=text, conf=float(conf),
+                                angle=angle if abs(angle) <= 60 else None))
         return out
