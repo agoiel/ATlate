@@ -35,6 +35,14 @@ def _y_overlap(a: Box, b: Box) -> float:
     return min(a.y2, b.y2) - max(a.y, b.y)
 
 
+def _same_tilt(a: TextLine, b: TextLine, limit: float = 12.0) -> bool:
+    """Строки с заметно разным наклоном — это разные надписи, даже если стоят рядом.
+
+    Наклон строки известен не всегда (тогда None) — в этом случае не мешаем склейке.
+    """
+    return a.angle is None or b.angle is None or abs(a.angle - b.angle) <= limit
+
+
 def _height_ok(a: Box, b: Box, max_ratio: float = 1.9) -> bool:
     hi, lo = max(a.h, b.h), max(1.0, min(a.h, b.h))
     return hi / lo <= max_ratio
@@ -175,7 +183,7 @@ def group_lines(
         a = lines[i].box
         for j in range(i + 1, n):
             b = lines[j].box
-            if not _height_ok(a, b):
+            if not _height_ok(a, b) or not _same_tilt(lines[i], lines[j]):
                 continue
             hmin = min(a.h, b.h)
 

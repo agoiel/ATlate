@@ -8,12 +8,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .. import languages, sysload
+from .. import angle, languages, sysload
 from ..bubbles import group_lines
 from ..models import Box, TextLine
 from ..ocr import enhance
 from ..pipeline import Pipeline
-from . import angle
 from .clean import clean_page
 from .project import Block, Page, Project
 from .typeset import Layout, typeset_page
@@ -87,20 +86,10 @@ def detect(pipeline: Pipeline, arr: np.ndarray, checkpoint=None) -> list[Block]:
 
 def find_angle(arr: np.ndarray, blk: Block, lines: list[TextLine], joiner: str, lang: str) -> None:
     """Наклон оригинала: перевод встанет под тем же углом. Заодно правит порядок наклонённых строк."""
-    hints = [ln.angle for ln in lines]
-    blk.angle, blk.line_h = angle.detect(arr, blk.box, blk.lines, blk.kind, blk.bg, hints)
-    if blk.angle and blk.kind == "free":
-        # прямая рамка наклонённой реплики вылезает за облако, и оно кажется «рисунком» —
-        # проверяем фон ещё раз, по наклонённой рамке
-        lh = blk.line_h or angle.line_height(blk.lines, blk.angle)
-        uniform, color = angle.ring_stats(arr, blk.box, blk.angle, max(3.0, 0.4 * lh))
-        if uniform >= 0.8:
-            blk.kind = "bubble" if sum(color) / 3 >= 170 else "box"
-            blk.bg = color
-            found = angle.detect(arr, blk.box, blk.lines, blk.kind, blk.bg, hints)
-            if found[0]:
-                blk.angle, blk.line_h = found
-    blk.src_angle = blk.angle
+    tilt = angle.find(arr, blk.box, blk.lines, blk.kind, blk.bg, [ln.angle for ln in lines])
+    blk.angle = blk.src_angle = tilt.angle
+    blk.line_h = tilt.line_h if tilt.angle else 0.0
+    blk.kind, blk.bg = tilt.kind, tilt.bg
     if blk.angle and len(lines) > 1:
         text = angle.join(lines, blk.angle, blk.line_h, joiner)
         if text:

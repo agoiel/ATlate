@@ -13,7 +13,7 @@ from statistics import median
 import numpy as np
 
 from ..models import Box
-from . import angle
+from .. import angle
 from .project import Block
 
 

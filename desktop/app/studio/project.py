@@ -59,7 +59,7 @@ class Block:
         """Высота строки оригинала: у наклонённого текста рамки строк выше самих строк."""
         from statistics import median
 
-        from . import angle
+        from .. import angle
         if self.line_h > 0:
             return self.line_h
         lines = self.lines or [self.box]

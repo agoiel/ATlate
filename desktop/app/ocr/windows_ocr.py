@@ -15,7 +15,7 @@ from PIL import Image
 
 from .. import languages
 from ..models import Box, TextLine
-from ..studio.angle import words_angle
+from ..angle import words_angle
 from .base import OcrBackend, OcrError, OcrLanguageMissing
 
 # Имена компонентов Windows с OCR для каждого языка

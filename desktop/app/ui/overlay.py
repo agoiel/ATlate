@@ -106,18 +106,32 @@ def paint_plates(p: QPainter, bubbles, k: float, bounds: QRect, cfg) -> None:
     for b in bubbles:
         if not b.translation:
             continue
-        box = b.box.scaled(1 / k)
-        line_h = max(8.0, (sum(l.box.h for l in b.lines) / len(b.lines)) / k)
+        tilted = bool(b.angle) and b.tilt_size[0] > 0 and bool(cfg.get("keep_tilt", True))
+        if tilted:
+            # наклонённый текст: плашка того же размера и под тем же углом, что и оригинал;
+            # рисуется в своей системе — центр текста в нуле, строки горизонтальны
+            bw, bh = b.tilt_size[0] / k, b.tilt_size[1] / k
+            cx, cy = b.tilt_center[0] / k, b.tilt_center[1] / k
+            line_h = max(8.0, b.line_h / k)
+        else:
+            box = b.box.scaled(1 / k)
+            bw, bh, cx, cy = box.w, box.h, box.cx, box.cy
+            line_h = max(8.0, (sum(l.box.h for l in b.lines) / len(b.lines)) / k)
         screen = b.kind == "screen"
         pad = 2.0 if screen else max(4.0, 0.35 * line_h)
+        if tilted and screen:
+            pad = max(pad, 0.2 * line_h)    # размеры наклонённого текста известны менее точно — берём запас
         # В манхве русский текст длиннее корейского — даём блоку стать шире;
         # обычный текст на экране закрываем точно по месту
-        w = max(box.w + 2 * pad, 24) if screen else max(box.w + 2 * pad, box.w * 1.3, 60)
-        h = box.h + 2 * pad
-        rect = QRect(round(box.cx - w / 2), round(box.cy - h / 2), round(w), round(h))
-        clipped = rect.intersected(bounds.adjusted(1, 1, -1, -1))
-        if not clipped.isEmpty():
-            rect = clipped
+        w = max(bw + 2 * pad, 24) if screen else max(bw + 2 * pad, bw * 1.3, 60)
+        h = bh + 2 * pad
+        if tilted:
+            rect = QRect(round(-w / 2), round(-h / 2), round(w), round(h))
+        else:
+            rect = QRect(round(cx - w / 2), round(cy - h / 2), round(w), round(h))
+            clipped = rect.intersected(bounds.adjusted(1, 1, -1, -1))
+            if not clipped.isEmpty():
+                rect = clipped
 
         size_cap = min(max_size, max(9, int(line_h * 0.9))) if screen else max_size
         font, need_h = _fit(b.translation, rect, family, size_cap)
@@ -138,12 +152,18 @@ def paint_plates(p: QPainter, bubbles, k: float, bounds: QRect, cfg) -> None:
             lum = 0.299 * r + 0.587 * g + 0.114 * bl
             fg = QColor(15, 15, 15) if lum > 140 else QColor(250, 250, 250)
 
+        if tilted:
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(-b.angle)      # у Qt плюс — по часовой стрелке, у нас — против
         path = QPainterPath()
         path.addRoundedRect(QRectF(rect), 3 if screen else 8, 3 if screen else 8)
         p.fillPath(path, bg)
         p.setFont(font)
         p.setPen(fg)
         p.drawText(rect.adjusted(3, 2, -3, -2), _FLAGS, b.translation)
+        if tilted:
+            p.restore()
 
 
 def paint_debug(p: QPainter, dbg, k: float, bounds: QRect, boxes: bool) -> None:

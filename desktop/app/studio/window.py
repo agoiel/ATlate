@@ -20,14 +20,14 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGraphicsItem,
                                QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
                                QScrollArea, QSplitter, QVBoxLayout, QWidget)
 
-from .. import languages, sysload
+from .. import angle, languages, sysload
 from ..bubbles import _ring_stats
 from ..models import Box
 from ..pipeline import Pipeline
 from ..ui import theme
 from ..ui.widgets import (Card, ElideLabel, ScrollContent, Segmented, Select, Stepper, SwitchRow, Toggle, caption,
                           label, pill)
-from . import angle, engine, fonts
+from . import engine, fonts
 from .project import ARCHIVE_EXT, IMAGE_EXT, Block, Page, Project
 
 KIND_NAMES = {"bubble": "Облако", "box": "Плашка", "free": "Надпись"}

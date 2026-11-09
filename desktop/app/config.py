@@ -32,6 +32,7 @@ DEFAULTS: dict = {
     "bubble_border_check": True,      # не склеивать строки, если между ними контур облака
     "skip_free_text": False,          # пропускать текст поверх рисунка (звуки и т.п.)
     "skip_cut_bubbles": True,         # пропускать текст, обрезанный краем области
+    "keep_tilt": True,                # перевод под тем же углом, что и наклонённый оригинал
 
     # --- Перевод ---
     "translator": "google_free",      # google_free | yandex | duckduckgo | lingva | deepl | microsoft |

@@ -10,15 +10,16 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from statistics import median
 
 import numpy as np
 
-from ..models import Box, TextLine
+from .models import Box, TextLine
 
 MAX_ANGLE = 45.0        # круче — это уже вертикальный текст, его не трогаем
 MIN_ANGLE = 3.0         # меньше — считаем текст ровным (чтобы ровные реплики не «плясали»)
-_SAMPLE = 20000
+_SAMPLE = 6000
 
 
 # ---------------------------------------------------------------- геометрия
@@ -222,6 +223,60 @@ def adopt(arr: np.ndarray, box: Box, lines: list[Box], kind: str, bg, deg: float
     return float(deg), round(lh, 1)
 
 
+@dataclass
+class Tilt:
+    """Наклон блока текста и его настоящие размеры (у ровного текста angle = 0)."""
+
+    angle: float = 0.0
+    line_h: float = 0.0            # высота строки
+    length: float = 0.0            # размеры всего текста: вдоль строк и поперёк
+    thick: float = 0.0
+    cx: float = 0.0                # центр текста на картинке
+    cy: float = 0.0
+    kind: str = ""                 # тип фона, уточнённый по наклонённой рамке
+    bg: tuple = (255, 255, 255)
+
+
+def extent(lines: list[Box], deg: float, lh: float) -> tuple[float, float, float, float]:
+    """Размеры и центр наклонённого блока по его строкам: (длина, толщина, cx, cy).
+
+    Каждая строка — наклонённая полоса высотой lh с центром в центре своей прямой рамки.
+    """
+    us, ts = [], []
+    for ln in lines:
+        pts = corners(ln, deg, thick=lh)
+        for x, y in pts:
+            u, t = to_frame(x, y, deg)
+            us.append(u)
+            ts.append(t)
+    cu, ct = (min(us) + max(us)) / 2, (min(ts) + max(ts)) / 2
+    cx, cy = from_frame(cu, ct, deg)
+    return max(us) - min(us), max(ts) - min(ts), cx, cy
+
+
+def find(arr: np.ndarray, box: Box, lines: list[Box], kind: str, bg,
+         hints: list[float] | None = None) -> Tilt:
+    """Наклон блока со всем, что из него следует: размеры текста и уточнённый тип фона."""
+    deg, lh = detect(arr, box, lines, kind, bg, hints)
+    out = Tilt(kind=kind, bg=tuple(bg))
+    if not deg:
+        return out
+    if kind == "free":
+        # прямая рамка наклонённой реплики вылезает за облако, и оно кажется «рисунком» —
+        # проверяем фон ещё раз, по наклонённой рамке
+        uniform, color = ring_stats(arr, box, deg, max(3.0, 0.4 * (lh or line_height(lines, deg))))
+        if uniform >= 0.8:
+            out.kind = "bubble" if sum(color) / 3 >= 170 else "box"
+            out.bg = color
+            again = detect(arr, box, lines, out.kind, out.bg, hints)
+            if again[0]:
+                deg, lh = again
+    out.angle = deg
+    out.line_h = lh or line_height(lines or [box], deg)
+    out.length, out.thick, out.cx, out.cy = extent(lines or [box], deg, out.line_h)
+    return out
+
+
 def words_angle(rects: list[tuple[float, float, float, float]]) -> float | None:
     """Наклон строки по рамкам её слов (x, y, w, h): центры слов лежат вдоль строки.
 
@@ -251,7 +306,7 @@ def join(lines: list[TextLine], deg: float, lh: float, joiner: str) -> str:
     Прямые рамки наклонённых строк налезают друг на друга, и обычная сборка путает,
     какая строка выше. Поэтому строки сначала «выпрямляются».
     """
-    from ..bubbles import _join_lines
+    from .bubbles import _join_lines
 
     lh = lh or line_height([l.box for l in lines], deg)
     flat = []

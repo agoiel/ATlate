@@ -15,7 +15,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from ..models import Box
-from . import angle, fonts
+from .. import angle
+from . import fonts
 from .project import Block, Style
 
 
