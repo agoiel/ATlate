@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
 from .. import __version__, languages, titles
-from ..capture import Region, grab_region
+from ..capture import Region, find_screen, grab_region
 from ..config import GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
 from ..models import PageResult
@@ -29,6 +29,7 @@ from ..pipeline import Pipeline
 from . import theme
 from .glossary_editor import GlossaryEditor, new_glossary_file
 from .list_window import ListWindow
+from .mini import MiniPanel
 from .overlay import OverlayWindow, paint_plates
 from .selector import SelectionWindow
 from .widgets import (Card, Columns, Dropdown, Field, FlowLayout, Hero, ResponsiveRow, Segmented, StatusChip,
@@ -162,6 +163,7 @@ class MainWindow(QWidget):
         self._jobs: set[_Job] = set()
         self.live_on = False
         self._file_image: Image.Image | None = None
+        self.mini: MiniPanel | None = None      # панель компактного режима (создаётся при первом входе)
 
         self.setWindowTitle(f"ATlate {__version__}")
         self.setObjectName("root")
@@ -265,6 +267,11 @@ class MainWindow(QWidget):
         self.pin.setChecked(bool(self.cfg.get("always_on_top", False)))
         self.pin.setFixedSize(QSize(44, 40))
         self.pin.toggled.connect(self._toggle_on_top)
+        self.btn_mini = pill("", "heroOutline", "compact",
+                             "Компактный режим: вместо окна — маленькая панель поверх экрана")
+        self.btn_mini.setFixedSize(QSize(44, 40))
+        self.btn_mini.clicked.connect(self.enter_mini)
+        brand.addWidget(self.btn_mini, 0, Qt.AlignmentFlag.AlignTop)
         brand.addWidget(self.pin, 0, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(brand)
 
@@ -675,10 +682,13 @@ class MainWindow(QWidget):
              float(c["overlay_opacity"]), 0.05, 0.3, 1.0, lambda v: f"{int(v * 100)} %"),
             ("Live: проверка экрана", "Как часто смотреть, остановилась ли страница", "auto_interval_ms",
              float(c["auto_interval_ms"]), 100, 300, 5000, lambda v: f"{int(v)} мс"),
+            ("Компактная панель", "Через сколько сворачивается, когда мышь ушла", "mini_collapse_delay",
+             float(c.get("mini_collapse_delay", 5)), 1, 0, 30, lambda v: f"{int(v)} с"),
         ):
             st = Stepper(title, sub, val, step, lo, hi, fmt)
             st.changed.connect(lambda v, k=key: self._set(k, int(v) if k in ("overlay_max_font_size",
-                                                                                "auto_interval_ms") else v))
+                                                                                "auto_interval_ms",
+                                                                                "mini_collapse_delay") else v))
             card.add(st)
 
         for title, sub, key in (
@@ -703,7 +713,8 @@ class MainWindow(QWidget):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
         for i, (key, title) in enumerate((("select", "Выделить область"), ("translate", "Перевести"),
-                                          ("toggle", "Показать или скрыть перевод"), ("auto", "Live вкл/выкл"))):
+                                          ("toggle", "Показать или скрыть перевод"), ("auto", "Live вкл/выкл"),
+                                          ("mini", "Компактный режим"))):
             f = Field(title, hk.get(key, ""), "<alt>+q")
             f.edited.connect(lambda v, k=key: self._set_hotkey(k, v))
             grid.addWidget(f, i // 2, i % 2)
@@ -836,6 +847,8 @@ class MainWindow(QWidget):
             self.auto_timer.start(int(value))
         if key in ("overlay_max_font_size", "overlay_opacity"):
             self.overlay.update()
+        if key == "mini_collapse_delay" and self.mini is not None:
+            self.mini.collapse_delay = float(value)
         self._refresh_status()
 
     def _set_key(self, translator: str, key: str, value: str) -> None:
@@ -921,11 +934,101 @@ class MainWindow(QWidget):
                               f"{hk.get('auto', '')} — Live")
         self.mode_switch.select("live" if live else "shot")
         self.btn_zone.setEnabled(self.region is not None)
+        self._sync_mini()
 
-    def _set_status(self, text: str, error: bool = False) -> None:
+    def _set_status(self, text: str, error: bool = False, notify: bool = False) -> None:
         color = "#FFB4A8" if error else theme.CREAM
         self.status.setStyleSheet(f"color: {color}; background: transparent; font-weight: 600;")
         self.status.setText(text)
+        if (error or notify) and self.in_mini:
+            # в компактном режиме окна со статусом не видно — показываем сообщение у панели
+            self.mini.toast(text, error)
+
+    def _set_busy(self, on: bool) -> None:
+        self.busy = on
+        self._sync_mini()
+
+    # ================================================================ компактный режим
+    @property
+    def in_mini(self) -> bool:
+        return self.mini is not None and self.mini.isVisible()
+
+    def _mini_state(self) -> dict:
+        return {
+            "live_mode": self.cfg.get("translate_mode", "shot") == "live",
+            "live_on": self.live_on,
+            "busy": self.busy,
+            "has_region": self.region is not None,
+            "overlay_visible": self.overlay.isVisible() and not self.overlay.user_hidden,
+            "zone_visible": self.overlay.show_frame,
+        }
+
+    def _sync_mini(self) -> None:
+        if self.in_mini:
+            self.mini.refresh()
+
+    def enter_mini(self) -> None:
+        """Спрятать большое окно и оставить маленькую панель поверх экрана."""
+        if self.mini is None:
+            self.mini = MiniPanel(self._mini_state, float(self.cfg.get("mini_collapse_delay", 5)))
+            self.mini.triggered.connect(self._mini_action)
+            self.mini.moved.connect(self._mini_moved)
+        self.mini.collapse_delay = float(self.cfg.get("mini_collapse_delay", 5))
+        self.mini.place(self.cfg.get("mini_pos"))
+        self.mini.show()
+        self.mini.refresh()
+        self.hide()
+        if not self.cfg.get("mini_mode"):
+            self.cfg["mini_mode"] = True
+            self.cfg.save()
+
+    def exit_mini(self) -> None:
+        if self.mini is not None:
+            self.mini.hide()
+        if self.cfg.get("mini_mode"):
+            self.cfg["mini_mode"] = False
+            self.cfg.save()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _mini_moved(self, x: int, y: int) -> None:
+        self.cfg["mini_pos"] = [x, y]
+        self.cfg.save()
+
+    def _mini_action(self, key: str) -> None:
+        if key == "main":
+            self._main_action()
+        elif key == "mode":
+            self._set_mode("shot" if self.cfg.get("translate_mode") == "live" else "live")
+        elif key == "toggle":
+            self.toggle_overlay()
+        elif key == "zone_new":
+            self.start_selection()
+        elif key == "zone_show":
+            self.show_zone(hold=True)
+        elif key == "zone_hide":
+            self._hide_zone()
+        elif key == "full":
+            self.exit_mini()
+        elif key == "quit":
+            self.close()
+        self._sync_mini()
+
+    def _mini_in_shot(self) -> bool:
+        """Попадёт ли панель в снимок области (если Windows не умеет скрывать окно от снимков)."""
+        if not self.in_mini or self.region is None:
+            return False
+        geo = find_screen(self.region.screen).geometry()
+        zone = QRect(geo.x() + self.region.x, geo.y() + self.region.y, self.region.w, self.region.h)
+        m = self.mini
+        return (not m.excluded and m.geometry().intersects(zone)) or \
+            (m.bar.isVisible() and not m.bar.excluded and m.bar.frameGeometry().intersects(zone))
+
+    def _mini_hide_for_shot(self, hide: bool) -> None:
+        self.mini.setWindowOpacity(0.0 if hide else 1.0)
+        if hide:
+            self.mini.bar.hide()
 
     # ================================================================ горячие клавиши
     def _start_hotkeys(self) -> None:
@@ -967,6 +1070,11 @@ class MainWindow(QWidget):
             if self.cfg.get("translate_mode") != "live":
                 self._set_mode("live")
             self.set_live(not self.live_on)
+        elif action == "mini":
+            if self.in_mini:
+                self.exit_mini()
+            else:
+                self.enter_mini()
 
     def _main_action(self) -> None:
         if self.cfg.get("translate_mode") == "live":
@@ -978,6 +1086,8 @@ class MainWindow(QWidget):
     def start_selection(self) -> None:
         if self.selector is not None:
             return
+        if self.in_mini:
+            self.mini.collapse()        # раскрытая панель и планка мешали бы выделять
         was_visible = self.overlay.isVisible()
         self.overlay.hide()
         self.selector = SelectionWindow(bool(self.cfg.get("full_width_select", False)))
@@ -1004,7 +1114,8 @@ class MainWindow(QWidget):
         else:
             QTimer.singleShot(50, self.translate_now)
 
-    def show_zone(self) -> None:
+    def show_zone(self, hold: bool = False) -> None:
+        """Показать рамку зоны: на пару секунд или (hold) пока её не скроют."""
         if not self.region:
             self._set_status("Область ещё не выделена.", True)
             return
@@ -1013,11 +1124,17 @@ class MainWindow(QWidget):
         self.overlay.user_hidden = False
         self.overlay.show()
         self.overlay.update()
-        self.zone_timer.start(2500)
+        if hold:
+            self.zone_timer.stop()
+        else:
+            self.zone_timer.start(2500)
+        self._sync_mini()
 
     def _hide_zone(self) -> None:
+        self.zone_timer.stop()
         self.overlay.show_frame = False
         self.overlay.update()
+        self._sync_mini()
 
     # ================================================================ перевод
     def translate_now(self) -> None:
@@ -1026,21 +1143,28 @@ class MainWindow(QWidget):
             return
         if self.busy:
             return
-        # Если окно перевода не скрыто от снимков — прячем его на время снимка
-        if self.overlay.isVisible() and not self.overlay.excluded:
-            self.overlay.hide()
-            QTimer.singleShot(120, lambda: self._grab_and_run(restore=True))
+        # Если окно перевода (или компактная панель) не скрыто от снимков — прячем на время снимка
+        hide_overlay = self.overlay.isVisible() and not self.overlay.excluded
+        hide_mini = self._mini_in_shot()
+        if hide_overlay or hide_mini:
+            if hide_overlay:
+                self.overlay.hide()
+            if hide_mini:
+                self._mini_hide_for_shot(True)
+            QTimer.singleShot(120, lambda: self._grab_and_run(hide_overlay, hide_mini))
         else:
-            self._grab_and_run(restore=False)
+            self._grab_and_run(False, False)
 
-    def _grab_and_run(self, restore: bool) -> None:
+    def _grab_and_run(self, restore: bool, restore_mini: bool = False) -> None:
         image, k = grab_region(self.region)
         if restore and not self.overlay.user_hidden:
             self.overlay.show()
+        if restore_mini and self.mini is not None:
+            self._mini_hide_for_shot(False)
         self._run(image, k)
 
     def _run(self, image: Image.Image, k: float, token=None, live: bool = False) -> None:
-        self.busy = True
+        self._set_busy(True)
         self._token += 1
         self._set_status("Распознаю и перевожу…")
         job = _Job(self.pipeline, image, k, token if token is not None else self._token, live)
@@ -1051,7 +1175,7 @@ class MainWindow(QWidget):
         self.pool.start(job)
 
     def _on_done(self, result: PageResult, k: float, token) -> None:
-        self.busy = False
+        self._set_busy(False)
         self._jobs.clear()
         if token == "file":
             self._report(result)
@@ -1066,6 +1190,7 @@ class MainWindow(QWidget):
                 self.list_window.show()
         self._report(result)
         self._fill_titles_counts()
+        self._sync_mini()
 
     def _fill_titles_counts(self) -> None:
         """Обновить число сохранённых реплик у активного тайтла."""
@@ -1075,7 +1200,7 @@ class MainWindow(QWidget):
             self.title_combo.setItemText(i, f"{t.name} · {len(t.history)} реплик")
 
     def _on_failed(self, tb: str) -> None:
-        self.busy = False
+        self._set_busy(False)
         self._jobs.clear()
         self._set_status("Непредвиденная ошибка, подробности в error.log", True)
         (ROOT / "error.log").write_text(tb, encoding="utf-8")
@@ -1099,7 +1224,7 @@ class MainWindow(QWidget):
             parts.append(result.debug.summary())
         if not result.bubbles:
             parts = ["Текст не найден. Попробуйте режим распознавания «Тщательный» или «Максимальный»."]
-        self._set_status(" · ".join(parts))
+        self._set_status(" · ".join(parts), notify=not result.bubbles)
 
     # ================================================================ режим Live
     def set_live(self, on: bool) -> None:
@@ -1121,14 +1246,20 @@ class MainWindow(QWidget):
         if self.busy or self.region is None or self.selector is not None:
             return
         hidden = False
+        hidden_mini = self._mini_in_shot()
+        if hidden_mini:
+            self._mini_hide_for_shot(True)
         if self.overlay.isVisible() and not self.overlay.excluded:
             # Без скрытия от снимков приходится прятать окно — будет лёгкое мигание
             self.overlay.hide()
-            QApplication.processEvents()
             hidden = True
+        if hidden or hidden_mini:
+            QApplication.processEvents()
         image, k = grab_region(self.region)
         if hidden and not self.overlay.user_hidden:
             self.overlay.show()
+        if hidden_mini:
+            self._mini_hide_for_shot(False)
         thumb = np.asarray(image.convert("L").resize((64, max(1, int(64 * image.height / max(1, image.width))))),
                            dtype=np.int16)
         changed = self._last_thumb is None or self._last_thumb.shape != thumb.shape \
@@ -1176,6 +1307,7 @@ class MainWindow(QWidget):
                 self.overlay.show()
             if mode in ("list", "both"):
                 self.list_window.show()
+        self._sync_mini()
 
     def reset_session(self) -> None:
         tid = self.cfg.get("active_title", "")
@@ -1284,6 +1416,8 @@ class MainWindow(QWidget):
         self.cfg.save()
         self.auto_timer.stop()
         self._stop_hotkeys()
+        if self.mini is not None:
+            self.mini.shutdown()
         self.overlay.close()
         self.list_window.close()
         super().closeEvent(e)
@@ -1414,7 +1548,10 @@ def run_gui() -> int:
     app, cfg = create_app()
     app.setQuitOnLastWindowClosed(False)
     win = MainWindow(cfg)
-    win.show()
+    if cfg.get("mini_mode"):
+        win.enter_mini()        # в прошлый раз программу закрыли в компактном режиме
+    else:
+        win.show()
     return app.exec()
 
 
