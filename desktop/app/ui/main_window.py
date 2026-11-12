@@ -1021,14 +1021,10 @@ class MainWindow(QWidget):
             return False
         geo = find_screen(self.region.screen).geometry()
         zone = QRect(geo.x() + self.region.x, geo.y() + self.region.y, self.region.w, self.region.h)
-        m = self.mini
-        return (not m.excluded and m.geometry().intersects(zone)) or \
-            (m.bar.isVisible() and not m.bar.excluded and m.bar.frameGeometry().intersects(zone))
+        return not self.mini.excluded and self.mini.visible_rect().intersects(zone)
 
     def _mini_hide_for_shot(self, hide: bool) -> None:
         self.mini.setWindowOpacity(0.0 if hide else 1.0)
-        if hide:
-            self.mini.bar.hide()
 
     # ================================================================ горячие клавиши
     def _start_hotkeys(self) -> None:
@@ -1087,7 +1083,7 @@ class MainWindow(QWidget):
         if self.selector is not None:
             return
         if self.in_mini:
-            self.mini.collapse()        # раскрытая панель и планка мешали бы выделять
+            self.mini.collapse()        # раскрытая панель мешала бы выделять
         was_visible = self.overlay.isVisible()
         self.overlay.hide()
         self.selector = SelectionWindow(bool(self.cfg.get("full_width_select", False)))
