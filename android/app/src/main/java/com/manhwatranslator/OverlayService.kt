@@ -22,6 +22,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.I18n
+import com.manhwatranslator.core.Languages
 import com.manhwatranslator.core.PageResult
 import com.manhwatranslator.core.Timings
 import com.manhwatranslator.core.tr
@@ -496,6 +497,9 @@ class OverlayService : Service() {
         when {
             res.blankFrame -> { if (fromLive) setLive(false); toast(res.error) }
             res.error.isNotEmpty() -> toast(res.error)
+            // автоопределение переключило язык — говорим об этом один раз, в момент смены
+            res.detectedLang.isNotEmpty() ->
+                toast(trf("Язык оригинала: %s", Languages.src(res.detectedLang).name.substringBefore(" (").lowercase()))
             fromLive -> {}   // в Live не мешаем чтению сообщениями
             res.bubbles.isEmpty() -> toast(tr("Текст не найден в выделенной области") + diag)
             res.bubbles.none { it.translation.isNotBlank() } -> toast(tr("Нечего переводить") + diag)

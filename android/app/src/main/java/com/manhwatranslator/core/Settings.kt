@@ -9,6 +9,8 @@ class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     var sourceLang by str("source_lang", "ko")
+    /** Язык оригинала определяется сам; sourceLang тогда — последний найденный язык */
+    var autoLang by bool("auto_lang", false)
     var targetLang by str("target_lang", "ru")
     /** Язык интерфейса: system | ru | en */
     var uiLang by str("ui_lang", "system")
