@@ -95,6 +95,8 @@ class PageResult:
     missing_ocr_lang: str = ""
     # Сколько строк нашло распознавание (до сборки в облака)
     line_count: int = 0
+    # Автоопределение языка: какой язык выбран в этот раз (пусто — язык не менялся)
+    detected_lang: str = ""
     # Подробности для режима разработчика
     debug: "DebugInfo | None" = None
 
@@ -135,6 +137,7 @@ class DebugInfo:
     bubbles: int = 0
     cache_hits: int = 0
     error: str = ""
+    note: str = ""      # дополнительная строка отчёта (например, оценки автоопределения языка)
 
     def summary(self) -> str:
         mode = f"параллельно ×{self.threads}" if self.threads > 1 else "по очереди"
@@ -155,6 +158,8 @@ class DebugInfo:
         if self.cache_hits:
             line += f" · из кэша {self.cache_hits}"
         out.append(line)
+        if self.note:
+            out.append(self.note)
         errors = sorted({p.error for p in self.passes if p.error})
         if errors:
             out.append("Ошибки проходов:")

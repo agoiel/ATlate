@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image
 
-from . import angle, languages, titles
+from . import angle, autolang, languages, titles
 from .bubbles import group_lines
 from .config import GLOSSARY_DIR, Config
 from .glossary import Glossary
@@ -67,6 +67,9 @@ class Pipeline:
         self.history: deque[tuple[str, str]] = deque(maxlen=titles.MAX_HISTORY)
         self._title_id: str | None = None
         self._pool: ThreadPoolExecutor | None = None
+        # автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
+        self._auto_ok = False
+        self._auto_note = ""
 
     # ------------------------------------------------------------ сессия и тайтлы
     def reset_session(self) -> None:
@@ -74,6 +77,7 @@ class Pipeline:
         self.cache.clear()
         self.history.clear()
         self._title_id = None
+        self.reset_auto()
 
     def _sync_title(self) -> None:
         """Подгрузить контекст активного тайтла, если тайтл сменился."""
@@ -133,6 +137,77 @@ class Pipeline:
                 except (OSError, ValueError):
                     self.glossary = None
         return self.glossary
+
+    # ------------------------------------------------------------ автоопределение языка
+    def reset_auto(self) -> None:
+        """Язык на экране мог смениться (новая область, другой тайтл) — проверить заново."""
+        self._auto_ok = False
+
+    def _pick_language(self, image: Image.Image, current: str, result: PageResult) -> str:
+        """Пробное распознавание всеми доступными языками; возвращает выбранный язык.
+
+        Если уверенно сказать нельзя (текста мало), остаётся текущий язык.
+        """
+        ocr = self.ocr
+        cands = ocr.available_languages(list(languages.SOURCE_LANGUAGES))
+        if not cands:
+            return current
+        if len(cands) == 1:
+            best, scores = cands[0], {}
+        else:
+            def read(code: str) -> str:
+                try:
+                    return " ".join(ln.text for ln in ocr.recognize(image, code))
+                except OcrError:
+                    return ""
+
+            if ocr.supports_parallel and bool(self.cfg.get("parallel_ocr", True)):
+                if self._pool is None:
+                    self._pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="ocr")
+                texts = dict(zip(cands, self._pool.map(read, cands)))
+            else:
+                texts = {c: read(c) for c in cands}
+            best, scores = autolang.choose(texts, current)
+        names = {c: languages.src(c)["name"].split(" (")[0].lower() for c in cands}
+        self._auto_note = "Язык: " + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
+            + f" → {names.get(best, 'не определён')}"
+        if best is None:
+            # текста слишком мало; но язык без установленного распознавания оставлять нельзя
+            best = current if current in cands else cands[0]
+        if best != current:
+            self.cfg["source_lang"] = best
+            result.detected_lang = best
+        return best
+
+    def _recognize_auto(self, image: Image.Image, lang: str, mode: str, live: bool,
+                        result: PageResult) -> tuple[str, tuple]:
+        """Распознавание с автоопределением языка → (язык, итог recognize).
+
+        Проба всеми языками делается не каждый раз, а только когда язык ещё не подтверждён
+        или когда текст вышел непохожим на выбранный язык (или не нашёлся совсем).
+        """
+        parallel = bool(self.cfg.get("parallel_ocr", True))
+        self._auto_note = ""
+        probed = False
+        if not self._auto_ok:
+            lang = self._pick_language(image, lang, result)
+            probed = True
+        out = self.recognize(image, lang, mode, parallel, live)
+        state = autolang.fit(" ".join(ln.text for ln in out[0]), lang)
+        if state != "good" and not probed:
+            # текст не похож на выбранный язык или его почти нет. Второе бывает и на странице без текста,
+            # и когда текущий распознаватель просто не читает этот язык — отличить нельзя, поэтому
+            # перепроверяем языки (на странице без текста это лишняя работа, но безвредная)
+            new = self._pick_language(image, lang, result)
+            if new != lang:
+                lang = new
+                out = self.recognize(image, lang, mode, parallel, live)
+                state = autolang.fit(" ".join(ln.text for ln in out[0]), lang)
+        if state == "good":
+            self._auto_ok = True
+        elif state == "bad":
+            self._auto_ok = False
+        return lang, out
 
     # ------------------------------------------------------------ распознавание
     def recognize(self, image: Image.Image, lang: str, mode: str, parallel: bool,
@@ -199,10 +274,16 @@ class Pipeline:
         watch = _Stopwatch()
         self._sync_title()
 
+        note = ""
         try:
             mode = cfg.get("ocr_mode", "thorough")
-            lines, passes, mstats, threads = self.recognize(
-                image, lang, mode, bool(cfg.get("parallel_ocr", True)), live)
+            if cfg.get("auto_lang"):
+                lang, (lines, passes, mstats, threads) = self._recognize_auto(image, lang, mode, live, result)
+                info = languages.src(lang)
+                note = self._auto_note
+            else:
+                lines, passes, mstats, threads = self.recognize(
+                    image, lang, mode, bool(cfg.get("parallel_ocr", True)), live)
         except OcrLanguageMissing as e:
             result.error = str(e)
             result.missing_ocr_lang = e.lang
@@ -219,7 +300,8 @@ class Pipeline:
         def debug() -> DebugInfo:
             return DebugInfo(passes=passes, stages=list(watch.stages), total_ms=watch.total(), threads=threads,
                              added=mstats.get("added", 0), replaced=mstats.get("replaced", 0), lines=len(lines),
-                             bubbles=len(result.bubbles), cache_hits=result.cache_hits, error=result.error)
+                             bubbles=len(result.bubbles), cache_hits=result.cache_hits, error=result.error,
+                             note=note)
 
         arr = np.asarray(image.convert("RGB"))
         if screen:

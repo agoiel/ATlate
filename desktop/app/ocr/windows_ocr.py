@@ -99,6 +99,14 @@ class WindowsOcrBackend(OcrBackend):
         engines[lang] = engine
         return engine
 
+    def available_languages(self, codes: list[str]) -> list[str]:
+        """Только языки, для которых в Windows установлено распознавание."""
+        try:
+            available = available_ocr_tags()
+        except Exception:  # noqa: BLE001
+            return []
+        return [c for c in codes if find_ocr_tag(c, available) is not None]
+
     # ------------------------------------------------------------------
     def recognize(self, image: Image.Image, lang: str) -> list[TextLine]:
         from winrt.windows.graphics.imaging import BitmapPixelFormat, SoftwareBitmap

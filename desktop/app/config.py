@@ -17,6 +17,7 @@ GLOSSARY_DIR = ROOT / "glossaries"
 
 DEFAULTS: dict = {
     "source_lang": "ko",
+    "auto_lang": False,               # экранный переводчик сам определяет язык оригинала (source_lang — последний найденный)
     "target_lang": "ru",
 
     # --- Распознавание ---
