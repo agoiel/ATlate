@@ -372,24 +372,6 @@ class OverlayService : Service() {
         updateButton()
     }
 
-    /** Уменьшенная серая копия зоны — для сравнения кадров. */
-    private fun thumb(full: Bitmap, r: Rect): IntArray? {
-        val rr = Rect(r)
-        if (!rr.intersect(0, 0, full.width, full.height) || rr.width() < 10 || rr.height() < 10) return null
-        val crop = Bitmap.createBitmap(full, rr.left, rr.top, rr.width(), rr.height())
-        val w = 48
-        val h = maxOf(1, w * rr.height() / rr.width())
-        val small = Bitmap.createScaledBitmap(crop, w, h, true)
-        if (crop !== full && crop !== small) crop.recycle()
-        val px = IntArray(w * h)
-        small.getPixels(px, 0, w, 0, 0, w, h)
-        small.recycle()
-        return IntArray(px.size) { i ->
-            val c = px[i]
-            (android.graphics.Color.red(c) + android.graphics.Color.green(c) + android.graphics.Color.blue(c)) / 3
-        }
-    }
-
     private fun diff(a: IntArray, b: IntArray): Float {
         if (a.size != b.size) return 255f
         var sum = 0L
@@ -404,10 +386,8 @@ class OverlayService : Service() {
     private fun liveStep() {
         if (!liveOn || busy || selectView != null || menu != null) return
         val region = settings.region ?: return
-        val full = capturer?.capture() ?: return
-        val cur = thumb(full, region)
-        full.recycle()
-        if (cur == null) return
+        // уменьшенная копия зоны читается прямо из кадра — без картинки всего экрана
+        val cur = capturer?.sampleGray(region, 48) ?: return
         if (liveShown) {
             val base = baseThumb
             if (base == null) {

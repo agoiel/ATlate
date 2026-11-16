@@ -71,6 +71,8 @@ class Ocr(private val ctx: Context) {
             try {
                 for (script in allScripts) ocr.install(script)
             } catch (_: Exception) {
+            } finally {
+                ocr.close()     // распознаватели нужны были только чтобы назвать модели — не оставляем их в памяти
             }
         }
 
@@ -80,6 +82,9 @@ class Ocr(private val ctx: Context) {
             try {
                 for (script in scriptsFor(lang)) ocr.install(script)
             } catch (_: Exception) {
+            } finally {
+                // вызывается при каждом открытии главного экрана: без закрытия распознаватели копились бы
+                ocr.close()
             }
         }
     }
