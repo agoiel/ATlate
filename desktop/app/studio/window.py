@@ -114,12 +114,15 @@ class _ChapterJob(QRunnable):
 class _RenderJob(QRunnable):
     """Нарисовать открытую страницу. Клин берётся готовый, если блоки не двигали."""
 
-    def __init__(self, project: Project, page_index: int, token: int, original: np.ndarray | None,
-                 clean: np.ndarray | None):
+    def __init__(self, signals: _Signals, project: Project, page_index: int, token: int,
+                 original: np.ndarray | None, clean: np.ndarray | None, clean_key: tuple):
         super().__init__()
         self.project, self.index, self.token, self.original = project, page_index, token, original
-        self.clean = clean
-        self.signals = _Signals()
+        self.clean, self.clean_key = clean, clean_key
+        # Сигналы общие (живут в окне), а задача удаляется, как только отработала. Со своими сигналами
+        # её приходилось хранить, и Qt держал в памяти все задачи вместе со страницами, на которые они
+        # ссылались: память росла с каждой правкой и каждой открытой страницей.
+        self.signals = signals
 
     def run(self):
         try:
@@ -129,7 +132,7 @@ class _RenderJob(QRunnable):
         except Exception:  # noqa: BLE001
             self.signals.failed.emit(traceback.format_exc())
             return
-        self.signals.rendered.emit(self.index, self.token, (r, images))
+        self.signals.rendered.emit(self.index, self.token, (r, images, self.clean_key))
 
 
 class _ExportJob(QRunnable):
@@ -625,7 +628,10 @@ class StudioWindow(QWidget):
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(2)
         self.job: _ChapterJob | None = None
-        self._jobs: set = set()
+        # сигналы задач отрисовки — одни на всё окно (см. _RenderJob)
+        self.render_signals = _Signals(self)
+        self.render_signals.rendered.connect(self._on_rendered)
+        self.render_signals.failed.connect(self._on_render_failed)
         # миниатюры читаются отдельно, по одной, чтобы не мешать переводу и отрисовке
         self.thumb_pool = QThreadPool(self)
         self.thumb_pool.setMaxThreadCount(1)
@@ -1183,13 +1189,8 @@ class StudioWindow(QWidget):
         key = engine.clean_key(page.blocks)
         cc = self._clean_cache
         clean = cc[2] if cc is not None and cc[0] == self.index and cc[1] == key else None
-        job = _RenderJob(self.project, self.index, self._render_token, self._original, clean)
-        job.clean_key = key
-        job.signals.rendered.connect(self._on_rendered)
-        job.signals.failed.connect(self._on_render_failed)
-        job.setAutoDelete(False)
-        self._jobs.add(job)
-        self.pool.start(job)
+        self.pool.start(_RenderJob(self.render_signals, self.project, self.index, self._render_token,
+                                   self._original, clean, key))
 
     def _render_finished(self) -> None:
         self._render_running = False
@@ -1202,12 +1203,8 @@ class StudioWindow(QWidget):
         self._render_finished()
 
     def _on_rendered(self, index: int, token: int, payload) -> None:
-        # старые задачи отпускаем позже, не во время их же сигнала
-        QTimer.singleShot(0, lambda: self._drop_jobs(token))
-        r, images = payload
-        job = next((j for j in self._jobs if isinstance(j, _RenderJob) and j.token == token), None)
-        if job is not None:
-            self._clean_cache = (index, job.clean_key, r.clean)
+        r, images, clean_key = payload
+        self._clean_cache = (index, clean_key, r.clean)
         if index != self.index or token != self._render_token:
             self._render_finished()
             return
@@ -1219,9 +1216,6 @@ class StudioWindow(QWidget):
             card.set_overflow(bid in over)
         self._show_rendered()
         self._render_finished()
-
-    def _drop_jobs(self, token: int) -> None:
-        self._jobs = {j for j in self._jobs if not (isinstance(j, _RenderJob) and j.token <= token)}
 
     def _show_rendered(self) -> None:
         if self._original is None:

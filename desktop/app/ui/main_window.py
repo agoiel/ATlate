@@ -58,10 +58,18 @@ class _Signals(QObject):
 
 
 class _Job(QRunnable):
-    def __init__(self, pipeline: Pipeline, image: Image.Image, k: float, token, live: bool = False):
+    """Распознать и перевести снимок в фоне.
+
+    Сигналы у всех задач общие (объект живёт в главном окне), а сама задача удаляется, как только
+    отработала. Раньше у каждой задачи были свои сигналы, удалять её было нельзя — и Qt держал
+    в памяти все задачи вместе с их снимками: память росла с каждым переводом.
+    """
+
+    def __init__(self, signals: _Signals, pipeline: Pipeline, image: Image.Image, k: float, token,
+                 live: bool = False):
         super().__init__()
         self.pipeline, self.image, self.k, self.token, self.live = pipeline, image, k, token, live
-        self.signals = _Signals()
+        self.signals = signals
 
     def run(self):
         try:
@@ -78,10 +86,10 @@ class _CompareSignals(QObject):
 class _CompareJob(QRunnable):
     """Распознать зону по очереди и параллельно — для режима разработчика."""
 
-    def __init__(self, pipeline: Pipeline, image: Image.Image):
+    def __init__(self, signals: _CompareSignals, pipeline: Pipeline, image: Image.Image):
         super().__init__()
         self.pipeline, self.image = pipeline, image
-        self.signals = _CompareSignals()
+        self.signals = signals      # общие, как у _Job
 
     def run(self):
         try:
@@ -160,7 +168,12 @@ class MainWindow(QWidget):
         self._last_thumb: np.ndarray | None = None
         self._dirty = False
         self._hotkeys = None
-        self._jobs: set[_Job] = set()
+        # сигналы фоновых задач — одни на всё окно (см. _Job)
+        self.job_signals = _Signals(self)
+        self.job_signals.done.connect(self._handle_done)
+        self.job_signals.failed.connect(self._handle_failed)
+        self.compare_signals = _CompareSignals(self)
+        self.compare_signals.done.connect(self._on_compared)
         self.live_on = False
         self._file_image: Image.Image | None = None
         self.mini: MiniPanel | None = None      # панель компактного режима (создаётся при первом входе)
@@ -853,17 +866,13 @@ class MainWindow(QWidget):
             image, _k = grab_region(self.region)
             if hidden and not self.overlay.user_hidden:
                 self.overlay.show()
-            job = _CompareJob(self.pipeline, image)
-            job.signals.done.connect(self._on_compared)
-            self._jobs.add(job)
-            job.setAutoDelete(False)
+            job = _CompareJob(self.compare_signals, self.pipeline, image)
             self.pool.start(job)
 
         QTimer.singleShot(120 if hidden else 0, go)
 
     def _on_compared(self, text: str) -> None:
         self.busy = False
-        self._jobs.clear()
         self._show_dev(text)
         self._set_status(text.split("\n")[-1])
 
@@ -1216,16 +1225,17 @@ class MainWindow(QWidget):
         self._set_busy(True)
         self._token += 1
         self._set_status("Распознаю и перевожу…")
-        job = _Job(self.pipeline, image, k, token if token is not None else self._token, live)
-        job.signals.done.connect(self._on_done)
-        job.signals.failed.connect(self._on_failed)
-        self._jobs.add(job)
-        job.setAutoDelete(False)
-        self.pool.start(job)
+        self.pool.start(_Job(self.job_signals, self.pipeline, image, k,
+                             token if token is not None else self._token, live))
+
+    def _handle_done(self, result: PageResult, k: float, token) -> None:
+        self._on_done(result, k, token)
+
+    def _handle_failed(self, tb: str) -> None:
+        self._on_failed(tb)
 
     def _on_done(self, result: PageResult, k: float, token) -> None:
         self._set_busy(False)
-        self._jobs.clear()
         if result.detected_lang:
             self._on_language_detected(result.detected_lang)
         if token == "file":
@@ -1252,7 +1262,6 @@ class MainWindow(QWidget):
 
     def _on_failed(self, tb: str) -> None:
         self._set_busy(False)
-        self._jobs.clear()
         self._set_status("Непредвиденная ошибка, подробности в error.log", True)
         (ROOT / "error.log").write_text(tb, encoding="utf-8")
 
