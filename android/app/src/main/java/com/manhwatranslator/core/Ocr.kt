@@ -62,12 +62,29 @@ class Ocr(private val ctx: Context) {
         fun scriptsFor(lang: SourceLang): List<String> =
             if (lang.script == "latin") listOf("latin", "korean") else listOf(lang.script)
 
+        /** Все распознаватели — для автоопределения языка. */
+        val allScripts = listOf("latin", "korean", "japanese", "chinese")
+
+        /** Попросить сервисы Google Play скачать все модели распознавания (нужны для автоопределения языка). */
+        fun requestAllModules(ctx: Context) {
+            val ocr = Ocr(ctx)
+            try {
+                for (script in allScripts) ocr.install(script)
+            } catch (_: Exception) {
+            } finally {
+                ocr.close()     // распознаватели нужны были только чтобы назвать модели — не оставляем их в памяти
+            }
+        }
+
         /** Попросить сервисы Google Play скачать модели распознавания заранее. */
         fun requestModules(ctx: Context, lang: SourceLang) {
             val ocr = Ocr(ctx)
             try {
                 for (script in scriptsFor(lang)) ocr.install(script)
             } catch (_: Exception) {
+            } finally {
+                // вызывается при каждом открытии главного экрана: без закрытия распознаватели копились бы
+                ocr.close()
             }
         }
     }
@@ -147,6 +164,22 @@ class Ocr(private val ctx: Context) {
         // если не сработал ни один распознаватель — показываем ошибку, а не «текст не найден»
         if (merged.isEmpty()) passes.firstOrNull { it.error.isNotEmpty() }?.let { throw OcrException(it.error) }
         return OcrResult(merged, stats, passes, mergeStats, threads)
+    }
+
+    /**
+     * Пробное распознавание для автоопределения языка: исходную картинку читают все распознаватели
+     * сразу. Возвращает «письменность → весь прочитанный текст»; распознаватель, модель которого
+     * ещё не скачана, даёт пустую строку. Вызывать из фонового потока.
+     */
+    fun probe(bitmap: Bitmap): Map<String, String> {
+        val k = Enhance.scaleFor(bitmap.width, bitmap.height)
+        val big = Enhance.scaled(bitmap, k)
+        try {
+            val passes = runVariant("orig", Enhance.Source(big), allScripts, 0, true)
+            return passes.associate { p -> p.script to p.lines.joinToString(" ") { it.text } }
+        } finally {
+            if (big !== bitmap) big.recycle()
+        }
     }
 
     /** Один вариант картинки всеми распознавателями. */

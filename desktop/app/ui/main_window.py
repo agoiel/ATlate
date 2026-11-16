@@ -58,10 +58,18 @@ class _Signals(QObject):
 
 
 class _Job(QRunnable):
-    def __init__(self, pipeline: Pipeline, image: Image.Image, k: float, token, live: bool = False):
+    """Распознать и перевести снимок в фоне.
+
+    Сигналы у всех задач общие (объект живёт в главном окне), а сама задача удаляется, как только
+    отработала. Раньше у каждой задачи были свои сигналы, удалять её было нельзя — и Qt держал
+    в памяти все задачи вместе с их снимками: память росла с каждым переводом.
+    """
+
+    def __init__(self, signals: _Signals, pipeline: Pipeline, image: Image.Image, k: float, token,
+                 live: bool = False):
         super().__init__()
         self.pipeline, self.image, self.k, self.token, self.live = pipeline, image, k, token, live
-        self.signals = _Signals()
+        self.signals = signals
 
     def run(self):
         try:
@@ -78,10 +86,10 @@ class _CompareSignals(QObject):
 class _CompareJob(QRunnable):
     """Распознать зону по очереди и параллельно — для режима разработчика."""
 
-    def __init__(self, pipeline: Pipeline, image: Image.Image):
+    def __init__(self, signals: _CompareSignals, pipeline: Pipeline, image: Image.Image):
         super().__init__()
         self.pipeline, self.image = pipeline, image
-        self.signals = _CompareSignals()
+        self.signals = signals      # общие, как у _Job
 
     def run(self):
         try:
@@ -160,7 +168,12 @@ class MainWindow(QWidget):
         self._last_thumb: np.ndarray | None = None
         self._dirty = False
         self._hotkeys = None
-        self._jobs: set[_Job] = set()
+        # сигналы фоновых задач — одни на всё окно (см. _Job)
+        self.job_signals = _Signals(self)
+        self.job_signals.done.connect(self._handle_done)
+        self.job_signals.failed.connect(self._handle_failed)
+        self.compare_signals = _CompareSignals(self)
+        self.compare_signals.done.connect(self._on_compared)
         self.live_on = False
         self._file_image: Image.Image | None = None
         self.mini: MiniPanel | None = None      # панель компактного режима (создаётся при первом входе)
@@ -383,8 +396,11 @@ class MainWindow(QWidget):
 
     def _build_languages(self) -> Card:
         card = Card("Языки", "Откуда и куда переводить", "lang")
-        self.src_combo = self._combo([(k, v["name"]) for k, v in languages.SOURCE_LANGUAGES.items()],
-                                     self.cfg["source_lang"], self._set_source)
+        auto = bool(self.cfg.get("auto_lang"))
+        self.src_combo = self._combo([("auto", self._auto_title())]
+                                     + [(k, v["name"]) for k, v in languages.SOURCE_LANGUAGES.items()],
+                                     "auto" if auto else self.cfg["source_lang"], self._set_source)
+        self.src_combo.setToolTip("«Авто» — программа сама поймёт, на каком языке текст в выделенной области")
         self.tgt_combo = self._combo([(k, v["name"]) for k, v in languages.TARGET_LANGUAGES.items()],
                                      self.cfg["target_lang"], lambda v: self._set("target_lang", v))
         arrow = QLabel()
@@ -397,7 +413,35 @@ class MainWindow(QWidget):
         ], self.cfg.get("content_mode", "manhwa"))
         content.changed.connect(lambda v: self._set("content_mode", v))
         card.add(content)
+        self.auto_hint = caption("")
+        card.add(self.auto_hint)
+        self._refresh_auto_hint()
         return card
+
+    def _auto_title(self) -> str:
+        """Подпись пункта «Авто»: вместе с языком, который сейчас найден."""
+        name = languages.src(self.cfg["source_lang"])["name"].split(" (")[0]
+        return f"Авто · сейчас {name.lower()}" if self.cfg.get("auto_lang") else "Авто — определить по экрану"
+
+    def _refresh_auto_hint(self) -> None:
+        """Под списком языков: из чего «Авто» выбирает (в Windows — только из установленных языков)."""
+        text = ""
+        if self.cfg.get("auto_lang"):
+            text = "Язык оригинала определяется сам при переводе."
+            if sys.platform == "win32" and self.cfg["ocr_engine"] == "windows":
+                try:
+                    from ..win_setup import missing_ocr_languages
+                    missing = missing_ocr_languages(list(languages.SOURCE_LANGUAGES))
+                except Exception:  # noqa: BLE001
+                    missing = []
+                have = [v["name"].split(" (")[0].lower() for k, v in languages.SOURCE_LANGUAGES.items()
+                        if k not in missing]
+                if missing:
+                    text += (" Выбор — из языков, для которых в Windows установлено распознавание: "
+                             f"{', '.join(have) or 'пока ни одного'}. Чтобы добавить язык, выберите его "
+                             "в списке один раз — программа предложит его докачать.")
+        self.auto_hint.setText(text)
+        self.auto_hint.setVisible(bool(text))
 
     # ---------------------------------------------------------------- переводчик
     def _build_translator(self) -> Card:
@@ -557,6 +601,7 @@ class MainWindow(QWidget):
             return
         tid = self.title_combo.currentData() or ""
         self.cfg["active_title"] = tid
+        self.pipeline.reset_auto()      # у другого тайтла язык может быть другим
         t = titles.load(tid)
         if t:
             self.cfg["glossary"] = t.glossary
@@ -821,17 +866,13 @@ class MainWindow(QWidget):
             image, _k = grab_region(self.region)
             if hidden and not self.overlay.user_hidden:
                 self.overlay.show()
-            job = _CompareJob(self.pipeline, image)
-            job.signals.done.connect(self._on_compared)
-            self._jobs.add(job)
-            job.setAutoDelete(False)
+            job = _CompareJob(self.compare_signals, self.pipeline, image)
             self.pool.start(job)
 
         QTimer.singleShot(120 if hidden else 0, go)
 
     def _on_compared(self, text: str) -> None:
         self.busy = False
-        self._jobs.clear()
         self._show_dev(text)
         self._set_status(text.split("\n")[-1])
 
@@ -860,6 +901,22 @@ class MainWindow(QWidget):
         self._render_keys()
 
     def _set_source(self, lang: str) -> None:
+        if lang == "auto":
+            # язык найдётся при следующем переводе; до тех пор остаётся прежний
+            self.cfg["auto_lang"] = True
+            self.pipeline.reset_auto()
+            self._save_and_reload()
+            self.src_combo.setItemText(0, self._auto_title())
+            self._refresh_auto_hint()
+            return
+        self.cfg["auto_lang"] = False
+        self._apply_source(lang)
+        self.src_combo.setItemText(0, self._auto_title())
+        self._refresh_auto_hint()
+        QTimer.singleShot(200, self.check_ocr_language)
+
+    def _apply_source(self, lang: str) -> None:
+        """Сменить язык оригинала (вручную или автоопределением) и всё, что от него зависит."""
         self.cfg["source_lang"] = lang
         # универсальный глоссарий меняем на подходящий (свои глоссарии не трогаем)
         cur = self.cfg.get("glossary") or ""
@@ -871,7 +928,11 @@ class MainWindow(QWidget):
                 titles.save(t)
         self._save_and_reload()
         self._fill_titles()
-        QTimer.singleShot(200, self.check_ocr_language)
+
+    def _on_language_detected(self, lang: str) -> None:
+        """Автоопределение нашло другой язык: запомнить его и показать в списке."""
+        self._apply_source(lang)
+        self.src_combo.setItemText(0, self._auto_title())
 
     def _set_engine(self, engine: str) -> None:
         self._set("ocr_engine", engine)
@@ -1103,6 +1164,7 @@ class MainWindow(QWidget):
         self.cfg.save()
         self.overlay.clear()
         self.overlay.place(region)
+        self.pipeline.reset_auto()      # в новой области язык может быть другим
         self._last_thumb = None
         self._refresh_status()
         if self.cfg.get("translate_mode") == "live":
@@ -1163,16 +1225,19 @@ class MainWindow(QWidget):
         self._set_busy(True)
         self._token += 1
         self._set_status("Распознаю и перевожу…")
-        job = _Job(self.pipeline, image, k, token if token is not None else self._token, live)
-        job.signals.done.connect(self._on_done)
-        job.signals.failed.connect(self._on_failed)
-        self._jobs.add(job)
-        job.setAutoDelete(False)
-        self.pool.start(job)
+        self.pool.start(_Job(self.job_signals, self.pipeline, image, k,
+                             token if token is not None else self._token, live))
+
+    def _handle_done(self, result: PageResult, k: float, token) -> None:
+        self._on_done(result, k, token)
+
+    def _handle_failed(self, tb: str) -> None:
+        self._on_failed(tb)
 
     def _on_done(self, result: PageResult, k: float, token) -> None:
         self._set_busy(False)
-        self._jobs.clear()
+        if result.detected_lang:
+            self._on_language_detected(result.detected_lang)
         if token == "file":
             self._report(result)
             self._show_file_result(result)
@@ -1197,7 +1262,6 @@ class MainWindow(QWidget):
 
     def _on_failed(self, tb: str) -> None:
         self._set_busy(False)
-        self._jobs.clear()
         self._set_status("Непредвиденная ошибка, подробности в error.log", True)
         (ROOT / "error.log").write_text(tb, encoding="utf-8")
 
@@ -1215,6 +1279,8 @@ class MainWindow(QWidget):
             return
         n = sum(1 for b in result.bubbles if b.translation)
         parts = [f"Переведено облаков: {n}"]
+        if result.detected_lang:
+            parts.append("язык: " + languages.src(result.detected_lang)["name"].split(" (")[0].lower())
         # технические подробности — только в режиме разработчика
         if self.cfg.get("dev_mode") and result.debug is not None:
             parts.append(result.debug.summary())

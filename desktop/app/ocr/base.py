@@ -29,6 +29,10 @@ class OcrBackend:
         """Возвращает строки текста в координатах исходной картинки."""
         raise NotImplementedError
 
+    def available_languages(self, codes: list[str]) -> list[str]:
+        """Какие из языков этот движок может распознавать прямо сейчас (для автоопределения языка)."""
+        return list(codes)
+
     @staticmethod
     def upscale(image: Image.Image, k: float) -> Image.Image:
         if k is None or abs(k - 1.0) < 0.01:

@@ -206,22 +206,34 @@ class ScrollContent(QWidget):
     def __init__(self):
         super().__init__()
         self._pending = False
+        self._forced = False
+        self._fitted: tuple[int, int] | None = None     # (ширина, высота), под которые уже разложено
 
     def refit(self) -> None:
         self._pending = False
+        forced, self._forced = self._forced, False
         lay = self.layout()
         if lay is None:
             return
         lay.activate()
         h = lay.totalHeightForWidth(self.width()) if lay.hasHeightForWidth() else -1
         h = max(h, lay.totalSizeHint().height(), lay.totalMinimumSize().height())
+        if not forced and self._fitted == (self.width(), h):
+            # Ничего не изменилось. Без этой проверки окно гоняло раскладку по кругу без остановки:
+            # перераскладка ниже сама порождает новый запрос раскладки, тот — новую перераскладку,
+            # и так тысячи раз в секунду — целое ядро процессора впустую, даже в простое.
+            return
+        self._fitted = (self.width(), h)
         if h != self.minimumHeight():
             self.setMinimumHeight(h)
         # заново разложить всё содержимое под текущий размер окна
         lay.invalidate()
         lay.activate()
 
-    def schedule(self) -> None:
+    def schedule(self, force: bool = True) -> None:
+        """Пересчитать высоту чуть позже. force — раскладывать заново, даже если размеры те же
+        (явная просьба: что-то раскрылось, свернулось или изменилась ширина)."""
+        self._forced = self._forced or force
         if not self._pending:
             self._pending = True
             QTimer.singleShot(0, self.refit)
@@ -233,7 +245,8 @@ class ScrollContent(QWidget):
 
     def event(self, e):
         if e.type() == QEvent.Type.LayoutRequest:
-            self.schedule()
+            # запрос от самой раскладки: пересчитываем, только если размеры и правда изменились
+            self.schedule(force=False)
         return super().event(e)
 
 

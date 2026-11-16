@@ -65,6 +65,8 @@ class PageResult(
     val blankFrame: Boolean = false,
     /** Подробности для режима разработчика */
     val debug: DebugInfo? = null,
+    /** Автоопределение языка: код языка, на который оно переключилось в этот раз (пусто — язык тот же) */
+    val detectedLang: String = "",
 )
 
 /** Пиксели картинки для анализа фона (ARGB, построчно). */

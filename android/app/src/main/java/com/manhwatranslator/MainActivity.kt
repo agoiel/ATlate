@@ -117,8 +117,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        Ocr.requestModules(this, Languages.src(s.sourceLang))
+        if (s.autoLang) Ocr.requestAllModules(this) else Ocr.requestModules(this, Languages.src(s.sourceLang))
         refreshGlossary()
+        renderLanguages()       // язык мог смениться автоопределением, пока окно было свёрнуто
         main.post(poll)
     }
 
@@ -239,19 +240,29 @@ class MainActivity : Activity() {
     }
 
     private fun renderLanguages() {
-        srcPicker.setValue(Languages.src(s.sourceLang).name.substringBefore(" ("))
+        val name = Languages.src(s.sourceLang).name.substringBefore(" (")
+        // в режиме «Авто» показываем и язык, который сейчас найден
+        srcPicker.setValue(if (s.autoLang) trf("Авто · %s", name.lowercase()) else name)
         tgtPicker.setValue(Languages.tgt(s.targetLang).name)
     }
 
     private fun pickSource() {
-        val items = Languages.sources.map { it.name }.toTypedArray()
-        val cur = Languages.sources.indexOfFirst { it.code == s.sourceLang }
+        // первый пункт — «Авто»: язык определяется сам при переводе
+        val items = (listOf(tr("Авто — определить по экрану")) + Languages.sources.map { it.name }).toTypedArray()
+        val cur = if (s.autoLang) 0 else Languages.sources.indexOfFirst { it.code == s.sourceLang } + 1
         AlertDialog.Builder(this).setTitle(tr("Язык оригинала"))
             .setSingleChoiceItems(items, cur) { d, which ->
-                s.sourceLang = Languages.sources[which].code
-                Ocr.requestModules(this, Languages.src(s.sourceLang))
-                GlossaryStore.switchUniversal(this, s)
-                refreshGlossary()
+                if (which == 0) {
+                    s.autoLang = true
+                    // для выбора нужны все модели распознавания — просим скачать их заранее
+                    Ocr.requestAllModules(this)
+                } else {
+                    s.autoLang = false
+                    s.sourceLang = Languages.sources[which - 1].code
+                    Ocr.requestModules(this, Languages.src(s.sourceLang))
+                    GlossaryStore.switchUniversal(this, s)
+                    refreshGlossary()
+                }
                 renderLanguages()
                 d.dismiss()
             }.show()

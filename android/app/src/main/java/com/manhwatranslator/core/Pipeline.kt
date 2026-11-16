@@ -16,12 +16,57 @@ class Pipeline(private val ctx: Context) {
     private val history = ArrayDeque<Pair<String, String>>()
     private var loadedTitle: String? = null
     private var loadedStamp = 0L
+    // автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
+    private var autoOk = false
+    private var autoSize = 0L
+    private var autoNote = ""
 
     @Synchronized
     fun reset() {
         cache.clear()
         history.clear()
         loadedTitle = null
+        autoOk = false
+    }
+
+    /**
+     * Пробное распознавание всеми распознавателями; возвращает выбранный язык. Если уверенно
+     * сказать нельзя (текста мало), остаётся текущий.
+     */
+    private fun pickLanguage(bitmap: Bitmap, current: SourceLang): SourceLang {
+        val byScript = try { ocr.probe(bitmap) } catch (_: Exception) { emptyMap() }
+        val texts = LinkedHashMap<String, String>()
+        for (code in AutoLang.codes) texts[code] = byScript[Languages.src(code).script].orEmpty()
+        val best = AutoLang.choose(texts, current.code)
+        autoNote = trf("Язык: %s", AutoLang.describe(texts) + " → " + (best ?: "?"))
+        return if (best == null) current else Languages.src(best)
+    }
+
+    /**
+     * Распознавание с автоопределением языка. Проба всеми распознавателями делается не каждый раз,
+     * а когда язык ещё не подтверждён или текст вышел непохожим на выбранный язык (или не нашёлся:
+     * так бывает и на странице без текста, и когда текущий распознаватель не читает этот язык).
+     */
+    private fun recognizeAuto(bitmap: Bitmap, start: SourceLang, s: Settings, live: Boolean): Pair<SourceLang, OcrResult> {
+        // другой размер картинки — выделили новую область: язык в ней может быть другим
+        val size = bitmap.width.toLong() * 100_000L + bitmap.height
+        if (size != autoSize) { autoSize = size; autoOk = false }
+        autoNote = ""
+        var lang = start
+        var probed = false
+        if (!autoOk) { lang = pickLanguage(bitmap, lang); probed = true }
+        var res = ocr.recognize(bitmap, lang, s.ocrMode, s.parallelOcr, live)
+        var state = AutoLang.fit(res.lines.joinToString(" ") { it.text }, lang.code)
+        if (state != AutoLang.GOOD && !probed) {
+            val other = pickLanguage(bitmap, lang)
+            if (other.code != lang.code) {
+                lang = other
+                res = ocr.recognize(bitmap, lang, s.ocrMode, s.parallelOcr, live)
+                state = AutoLang.fit(res.lines.joinToString(" ") { it.text }, lang.code)
+            }
+        }
+        if (state == AutoLang.GOOD) autoOk = true else if (state == AutoLang.BAD) autoOk = false
+        return lang to res
     }
 
     /** Подгрузить контекст активного тайтла, если он сменился или изменился на диске. */
@@ -31,6 +76,7 @@ class Pipeline(private val ctx: Context) {
         if (id == loadedTitle && stamp == loadedStamp) return
         cache.clear()
         history.clear()
+        autoOk = false      // у другого тайтла язык может быть другим
         TitleStore.load(ctx, id)?.let { t ->
             cache.putAll(t.cache)
             history.addAll(t.history)
@@ -58,17 +104,28 @@ class Pipeline(private val ctx: Context) {
     @Synchronized
     fun process(bitmap: Bitmap, s: Settings, translate: Boolean = true, timings: Timings = Timings(),
                 live: Boolean = false): PageResult {
-        val src = Languages.src(s.sourceLang)
+        var src = Languages.src(s.sourceLang)
         val tgt = Languages.tgt(s.targetLang)
         val screen = s.contentMode == "screen"
         val t0 = System.currentTimeMillis()
         syncTitle(s)
+        var detected = ""
 
         if (isBlank(bitmap)) {
             return PageResult(blankFrame = true, error = tr("Снимок области получился однотонным (обычно чёрным). Похоже, приложение-читалка запрещает снимки экрана — так делают некоторые официальные приложения. Откройте тайтл в браузере или другой читалке."))
         }
         val ocrRes = try {
-            ocr.recognize(bitmap, src, s.ocrMode, s.parallelOcr, live)
+            if (s.autoLang) {
+                val (lang, res) = recognizeAuto(bitmap, src, s, live)
+                if (lang.code != src.code) {
+                    // язык на экране другой: запоминаем его и меняем универсальный глоссарий на подходящий
+                    src = lang
+                    detected = lang.code
+                    s.sourceLang = lang.code
+                    GlossaryStore.switchUniversal(ctx, s)
+                }
+                res
+            } else ocr.recognize(bitmap, src, s.ocrMode, s.parallelOcr, live)
         } catch (e: OcrException) {
             timings.mark(tr("распознавание"))
             val msg = e.message ?: tr("Ошибка распознавания")
@@ -76,7 +133,8 @@ class Pipeline(private val ctx: Context) {
         }
         timings.mark(tr("распознавание"))
         val lines = ocrRes.lines
-        val stats = ocrRes.stats.entries.joinToString(" · ") { (k, v) -> "${Ocr.scriptName(k)} $v" }
+        val stats = ocrRes.stats.entries.joinToString(" · ") { (k, v) -> "${Ocr.scriptName(k)} $v" } +
+            (if (s.autoLang && autoNote.isNotEmpty()) " · $autoNote" else "")
         val img = PixelImage.fromBitmap(bitmap)
         val bubbles = if (screen) {
             // обычный текст: строки собираются в абзацы, ничего не отбрасывается из-за фона или края
@@ -96,7 +154,8 @@ class Pipeline(private val ctx: Context) {
         val t1 = System.currentTimeMillis()
         fun debug(hits: Int = 0, error: String = "") = DebugInfo(ocrRes.passes, timings.stages(), timings.totalMs(),
             ocrRes.threads, ocrRes.merge, lines.size, bubbles.size, hits, error)
-        if (!translate) return PageResult(bubbles, ocrMs = t1 - t0, lineCount = lines.size, ocrStats = stats, debug = debug())
+        if (!translate) return PageResult(bubbles, ocrMs = t1 - t0, lineCount = lines.size, ocrStats = stats, debug = debug(),
+            detectedLang = detected)
 
         var hits = 0
         val todo = ArrayList<Bubble>()
@@ -122,7 +181,7 @@ class Pipeline(private val ctx: Context) {
         }
         timings.mark(tr("перевод"))
         return PageResult(bubbles, error, hits, t1 - t0, System.currentTimeMillis() - t1, lines.size, stats,
-            debug = debug(hits, error))
+            debug = debug(hits, error), detectedLang = detected)
     }
 
     /** Итог сравнения «по очереди» и «параллельно» на одной и той же картинке. */

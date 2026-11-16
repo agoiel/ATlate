@@ -3,6 +3,7 @@ package com.manhwatranslator
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
@@ -88,6 +89,46 @@ class ScreenCapturer(
         if (padded.width == img.width) return padded
         val out = Bitmap.createBitmap(padded, 0, 0, img.width, img.height)
         padded.recycle()
+        out
+    }
+
+    /**
+     * Уменьшенная серая копия участка экрана — по ней Live следит, движется ли страница.
+     *
+     * Точки читаются прямо из последнего кадра. Раньше ради этого каждые 0,7 с создавалась
+     * картинка всего экрана (около 10 МБ на обычном телефоне), потом её вырезка и уменьшенная
+     * копия — и всё это в главном потоке.
+     */
+    fun sampleGray(r: Rect, w: Int): IntArray? = synchronized(lock) {
+        val img = latest ?: return null
+        val rr = Rect(r)
+        if (!rr.intersect(0, 0, img.width, img.height) || rr.width() < 10 || rr.height() < 10) return null
+        val h = maxOf(1, w * rr.height() / rr.width())
+        val plane = img.planes[0]
+        val buf = plane.buffer
+        val rowStride = plane.rowStride
+        val pixelStride = plane.pixelStride
+        val limit = buf.limit()
+        val cellW = rr.width().toFloat() / w
+        val cellH = rr.height().toFloat() / h
+        val out = IntArray(w * h)
+        for (j in 0 until h) for (i in 0 until w) {
+            // четыре точки на клетку: одна точка слишком «шумит» на мелком тексте
+            var sum = 0
+            var n = 0
+            for (dy in 0..1) for (dx in 0..1) {
+                val x = (rr.left + (i + 0.25f + 0.5f * dx) * cellW).toInt().coerceIn(rr.left, rr.right - 1)
+                val y = (rr.top + (j + 0.25f + 0.5f * dy) * cellH).toInt().coerceIn(rr.top, rr.bottom - 1)
+                val p = y * rowStride + x * pixelStride
+                if (p + 2 < limit) {
+                    // RGBA: три байта цвета подряд
+                    sum += (buf.get(p).toInt() and 0xFF) + (buf.get(p + 1).toInt() and 0xFF) +
+                        (buf.get(p + 2).toInt() and 0xFF)
+                    n++
+                }
+            }
+            out[j * w + i] = if (n > 0) sum / (3 * n) else 0
+        }
         out
     }
 
