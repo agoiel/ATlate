@@ -468,9 +468,49 @@ def services() -> None:
         TRANSLATORS.update(saved)
 
 
+def storage() -> None:
+    """Настройки и данные: рядом с программой, а если туда писать нельзя — в папке пользователя."""
+    import os
+    root = out / "storage"
+    shutil.rmtree(root, ignore_errors=True)
+    prog, home = root / "prog", root / "appdata"
+    (prog / "glossaries").mkdir(parents=True)
+    (prog / "titles").mkdir()
+    (prog / "config.json").write_text('{"translator": "deepl"}', encoding="utf-8")
+    (prog / "titles" / "t.json").write_text("{}", encoding="utf-8")
+    (prog / "glossaries" / "g.json").write_text('{"name": "из программы"}', encoding="utf-8")
+    (home / "ATlate" / "glossaries").mkdir(parents=True)
+    (home / "ATlate" / "glossaries" / "g.json").write_text('{"name": "свой"}', encoding="utf-8")
+    old = os.environ.get("APPDATA")
+    os.environ["APPDATA"] = str(home)
+    try:
+        data = config.data_root(prog, writable=lambda _p: False)
+    finally:
+        if old is None:
+            os.environ.pop("APPDATA", None)
+        else:
+            os.environ["APPDATA"] = old
+    moved = (data == home / "ATlate" and json.loads((data / "config.json").read_text())["translator"] == "deepl"
+             and (data / "titles" / "t.json").exists()
+             and json.loads((data / "glossaries" / "g.json").read_text())["name"] == "свой")
+    check("папка программы закрыта для записи — данные в папке пользователя", moved, str(data))
+    check("папка программы доступна — всё рядом с программой", config.data_root(prog) == prog)
+    c = config.Config(data / "config.json")
+    c["translator"] = "gemini"
+    c.save()
+    check("настройки сохраняются через временный файл",
+          json.loads((data / "config.json").read_text())["translator"] == "gemini"
+          and not (data / "config.tmp").exists() and not c.save_error)
+    bad = config.Config(root / "x.json")
+    bad.path = Path("/proc/atlate-no-access/config.json")
+    bad.save()
+    check("сохранить не удалось — программа не падает", bool(bad.save_error))
+
+
 def main() -> int:
     translators()
     services()
+    storage()
     ocr_and_detect()
     glossary()
     glossary_speed()

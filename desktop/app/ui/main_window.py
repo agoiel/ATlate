@@ -22,10 +22,11 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
 
 from .. import __version__, languages, titles
 from ..capture import Region, find_screen, grab_region
-from ..config import GLOSSARY_DIR, ROOT, Config
+from ..config import DATA_ROOT, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
 from ..hotkeys import Hotkeys
 from ..models import PageResult
+from ..ocr import easyocr_available
 from ..pipeline import Pipeline
 from . import theme
 from .glossary_editor import GlossaryEditor, new_glossary_file
@@ -100,7 +101,7 @@ class _CompareJob(QRunnable):
         self.signals.done.emit(text)
 
 
-DEV_LOG = ROOT / "dev_log.txt"
+DEV_LOG = DATA_ROOT / "dev_log.txt"
 
 
 def dev_log(text: str) -> None:
@@ -158,6 +159,9 @@ class MainWindow(QWidget):
     def __init__(self, cfg: Config):
         super().__init__(None, Qt.WindowType.Window)
         self.cfg = cfg
+        if cfg.get("ocr_engine") == "easyocr" and not easyocr_available():
+            cfg["ocr_engine"] = "windows"       # EasyOCR выбран раньше, но его нет — переводить было бы нечем
+            cfg.save()
         self.pipeline = Pipeline(cfg)
         self.region: Region | None = Region.from_dict(cfg.get("last_region"))
         self.overlay = OverlayWindow(cfg)
@@ -794,8 +798,10 @@ class MainWindow(QWidget):
         self.disp_combo = self._combo([("overlay", "Поверх облаков"), ("list", "Окно со списком"),
                                        ("both", "И то, и другое")], c["display_mode"],
                                       lambda v: self._set("display_mode", v))
-        engine = self._combo([("windows", "Windows OCR"), ("easyocr", "EasyOCR")], c["ocr_engine"],
-                             self._set_engine)
+        # EasyOCR — только если он установлен: в собранную программу он не входит,
+        # и раньше выбор этого пункта давал ошибку при каждом переводе
+        engines = [("windows", "Windows OCR")] + ([("easyocr", "EasyOCR")] if easyocr_available() else [])
+        engine = self._combo(engines, c["ocr_engine"], self._set_engine)
         themes = self._combo([("system", "Как в Windows"), ("light", "Светлая"), ("dark", "Тёмная")],
                              c.get("theme", "system"), self._set_theme)
         grid.addWidget(self._labeled("Показ перевода", self.disp_combo), 0, 0)
@@ -1349,7 +1355,10 @@ class MainWindow(QWidget):
     def _on_failed(self, tb: str) -> None:
         self._set_busy(False)
         self._set_status("Непредвиденная ошибка, подробности в error.log", True)
-        (ROOT / "error.log").write_text(tb, encoding="utf-8")
+        try:
+            (DATA_ROOT / "error.log").write_text(tb, encoding="utf-8")
+        except OSError:
+            pass
 
     def _report(self, result: PageResult) -> None:
         if self.cfg.get("dev_mode") and result.debug is not None:
@@ -1681,7 +1690,7 @@ class HelpDialog(QDialog):
 def _excepthook(exc_type, exc, tb):
     text = "".join(traceback.format_exception(exc_type, exc, tb))
     try:
-        (ROOT / "error.log").write_text(text, encoding="utf-8")
+        (DATA_ROOT / "error.log").write_text(text, encoding="utf-8")
     except OSError:
         pass
     sys.__excepthook__(exc_type, exc, tb)

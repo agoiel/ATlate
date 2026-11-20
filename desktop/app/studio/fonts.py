@@ -9,9 +9,10 @@ from pathlib import Path
 
 from PIL import ImageFont
 
-from ..config import ROOT
+from ..config import DATA_ROOT, ROOT
 
-FONT_DIR = ROOT / "fonts"
+FONT_DIR = DATA_ROOT / "fonts"            # сюда кладутся шрифты, добавленные пользователем
+BUNDLED_FONT_DIR = ROOT / "fonts"         # шрифты, которые идут с программой
 FONT_EXT = {".ttf", ".otf", ".ttc"}
 
 # Что взять по умолчанию, если пользователь ничего не выбрал (первый найденный)
@@ -26,7 +27,7 @@ PREFERRED = [
 
 
 def _dirs() -> list[Path]:
-    out = [FONT_DIR]
+    out = [FONT_DIR] + ([BUNDLED_FONT_DIR] if BUNDLED_FONT_DIR != FONT_DIR else [])
     if sys.platform == "win32":
         win = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
         local = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts"
@@ -56,7 +57,7 @@ def list_fonts() -> tuple[tuple[str, str], ...]:
             if name in seen:
                 continue
             seen[name] = str(p)
-            (own if d == FONT_DIR else other).append((name, str(p)))
+            (own if d in (FONT_DIR, BUNDLED_FONT_DIR) else other).append((name, str(p)))
     return tuple(own) + tuple(sorted(other, key=lambda x: x[0].lower()))
 
 

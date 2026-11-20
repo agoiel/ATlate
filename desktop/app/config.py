@@ -1,19 +1,61 @@
-"""Настройки программы. Хранятся в config.json рядом с программой."""
+"""Настройки программы. Хранятся в config.json рядом с программой (или в папке пользователя)."""
 
 from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 import sys
 from pathlib import Path
 
-# В собранном exe настройки и глоссарии лежат рядом с ATlate.exe
+# Где лежит сама программа (в собранном exe — папка с ATlate.exe): встроенные глоссарии и шрифты
 if getattr(sys, "frozen", False):
     ROOT = Path(sys.executable).resolve().parent
 else:
     ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.json"
-GLOSSARY_DIR = ROOT / "glossaries"
+
+
+def _writable(folder: Path) -> bool:
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / ".atlate-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def data_root(root: Path, writable=_writable) -> Path:
+    """Где хранить настройки, глоссарии, тайтлы и журналы.
+
+    Рядом с программой, если туда можно писать — как раньше, программа остаётся «переносной».
+    Если нельзя (например, её положили в Program Files), — в папке пользователя
+    (%APPDATA%\\ATlate); при первом таком запуске туда переносится то, что уже лежит рядом
+    с программой. Раньше в этом случае настройки не сохранялись, а программа падала.
+    """
+    if writable(root):
+        return root
+    base = Path(os.environ.get("APPDATA") or (Path.home() / ".config"))
+    data = base / "ATlate"
+    data.mkdir(parents=True, exist_ok=True)
+    if (root / "config.json").exists() and not (data / "config.json").exists():
+        shutil.copy2(root / "config.json", data / "config.json")
+    for folder in ("glossaries", "titles"):
+        src = root / folder
+        if src.is_dir():
+            (data / folder).mkdir(exist_ok=True)
+            for f in src.iterdir():
+                # своих файлов пользователя не трогаем — копируем только недостающие
+                if f.is_file() and not (data / folder / f.name).exists():
+                    shutil.copy2(f, data / folder / f.name)
+    return data
+
+
+DATA_ROOT = data_root(ROOT)
+CONFIG_PATH = DATA_ROOT / "config.json"
+GLOSSARY_DIR = DATA_ROOT / "glossaries"
 
 DEFAULTS: dict = {
     "source_lang": "ko",
@@ -123,8 +165,19 @@ class Config(dict):
         self.clear()
         self.update(_merge(DEFAULTS, data))
 
+    save_error = ""            # почему не удалось сохранить в последний раз (пусто — сохранилось)
+
     def save(self) -> None:
-        self.path.write_text(json.dumps(self, ensure_ascii=False, indent=2), encoding="utf-8")
+        """Сохранить через временный файл: если программу закроют посреди записи, настройки
+        и ключи не пропадут. Ошибка записи не роняет программу — она запоминается в save_error."""
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(self.path)
+            self.save_error = ""
+        except OSError as e:
+            self.save_error = str(e)
 
     def translator_settings(self, name: str) -> dict:
         return self["translators"].get(name, {})

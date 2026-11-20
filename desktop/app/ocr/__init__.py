@@ -6,6 +6,15 @@ from . import enhance
 from .base import OcrBackend, OcrError, OcrLanguageMissing
 
 
+def easyocr_available() -> bool:
+    """Установлен ли EasyOCR. В собранную программу он не входит (ему нужен PyTorch на 1–2 ГБ)."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec("easyocr") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def create_ocr(name: str, cfg) -> OcrBackend:
     if name == "easyocr":
         from .easyocr_backend import EasyOcrBackend
@@ -14,4 +23,4 @@ def create_ocr(name: str, cfg) -> OcrBackend:
     return WindowsOcrBackend(cfg)
 
 
-__all__ = ["enhance", "OcrBackend", "OcrError", "OcrLanguageMissing", "create_ocr"]
+__all__ = ["easyocr_available", "enhance", "OcrBackend", "OcrError", "OcrLanguageMissing", "create_ocr"]
