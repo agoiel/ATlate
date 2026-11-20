@@ -40,6 +40,7 @@ DEFAULTS: dict = {
                                       # papago | gemini | claude | openai
     "context_size": 12,               # сколько прошлых реплик передавать как контекст
     "request_interval": 1.0,          # мин. пауза между запросами к переводчику, секунды
+    "free_fallback": True,            # бесплатный переводчик не ответил — пробовать другие бесплатные
     "glossary": "",                   # имя файла глоссария в папке glossaries (пусто — без глоссария)
     "active_title": "",               # активный тайтл (его контекст хранится в папке titles)
     "content_mode": "manhwa",         # manhwa — облака манхвы | screen — обычный текст на экране

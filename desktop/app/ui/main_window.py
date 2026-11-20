@@ -464,6 +464,11 @@ class MainWindow(QWidget):
                         float(self.cfg.get("request_interval", 1.0)), 0.5, 0, 10, lambda v: f"{v:.1f} с")
         pause.changed.connect(lambda v: self._set("request_interval", v))
         card.add(pause)
+        fb = SwitchRow("Запасные бесплатные переводчики",
+                       "Если бесплатный переводчик не отвечает, перевести другим бесплатным",
+                       bool(self.cfg.get("free_fallback", True)))
+        fb.toggled.connect(lambda v: self._set("free_fallback", v))
+        card.add(fb)
         return card
 
     def _render_keys(self) -> None:
@@ -1364,6 +1369,8 @@ class MainWindow(QWidget):
             parts.append("язык: " + languages.src(result.detected_lang)["name"].split(" (")[0].lower())
         if result.source_detected:
             parts.append("язык определил переводчик: " + languages.name_of(result.source_detected).lower())
+        if result.fallback:
+            parts.append(result.fallback)
         if result.glossary_added:
             parts.append(f"в глоссарий добавлено: {result.glossary_added}")
             self._fill_titles()         # число записей в списке глоссариев

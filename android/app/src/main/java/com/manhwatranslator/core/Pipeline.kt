@@ -21,6 +21,7 @@ class Pipeline(private val ctx: Context) {
     // итоги последнего перевода: сколько терминов добавил авто-глоссарий, какой язык определил переводчик
     private var glossaryAdded = 0
     private var lastDetected = ""
+    private var fallbackNote = ""
     private var autoSize = 0L
     private var autoNote = ""
 
@@ -171,6 +172,7 @@ class Pipeline(private val ctx: Context) {
         var error = ""
         glossaryAdded = 0
         lastDetected = ""
+        fallbackNote = ""
         if (todo.isNotEmpty()) {
             try {
                 // облака на разных языках переводятся отдельными запросами
@@ -187,7 +189,7 @@ class Pipeline(private val ctx: Context) {
         timings.mark(tr("перевод"))
         return PageResult(bubbles, error, hits, t1 - t0, System.currentTimeMillis() - t1, lines.size, stats,
             debug = debug(hits, error), detectedLang = detected, sourceDetected = lastDetected,
-            glossaryAdded = glossaryAdded)
+            glossaryAdded = glossaryAdded, fallback = fallbackNote)
     }
 
     /** Итог сравнения «по очереди» и «параллельно» на одной и той же картинке. */
@@ -266,7 +268,11 @@ class Pipeline(private val ctx: Context) {
             screen = s.contentMode == "screen",
             collectTerms = collect,
         )
-        val out = tr.translate(req)
+        val out = try {
+            tr.translate(req)
+        } catch (e: TranslateException) {
+            fallback(req, s, tr, e)
+        }
         if (req.detected.isNotBlank()) lastDetected = req.detected
         if (collect && req.terms.isNotEmpty()) {
             // файл перечитываем: его могли изменить в редакторе, пока шёл перевод
@@ -291,5 +297,34 @@ class Pipeline(private val ctx: Context) {
         }
     }
 
+    /**
+     * Выбранный бесплатный переводчик не ответил — пробуем другие бесплатные. Бесплатные способы
+     * неофициальные: Google ограничивает запросы при VPN, у Lingva падают серверы. Переводчики
+     * с ключом не подменяются; Яндекс используется только бесплатным способом.
+     */
+    private fun fallback(req: TranslateRequest, s: Settings, failed: Translator, err: TranslateException): List<String> {
+        val cur = s.translator.ifBlank { "google_free" }
+        val paidYandex = cur == "yandex" && s.yandexKey.isNotBlank()
+        if (!s.freeFallback || cur !in FREE_TRANSLATORS || paidYandex) throw err
+        for (name in FREE_TRANSLATORS) {
+            if (name == cur) continue
+            val alt: Translator = when (name) {
+                "yandex" -> YandexTranslator("", "")
+                "lingva" -> LingvaTranslator(s.lingvaUrl)
+                "duckduckgo" -> DuckDuckGoTranslator()
+                else -> GoogleFreeTranslator()
+            }
+            val out = try { alt.translate(req) } catch (_: TranslateException) { continue }
+            fallbackNote = trf("%s не ответил — перевёл %s", failed.title, alt.title)
+            return out
+        }
+        throw err
+    }
+
     fun close() = ocr.close()
+
+    companion object {
+        /** Бесплатные переводчики без ключа — в этом порядке пробуются, если выбранный не ответил. */
+        val FREE_TRANSLATORS = listOf("google_free", "yandex", "lingva", "duckduckgo")
+    }
 }

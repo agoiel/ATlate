@@ -9,6 +9,9 @@ import requests
 from ..glossary import GlossaryEntry
 
 TIMEOUT = 30
+# Временные сбои сервиса: перегружен, ошибка на его стороне. Такие запросы повторяются с паузой.
+RETRY_STATUS = {500, 502, 503, 504, 529}
+RETRIES = 3                 # всего попыток на один запрос
 
 
 class TranslateError(RuntimeError):
@@ -51,6 +54,7 @@ class Translator:
     name = "base"
     title = "Базовый"
     uses_llm = False
+    timeout = TIMEOUT       # сколько ждать ответа на один запрос, секунды
 
     def __init__(self, settings: dict):
         self.settings = settings or {}
@@ -70,19 +74,43 @@ class Translator:
         return self._request("get", url, **kw)
 
     def _request(self, method: str, url: str, **kw) -> requests.Response:
-        for attempt in (1, 2):
+        """Запрос с повторами при временных сбоях.
+
+        Раньше повторялся только ответ «слишком много запросов», а перегрузка сервиса
+        (у Gemini и Claude такое бывает) или оборванное соединение сразу давали ошибку
+        на всю страницу.
+        """
+        for attempt in range(1, RETRIES + 1):
             RateLimit.wait()
             try:
-                r = self.http.request(method, url, timeout=TIMEOUT, **kw)
+                r = self.http.request(method, url, timeout=self.timeout, **kw)
+            except requests.Timeout as e:
+                # долгое ожидание не повторяем: это ещё столько же секунд
+                raise TranslateError(f"{self.title}: сервис не ответил за {self.timeout} с.") from e
             except requests.RequestException as e:
+                if attempt < RETRIES:
+                    time.sleep(1.5 * attempt)       # оборвалась связь — пробуем ещё раз
+                    continue
                 raise TranslateError(f"{self.title}: нет связи ({e.__class__.__name__}).") from e
             if r.status_code == 429 and attempt == 1:
                 # Сервис попросил притормозить: ждём и пробуем ещё раз
                 time.sleep(max(3.0, RateLimit.interval * 2))
                 continue
+            if r.status_code in RETRY_STATUS and attempt < RETRIES:
+                time.sleep(self._retry_delay(r, attempt))
+                continue
             self._check(r)
             return r
         raise AssertionError("unreachable")
+
+    @staticmethod
+    def _retry_delay(r: requests.Response, attempt: int) -> float:
+        """Пауза перед повтором: сколько попросил сервис (Retry-After), но не больше 10 с."""
+        try:
+            asked = float(r.headers.get("Retry-After", ""))
+        except (TypeError, ValueError):
+            asked = 0.0
+        return min(10.0, max(asked, 2.0 * attempt))
 
     def _check(self, r: requests.Response) -> None:
         if r.status_code < 400:
@@ -92,6 +120,11 @@ class Translator:
             403: "доступ запрещён — проверьте ключ и регион",
             429: "слишком много запросов или закончился лимит",
             456: "закончился месячный лимит символов",
+            500: "ошибка на стороне сервиса — попробуйте позже",
+            502: "ошибка на стороне сервиса — попробуйте позже",
+            503: "сервис перегружен — попробуйте позже",
+            504: "сервис не успел ответить — попробуйте позже",
+            529: "сервис перегружен — попробуйте позже",
         }.get(r.status_code, "")
         text = r.text.lstrip()
         # HTML-страницы ошибок не показываем — в них нет ничего полезного

@@ -330,8 +330,147 @@ def glossary_speed() -> None:
     check("глоссарий на 1500 записей: поиск на странице быстрый", ms < 50, f"{ms:.1f} мс на страницу (раньше ~1200 мс)")
 
 
+# ---------------------------------------------------------------- сбои сервисов
+
+class Resp:
+    def __init__(self, status: int, data=None, headers=None):
+        self.status_code, self._data, self.headers = status, data, headers or {}
+        self.text = json.dumps(data) if data is not None else ""
+
+    def json(self):
+        return self._data
+
+
+def services() -> None:
+    import requests
+
+    from app.translators import base as tb
+    from app.translators.base import TranslateError
+    from app.translators.llm import ClaudeTranslator
+    from app.translators.machine import GoogleFreeTranslator
+
+    sleeps: list[float] = []
+    real_sleep = tb.time.sleep
+    tb.time.sleep = lambda s: sleeps.append(round(s, 1))
+    tb.RateLimit.interval = 0
+    try:
+        def run(answers):
+            """Перевести через Google, когда сервер отвечает по очереди answers."""
+            sleeps.clear()
+            tr = GoogleFreeTranslator({})
+            it = iter(answers)
+
+            def fake(method, url, **kw):
+                a = next(it)
+                if isinstance(a, Exception):
+                    raise a
+                return a
+            tr.http.request = fake
+            return tr.translate(TranslateRequest(["Hola"], "es", "ru"))
+
+        ok = Resp(200, [[["Привет", "Hola"]], None, "es"])
+        check("сбой 503, 503, потом ответ — перевод есть", run([Resp(503), Resp(503), ok]) == ["Привет"],
+              f"паузы {sleeps}")
+        run([Resp(529, headers={"Retry-After": "30"}), ok])
+        check("сервис просит подождать 30 с — ждём не больше 10", sleeps == [10.0], f"паузы {sleeps}")
+        check("оборвалась связь, потом ответ — перевод есть",
+              run([requests.ConnectionError("reset"), ok]) == ["Привет"], f"паузы {sleeps}")
+        try:
+            run([Resp(503)] * 3)
+            check("сервис лежит — понятная ошибка", False, "ошибки не было")
+        except TranslateError as e:
+            check("сервис лежит — понятная ошибка", "перегружен" in str(e) and len(sleeps) == 2, str(e)[:60])
+        try:
+            run([requests.Timeout("slow"), ok])
+            check("долгое ожидание не повторяется", False, "ошибки не было")
+        except TranslateError as e:
+            check("долгое ожидание не повторяется", "не ответил" in str(e) and not sleeps, str(e)[:60])
+
+        # ИИ: ответ оборвался на длинной странице — страница переводится по частям
+        calls: list[int] = []
+
+        class FakeClaude(ClaudeTranslator):
+            def _post(self, url, **kw):
+                texts = json.loads(kw["json"]["messages"][0]["content"].split("translate (")[1].split(":", 1)[1])
+                calls.append(len(texts))
+                if len(texts) > 3:      # длинная страница: ответ обрывается
+                    return Resp(200, {"stop_reason": "max_tokens",
+                                      "content": [{"type": "text", "text": '{"translations": ["a", "b'}]})
+                return Resp(200, {"stop_reason": "end_turn", "content": [{"type": "text", "text": json.dumps(
+                    {"translations": [f"<{x}>" for x in texts], "terms": [{"source": x, "target": x} for x in texts]})}]})
+
+        texts = [f"line {i}" for i in range(10)]
+        tr = FakeClaude({"api_key": "k"})
+        res = tr.translate(TranslateRequest(texts, "en", "ru", collect_terms=True))
+        check("ИИ: оборванный ответ — страница переведена по частям, порядок верный",
+              res == [f"<{t}>" for t in texts] and len(tr.terms) == 10, f"запросы по {calls}")
+        calls.clear()
+
+        class Short(ClaudeTranslator):
+            def _post(self, url, **kw):
+                n = kw["json"]["messages"][0]["content"].count('"line')
+                calls.append(n)
+                items = ["x"] * (n if n == 1 else n - 1)        # длинный ответ теряет одну строку
+                return Resp(200, {"stop_reason": "end_turn",
+                                  "content": [{"type": "text", "text": json.dumps({"translations": items})}]})
+
+        res = Short({"api_key": "k"}).translate(TranslateRequest(texts[:4], "en", "ru"))
+        check("ИИ: в ответе не все переводы — дозапрос по частям", res == ["x"] * 4, f"запросы по {calls}")
+    finally:
+        tb.time.sleep = real_sleep
+
+    # запасные бесплатные переводчики
+    from app.translators import TRANSLATORS
+
+    class Down(Translator):
+        title = "Google (без ключа)"
+
+        def translate(self, req):
+            raise TranslateError("Google: ошибка 429")
+
+    class Up(Translator):
+        title = "Яндекс"
+
+        def translate(self, req):
+            return [f"[Я] {t}" for t in req.texts]
+
+    saved = dict(TRANSLATORS)
+    cfg_path = out / "config_fallback.json"
+    cfg_path.unlink(missing_ok=True)
+    cfg = config.Config(cfg_path)
+    cfg.update({"source_lang": "en", "context_size": 0, "request_interval": 0, "ocr_mode": "fast",
+                "skip_cut_bubbles": False, "content_mode": "screen", "glossary": "", "translator": "google_free"})
+    try:
+        TRANSLATORS.update({"yandex": Up, "lingva": Up, "duckduckgo": Up})
+        pipe = pipeline_module.Pipeline(cfg)
+        ocr = TextOcr(cfg)
+        ocr.lines = ["Where are you going?"]
+        pipe._ocr, pipe._ocr_name = ocr, cfg["ocr_engine"]
+        pipe._translator, pipe._translator_key = Down({}), "google_free"
+        img = Image.new("RGB", (600, 200), "white")
+        r = pipe.process(img)
+        got = [b.translation for b in r.bubbles]
+        check("бесплатный переводчик не ответил — перевёл другой бесплатный",
+              got == ["[Я] Where are you going?"] and "перевёл Яндекс" in r.fallback and not r.error,
+              r.fallback or r.error)
+        cfg["free_fallback"] = False
+        pipe.cache.clear()
+        r = pipe.process(img)
+        check("запасные выключены — честная ошибка", bool(r.error) and not r.fallback, r.error[:40])
+        cfg["free_fallback"] = True
+        pipe.cache.clear()
+        cfg["translator"] = "deepl"         # переводчик с ключом не подменяем
+        pipe._translator, pipe._translator_key = Down({}), "deepl"
+        r = pipe.process(img)
+        check("переводчик с ключом не подменяется бесплатным", bool(r.error) and not r.fallback, r.error[:40])
+    finally:
+        TRANSLATORS.clear()
+        TRANSLATORS.update(saved)
+
+
 def main() -> int:
     translators()
+    services()
     ocr_and_detect()
     glossary()
     glossary_speed()

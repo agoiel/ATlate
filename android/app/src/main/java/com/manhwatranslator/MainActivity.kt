@@ -299,6 +299,9 @@ class MainActivity : Activity() {
         card.addView(Stepper(this, tr("Пауза между запросами"), tr("Защищает от блокировки за частые запросы"),
             s.requestIntervalSec, 0.5f, 0f, 10f, { String.format(tr("%.1f с"), it) }) { s.requestIntervalSec = it },
             lp().margins(this, top = 12))
+        card.addView(SwitchRow(this, tr("Запасные бесплатные переводчики"),
+            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным"), s.freeFallback) { s.freeFallback = it },
+            lp().margins(this, top = 8))
         selectTranslator(s.translator)
         return card
     }

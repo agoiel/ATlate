@@ -24,7 +24,11 @@ from .config import GLOSSARY_DIR, Config
 from .glossary import Glossary
 from .models import DebugInfo, PageResult, PassInfo
 from .ocr import OcrBackend, OcrError, OcrLanguageMissing, create_ocr, enhance
-from .translators import RateLimit, TranslateError, TranslateRequest, Translator, create_translator
+from .translators import (TRANSLATORS, RateLimit, TranslateError, TranslateRequest, Translator,
+                          create_translator)
+
+# Бесплатные переводчики без ключа — в этом порядке пробуются, если выбранный не ответил
+FREE_TRANSLATORS = ("google_free", "yandex", "lingva", "duckduckgo")
 
 
 _GLOSSARY_LOCK = threading.Lock()   # глоссарий могут пополнять и главное окно, и Студия
@@ -72,6 +76,8 @@ class Pipeline:
         self._title_id: str | None = None
         self._pool: ThreadPoolExecutor | None = None
         self._glossary_stamp = 0
+        self._fallbacks: dict[str, Translator] = {}
+        self.fallback_note = ""         # кто перевёл вместо выбранного бесплатного переводчика
         self.glossary_added = 0         # сколько терминов авто-глоссарий добавил за последний перевод
         self.last_detected = ""         # язык, который определил сам переводчик (для текста на латинице)
         # автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
@@ -112,6 +118,7 @@ class Pipeline:
     def reload(self) -> None:
         """Перечитать настройки (после окна настроек)."""
         self._translator = None
+        self._fallbacks.clear()
         self._glossary_name = None
         if self.cfg["ocr_engine"] != self._ocr_name:
             self._ocr = None
@@ -151,6 +158,33 @@ class Pipeline:
                 except (OSError, ValueError):
                     self.glossary = None
         return self.glossary
+
+    def _fallback(self, req: TranslateRequest, err: TranslateError) -> tuple[list[str], Translator]:
+        """Выбранный бесплатный переводчик не ответил — пробуем другие бесплатные.
+
+        Бесплатные способы неофициальные: Google ограничивает запросы при VPN, у Lingva падают
+        серверы, DuckDuckGo меняет страницу. Если один не ответил, страницу переводит следующий,
+        а в строке статуса видно, кто перевёл. Переводчики с ключом не подменяются.
+        """
+        cur = self._translator_key
+        paid_yandex = cur == "yandex" and self.cfg.translator_settings("yandex").get("api_key")
+        if not self.cfg.get("free_fallback", True) or cur not in FREE_TRANSLATORS or paid_yandex:
+            raise err
+        for name in FREE_TRANSLATORS:
+            if name == cur:
+                continue
+            alt = self._fallbacks.get(name)
+            if alt is None:
+                # Яндекс — только бесплатным способом: платный ключ без спроса не тратим
+                settings = {} if name == "yandex" else self.cfg.translator_settings(name)
+                alt = self._fallbacks[name] = TRANSLATORS[name](settings)
+            try:
+                out = alt.translate(req)
+            except TranslateError:
+                continue
+            self.fallback_note = f"{self.translator.title} не ответил — перевёл {alt.title}"
+            return out, alt
+        raise err
 
     def _grow_glossary(self, glossary: Glossary, terms: list[dict], texts: list[str]) -> None:
         """Авто-глоссарий: добавить новые термины от ИИ-переводчика и сохранить файл."""
@@ -377,7 +411,7 @@ class Pipeline:
                 todo.append(b)
 
         if todo:
-            self.glossary_added, self.last_detected = 0, ""
+            self.glossary_added, self.last_detected, self.fallback_note = 0, "", ""
             try:
                 # облака на разных языках переводятся отдельными запросами
                 groups: dict[str, list] = {}
@@ -390,6 +424,7 @@ class Pipeline:
             self._persist_title()
             result.glossary_added = self.glossary_added
             result.source_detected = self.last_detected
+            result.fallback = self.fallback_note
         result.timings["translate"] = time.perf_counter() - t2
         watch.mark("перевод")
         result.debug = debug()
@@ -481,7 +516,10 @@ class Pipeline:
         req.collect_terms = bool(glossary and glossary.auto and tr.uses_llm
                                  and not (self._glossary_name or "").startswith("universal_"))
 
-        out = tr.translate(req)
+        try:
+            out = tr.translate(req)
+        except TranslateError as e:
+            out, tr = self._fallback(req, e)
         if tr.detected:
             self.last_detected = tr.detected
         if req.collect_terms and tr.terms:

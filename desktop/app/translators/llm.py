@@ -11,6 +11,7 @@ OpenAI-совместимый вариант подходит для:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 
@@ -125,17 +126,71 @@ def _translations(data, n: int) -> list[str]:
     return out[:n]
 
 
-class GeminiTranslator(Translator):
-    name = "gemini"
-    title = "Gemini"
+class _Incomplete(Exception):
+    """Ответ оборвался или в нём не все переводы — страницу стоит перевести по частям."""
+
+
+def _part(req: TranslateRequest, a: int, b: int) -> TranslateRequest:
+    return dataclasses.replace(req, texts=req.texts[a:b],
+                               anchored=req.anchored[a:b] if req.anchored else None)
+
+
+class LLMTranslator(Translator):
+    """Общее для ИИ-переводчиков: длинная страница, на которую ответ оборвался, переводится по частям.
+
+    Ответ модели ограничен по длине. На странице с большим количеством текста (статья в режиме
+    «Текст на экране») он мог оборваться посреди JSON, и тогда пропадал перевод всей страницы.
+    Теперь страница делится пополам, и каждая половина переводится отдельно.
+    """
+
     uses_llm = True
+    timeout = 60            # ИИ отвечает дольше обычных переводчиков
+    MAX_SPLIT = 3           # не больше трёх делений: 8 частей
 
     def translate(self, req: TranslateRequest) -> list[str]:
+        self.detected, self.terms = "", []
+        return self._split(req, 0)
+
+    def _split(self, req: TranslateRequest, depth: int) -> list[str]:
+        try:
+            out, detected, terms = self._ask(req)
+        except _Incomplete as e:
+            if len(req.texts) < 2 or depth >= self.MAX_SPLIT:
+                raise TranslateError(f"{self.title}: {e}") from None
+            mid = len(req.texts) // 2
+            return self._split(_part(req, 0, mid), depth + 1) + self._split(_part(req, mid, len(req.texts)), depth + 1)
+        self.detected = detected or self.detected
+        self.terms += terms
+        return out
+
+    def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
+        """Один запрос. Ответ разбирается в _reply."""
+        raise NotImplementedError
+
+    @staticmethod
+    def _reply(raw: str, n: int, truncated: bool) -> tuple[list[str], str, list[dict]]:
+        data = _load_json(raw)
+        items = data.get("translations") if isinstance(data, dict) else data
+        if isinstance(data, dict) and not isinstance(items, list):
+            items = next((v for v in data.values() if isinstance(v, list)), None)
+        if not isinstance(items, list):
+            raise _Incomplete("ответ оборвался — слишком длинная страница" if truncated else
+                              "ИИ вернул ответ не в формате JSON. Попробуйте ещё раз или смените модель.")
+        if (truncated or len(items) < n) and n > 1:
+            raise _Incomplete("ответ оборвался — слишком длинная страница" if truncated
+                              else "в ответе не все переводы")
+        return parse_reply(raw, n)
+
+
+class GeminiTranslator(LLMTranslator):
+    name = "gemini"
+    title = "Gemini"
+
+    def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         key = self.settings.get("api_key", "").strip()
         if not key:
             raise TranslateError("Gemini: укажите API-ключ в настройках (aistudio.google.com).")
         model = self.settings.get("model", "gemini-2.5-flash-lite").strip()
-        self.detected, self.terms = "", []
         system, user = build_messages(req)
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -146,20 +201,19 @@ class GeminiTranslator(Translator):
         r = self._post(url, json=body, headers={"x-goog-api-key": key})
         data = r.json()
         try:
-            raw = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+            cand = data["candidates"][0]
+            raw = "".join(p.get("text", "") for p in cand["content"]["parts"])
         except (KeyError, IndexError) as e:
             reason = data.get("promptFeedback", {}).get("blockReason", "")
             raise TranslateError(f"Gemini: пустой ответ {reason}".strip()) from e
-        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
-        return out
+        return self._reply(raw, len(req.texts), cand.get("finishReason") == "MAX_TOKENS")
 
 
-class OpenAICompatTranslator(Translator):
+class OpenAICompatTranslator(LLMTranslator):
     name = "openai"
     title = "OpenAI-совместимый"
-    uses_llm = True
 
-    def translate(self, req: TranslateRequest) -> list[str]:
+    def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         base = self.settings.get("base_url", "").strip().rstrip("/")
         model = self.settings.get("model", "").strip()
         if not base or not model:
@@ -168,7 +222,6 @@ class OpenAICompatTranslator(Translator):
         key = self.settings.get("api_key", "").strip()
         if key:
             headers["Authorization"] = f"Bearer {key}"
-        self.detected, self.terms = "", []
         system, user = build_messages(req)
         body = {
             "model": model,
@@ -178,34 +231,32 @@ class OpenAICompatTranslator(Translator):
         }
         r = self._post(f"{base}/chat/completions", json=body, headers=headers)
         try:
-            raw = r.json()["choices"][0]["message"]["content"]
+            choice = r.json()["choices"][0]
+            raw = choice["message"]["content"]
         except (KeyError, IndexError, ValueError) as e:
             raise TranslateError("Сервер вернул неожиданный ответ.") from e
-        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
-        return out
+        return self._reply(raw, len(req.texts), choice.get("finish_reason") == "length")
 
 
-class ClaudeTranslator(Translator):
+class ClaudeTranslator(LLMTranslator):
     """Claude (Anthropic API)."""
 
     name = "claude"
     title = "Claude"
-    uses_llm = True
 
-    def translate(self, req: TranslateRequest) -> list[str]:
+    def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         key = self.settings.get("api_key", "").strip()
         if not key:
             raise TranslateError("Claude: укажите API-ключ в настройках (platform.claude.com).")
         model = (self.settings.get("model") or "claude-haiku-5-5").strip()
-        self.detected, self.terms = "", []
         system, user = build_messages(req)
         r = self._post("https://api.anthropic.com/v1/messages",
                        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
                        json={"model": model, "max_tokens": 4096, "temperature": 0.3, "system": system,
                              "messages": [{"role": "user", "content": user}]})
         try:
-            raw = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
+            js = r.json()
+            raw = "".join(b.get("text", "") for b in js["content"] if b.get("type") == "text")
         except (KeyError, ValueError) as e:
             raise TranslateError("Claude: неожиданный ответ сервера.") from e
-        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
-        return out
+        return self._reply(raw, len(req.texts), js.get("stop_reason") == "max_tokens")

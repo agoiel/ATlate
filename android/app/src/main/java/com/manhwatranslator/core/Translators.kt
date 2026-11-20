@@ -69,15 +69,34 @@ object RateLimit {
 }
 
 internal object Http {
+    /** Временные сбои сервиса: перегружен, ошибка на его стороне. Такие запросы повторяются с паузой. */
+    private val retryCodes = setOf(500, 502, 503, 504, 529)
+    private const val ATTEMPTS = 3
+    /** Код ошибки «оборвалась связь» (повторяется) и «долго нет ответа» (не повторяется). */
+    const val NO_CONNECTION = -1
+    const val TIMEOUT = -2
+
+    /**
+     * Запрос с повторами при временных сбоях. Раньше повторялся только ответ «слишком много
+     * запросов», а перегрузка сервиса или оборванное соединение сразу давали ошибку на всю страницу.
+     */
     fun call(url: String, method: String = "GET", headers: Map<String, String> = emptyMap(),
              body: String? = null, title: String): String {
-        try {
-            return once(url, method, headers, body, title)
-        } catch (e: TranslateException) {
-            if (e.code != 429) throw e
-            // Сервис попросил притормозить: ждём и пробуем ещё раз
-            Thread.sleep(maxOf(3000L, RateLimit.intervalMs * 2))
-            return once(url, method, headers, body, title)
+        var attempt = 1
+        while (true) {
+            try {
+                return once(url, method, headers, body, title)
+            } catch (e: TranslateException) {
+                val pause = when {
+                    // сервис попросил притормозить: ждём и пробуем ещё раз
+                    e.code == 429 && attempt == 1 -> maxOf(3000L, RateLimit.intervalMs * 2)
+                    e.code == NO_CONNECTION && attempt < ATTEMPTS -> 1500L * attempt
+                    e.code in retryCodes && attempt < ATTEMPTS -> 2000L * attempt
+                    else -> throw e
+                }
+                Thread.sleep(pause)
+                attempt++
+            }
         }
     }
 
@@ -107,6 +126,9 @@ internal object Http {
                     403 -> tr("доступ запрещён — проверьте ключ и регион")
                     429 -> tr("слишком много запросов или закончился лимит")
                     456 -> tr("закончился месячный лимит символов")
+                    500, 502 -> tr("ошибка на стороне сервиса — попробуйте позже")
+                    503, 529 -> tr("сервис перегружен — попробуйте позже")
+                    504 -> tr("сервис не успел ответить — попробуйте позже")
                     else -> ""
                 }
                 // HTML-страницы ошибок не показываем — в них нет ничего полезного
@@ -116,8 +138,11 @@ internal object Http {
             return text
         } catch (e: TranslateException) {
             throw e
+        } catch (e: java.net.SocketTimeoutException) {
+            // долгое ожидание не повторяем: это ещё столько же секунд
+            throw TranslateException(trf("%s: сервис не ответил вовремя", title), TIMEOUT)
         } catch (e: Exception) {
-            throw TranslateException(trf("%s: нет связи (%s)", title, e.javaClass.simpleName))
+            throw TranslateException(trf("%s: нет связи (%s)", title, e.javaClass.simpleName), NO_CONNECTION)
         } finally {
             conn.disconnect()
         }
@@ -303,23 +328,73 @@ ${extra(req)}- Answer ONLY with JSON: ${answer(req)} — exactly ${req.texts.siz
         append(JSONArray(req.texts).toString(1))
     }
 
+    /** Ответ оборвался или в нём не все переводы — страницу стоит перевести по частям. */
+    private class Incomplete(message: String) : Exception(message)
+
+    private fun part(req: TranslateRequest, a: Int, b: Int) = TranslateRequest(
+        req.texts.subList(a, b), req.src, req.tgt, req.history, req.glossary, req.anchored?.subList(a, b),
+        req.screen, req.collectTerms)
+
+    /**
+     * Перевод страницы ИИ-переводчиком; длинная страница, ответ на которую оборвался, — по частям.
+     * Ответ модели ограничен по длине: на странице с большим количеством текста он мог оборваться
+     * посреди JSON, и пропадал перевод всей страницы. ask(часть) → (текст ответа, ответ оборван).
+     */
+    fun inParts(req: TranslateRequest, title: String, ask: (TranslateRequest) -> Pair<String, Boolean>): List<String> {
+        req.terms = emptyList()
+        return split(req, req, title, 0, ask)
+    }
+
+    private fun split(root: TranslateRequest, req: TranslateRequest, title: String, depth: Int,
+                      ask: (TranslateRequest) -> Pair<String, Boolean>): List<String> {
+        val n = req.texts.size
+        val (raw, truncated) = ask(req)
+        val list = read(raw, req)
+        val problem = when {
+            list == null -> if (truncated) tr("ответ оборвался — слишком длинная страница")
+                            else tr("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз.")
+            n > 1 && truncated -> tr("ответ оборвался — слишком длинная страница")
+            n > 1 && list.length() < n -> tr("в ответе не все переводы")
+            else -> null
+        }
+        if (problem == null) {
+            if (req.detected.isNotBlank()) root.detected = req.detected
+            if (req !== root) root.terms = root.terms + req.terms
+            val out = (0 until list!!.length()).map { list.optString(it).trim() }.toMutableList()
+            while (out.size < n) out.add("")
+            return out.take(n)
+        }
+        if (n < 2 || depth >= 3) throw TranslateException("$title: $problem")
+        if (req === root) root.terms = emptyList()     // термины из неполного ответа не берём
+        val mid = n / 2
+        return split(root, part(req, 0, mid), title, depth + 1, ask) + split(root, part(req, mid, n), title, depth + 1, ask)
+    }
+
     /** Ответ модели → переводы; язык оригинала и новые термины кладутся в req. */
     fun parse(raw: String, n: Int, req: TranslateRequest? = null): List<String> {
+        val list = read(raw, req) ?: throw TranslateException(tr("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз."))
+        val out = (0 until list.length()).map { list.optString(it).trim() }.toMutableList()
+        while (out.size < n) out.add("")
+        return out.take(n)
+    }
+
+    /** Список переводов из ответа (null — не JSON); язык оригинала и термины — в req. */
+    private fun read(raw: String, req: TranslateRequest?): JSONArray? {
         var text = raw.trim().replace(Regex("^```(?:json)?|```$", RegexOption.MULTILINE), "").trim()
-        fun read(t: String): Pair<JSONArray?, JSONObject?> =
+        fun json(t: String): Pair<JSONArray?, JSONObject?> =
             if (t.startsWith("[")) JSONArray(t) to null else JSONObject(t).let { it.optJSONArray("translations") to it }
         val (list, obj) = try {
-            read(text)
+            json(text)
         } catch (e: Exception) {
             val m = Regex("\\{.*\\}|\\[.*\\]", RegexOption.DOT_MATCHES_ALL).find(text)
             text = m?.value ?: ""
             try {
-                read(text)
+                json(text)
             } catch (e2: Exception) {
                 null to null
             }
         }
-        if (list == null) throw TranslateException(tr("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз."))
+        if (list == null) return null
         if (req != null && obj != null) {
             req.detected = obj.optString("source_language").trim().take(8)
             val arr = obj.optJSONArray("terms")
@@ -328,9 +403,7 @@ ${extra(req)}- Answer ONLY with JSON: ${answer(req)} — exactly ${req.texts.siz
                 GlossaryEntry(t.optString("source"), t.optString("target"), t.optString("note"), auto = true)
             }
         }
-        val out = (0 until list.length()).map { list.optString(it).trim() }.toMutableList()
-        while (out.size < n) out.add("")
-        return out.take(n)
+        return list
     }
 }
 
@@ -340,6 +413,10 @@ class GeminiTranslator(private val key: String, private val model: String) : Tra
 
     override fun translate(req: TranslateRequest): List<String> {
         if (key.isBlank()) throw TranslateException(tr("Gemini: укажите API-ключ (aistudio.google.com)"))
+        return LlmPrompt.inParts(req, title) { part -> ask(part) }
+    }
+
+    private fun ask(req: TranslateRequest): Pair<String, Boolean> {
         val body = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", LlmPrompt.system(req)))))
             .put("contents", JSONArray().put(JSONObject().put("role", "user")
@@ -348,14 +425,14 @@ class GeminiTranslator(private val key: String, private val model: String) : Tra
         val m = model.ifBlank { "gemini-2.5-flash-lite" }.trim()
         val raw = Http.call("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent", "POST",
             mapOf("x-goog-api-key" to key.trim()), body.toString(), title)
-        val text = try {
-            val parts = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts")
-            (0 until parts.length()).joinToString("") { parts.getJSONObject(it).optString("text") }
+        return try {
+            val cand = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
+            val parts = cand.getJSONObject("content").getJSONArray("parts")
+            (0 until parts.length()).joinToString("") { parts.getJSONObject(it).optString("text") } to
+                (cand.optString("finishReason") == "MAX_TOKENS")
         } catch (e: Exception) {
             throw TranslateException(tr("Gemini: пустой ответ"))
         }
-        return LlmPrompt.parse(text, req.texts.size, req)
     }
 }
 
@@ -366,6 +443,10 @@ class OpenAICompatTranslator(private val baseUrl: String, private val key: Strin
 
     override fun translate(req: TranslateRequest): List<String> {
         if (baseUrl.isBlank() || model.isBlank()) throw TranslateException(tr("Укажите адрес сервера и модель в настройках"))
+        return LlmPrompt.inParts(req, title) { part -> ask(part) }
+    }
+
+    private fun ask(req: TranslateRequest): Pair<String, Boolean> {
         val headers = if (key.isNotBlank()) mapOf("Authorization" to "Bearer ${key.trim()}") else emptyMap()
         val body = JSONObject()
             .put("model", model.trim())
@@ -374,12 +455,12 @@ class OpenAICompatTranslator(private val baseUrl: String, private val key: Strin
                 .put(JSONObject().put("role", "system").put("content", LlmPrompt.system(req)))
                 .put(JSONObject().put("role", "user").put("content", LlmPrompt.user(req))))
         val raw = Http.call("${baseUrl.trim().trimEnd('/')}/chat/completions", "POST", headers, body.toString(), title)
-        val text = try {
-            JSONObject(raw).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
+        return try {
+            val choice = JSONObject(raw).getJSONArray("choices").getJSONObject(0)
+            choice.getJSONObject("message").getString("content") to (choice.optString("finish_reason") == "length")
         } catch (e: Exception) {
             throw TranslateException(tr("Сервер вернул неожиданный ответ"))
         }
-        return LlmPrompt.parse(text, req.texts.size, req)
     }
 }
 
@@ -573,6 +654,10 @@ class ClaudeTranslator(private val key: String, private val model: String) : Tra
 
     override fun translate(req: TranslateRequest): List<String> {
         if (key.isBlank()) throw TranslateException(tr("Claude: укажите API-ключ (platform.claude.com)"))
+        return LlmPrompt.inParts(req, title) { part -> ask(part) }
+    }
+
+    private fun ask(req: TranslateRequest): Pair<String, Boolean> {
         val body = JSONObject()
             .put("model", model.ifBlank { "claude-haiku-5-5" }.trim())
             .put("max_tokens", 4096)
@@ -581,14 +666,15 @@ class ClaudeTranslator(private val key: String, private val model: String) : Tra
             .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", LlmPrompt.user(req))))
         val raw = Http.call("https://api.anthropic.com/v1/messages", "POST",
             mapOf("x-api-key" to key.trim(), "anthropic-version" to "2023-06-01"), body.toString(), title)
-        val text = try {
-            val content = JSONObject(raw).getJSONArray("content")
+        return try {
+            val js = JSONObject(raw)
+            val content = js.getJSONArray("content")
             (0 until content.length()).map { content.getJSONObject(it) }
-                .filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") }
+                .filter { it.optString("type") == "text" }.joinToString("") { it.optString("text") } to
+                (js.optString("stop_reason") == "max_tokens")
         } catch (e: Exception) {
             throw TranslateException(tr("Claude: неожиданный ответ сервера"))
         }
-        return LlmPrompt.parse(text, req.texts.size, req)
     }
 }
 

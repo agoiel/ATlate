@@ -487,6 +487,7 @@ class OverlayService : Service() {
                 toast(trf("Язык определил переводчик: %s", Languages.nameOf(res.sourceDetected).lowercase()))
             }
             fromLive -> {}   // в Live не мешаем чтению сообщениями
+            res.fallback.isNotEmpty() -> toast(res.fallback)
             res.glossaryAdded > 0 -> toast(trf("В глоссарий добавлено: %s", res.glossaryAdded))
             res.bubbles.isEmpty() -> toast(tr("Текст не найден в выделенной области") + diag)
             res.bubbles.none { it.translation.isNotBlank() } -> toast(tr("Нечего переводить") + diag)
