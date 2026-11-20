@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import shutil
 import traceback
 from pathlib import Path
@@ -160,6 +161,31 @@ class _ExportJob(QRunnable):
         if failed:
             msg += f" Не удалось: {failed}."
         self.signals.finished.emit(msg)
+
+
+class _TaskSignals(QObject):
+    done = Signal(int, object)            # номер задачи, результат
+    failed = Signal(int, str)
+
+
+class _TaskJob(QRunnable):
+    """Короткая работа в фоне: распознать или перевести один блок.
+
+    Раньше это делалось прямо в окне, и на время запроса к переводчику (у ИИ — секунды,
+    при плохой связи — до 30 с) Студия переставала отвечать.
+    """
+
+    def __init__(self, signals: _TaskSignals, token: int, fn):
+        super().__init__()
+        self.signals, self.token, self.fn = signals, token, fn
+
+    def run(self):
+        try:
+            result = self.fn()
+        except Exception:  # noqa: BLE001
+            self.signals.failed.emit(self.token, traceback.format_exc())
+            return
+        self.signals.done.emit(self.token, result)
 
 
 THUMB_W, THUMB_H = 168, 232
@@ -481,6 +507,7 @@ class BlockCard(QFrame):
     clicked = Signal(str)
     retranslate = Signal(str)
     delete = Signal(str)
+    tilt_changed = Signal(str, float)  # id, новый наклон (что с ним делать, решает окно: ему видна картинка)
 
     def __init__(self, block: Block, number: int):
         super().__init__()
@@ -515,8 +542,27 @@ class BlockCard(QFrame):
         self.translation.textChanged.connect(self._on_translation)
         lay.addWidget(self.translation)
 
-        # подробности — только у выбранного блока
+        # подробности — только у выбранного блока. Строятся при первом выборе: это четыре списка
+        # и кнопки, а пересоздавать их у каждой карточки при любой правке страницы было дорого
         self.more = QWidget()
+        self.more.setVisible(False)
+        self._more_built = False
+        lay.addWidget(self.more)
+        self.overflow = caption("Перевод не помещается — уменьшите текст или растяните рамку блока.")
+        self.overflow.setStyleSheet("color: #C0392B;")
+        self.overflow.setVisible(False)
+        lay.addWidget(self.overflow)
+
+    @staticmethod
+    def _select(items, current) -> Select:
+        s = Select()
+        for key, title in items:
+            s.addItem(title, key)
+        s.setCurrentIndex(max(0, s.findData(current)))
+        return s
+
+    def _build_more(self) -> None:
+        block = self.block
         ml = QVBoxLayout(self.more)
         ml.setContentsMargins(0, 4, 0, 0)
         ml.setSpacing(8)
@@ -548,7 +594,8 @@ class BlockCard(QFrame):
         ml.addWidget(self.in_box)
         self.tilt = Stepper("Наклон текста", "Плюс — правый край выше", float(block.angle),
                             1, -90, 90, lambda v: "ровно" if abs(v) < 0.5 else f"{v:+.0f}°")
-        ml.addWidget(self.tilt)       # что делать с новым углом, решает окно: ему видна картинка
+        self.tilt.changed.connect(lambda v: self.tilt_changed.emit(self.block.id, float(v)))
+        ml.addWidget(self.tilt)
         btns = QHBoxLayout()
         btns.setSpacing(8)
         again = pill("Перевести заново", "tonal", "refresh")
@@ -559,25 +606,14 @@ class BlockCard(QFrame):
         rm.clicked.connect(lambda: self.delete.emit(self.block.id))
         btns.addWidget(rm)
         ml.addLayout(btns)
-        self.more.setVisible(False)
-        lay.addWidget(self.more)
-        self.overflow = caption("Перевод не помещается — уменьшите текст или растяните рамку блока.")
-        self.overflow.setStyleSheet("color: #C0392B;")
-        self.overflow.setVisible(False)
-        lay.addWidget(self.overflow)
-
-    @staticmethod
-    def _select(items, current) -> Select:
-        s = Select()
-        for key, title in items:
-            s.addItem(title, key)
-        s.setCurrentIndex(max(0, s.findData(current)))
-        return s
+        self._more_built = True
 
     def set_selected(self, on: bool) -> None:
         self.setProperty("selected", "true" if on else "false")
         self.style().unpolish(self)
         self.style().polish(self)
+        if on and not self._more_built:
+            self._build_more()
         self.more.setVisible(on)
 
     def set_overflow(self, on: bool) -> None:
@@ -628,6 +664,15 @@ class StudioWindow(QWidget):
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(2)
         self.job: _ChapterJob | None = None
+        # короткие задачи (блок распознать, перевести заново) — в фоне, в своём пуле
+        self.task_pool = QThreadPool(self)
+        self.task_pool.setMaxThreadCount(2)
+        self.task_signals = _TaskSignals(self)
+        self.task_signals.done.connect(self._on_task_done)
+        self.task_signals.failed.connect(self._on_task_failed)
+        self._tasks: dict[int, tuple] = {}
+        self._task_seq = 0
+        self._busy_blocks: set[str] = set()
         # сигналы задач отрисовки — одни на всё окно (см. _RenderJob)
         self.render_signals = _Signals(self)
         self.render_signals.rendered.connect(self._on_rendered)
@@ -1085,7 +1130,7 @@ class StudioWindow(QWidget):
             card.changed.connect(lambda _bid, redraw: self._changed(redraw))
             card.clicked.connect(lambda bid: self.view.select(bid))
             card.retranslate.connect(self._retranslate_block)
-            card.tilt.changed.connect(lambda v, blk=b: self._on_tilt(blk, float(v)))
+            card.tilt_changed.connect(lambda _bid, v, blk=b: self._on_tilt(blk, v))
             card.delete.connect(self._delete_block)
             self.blocks_lay.addWidget(card)
             self.cards[b.id] = card
@@ -1094,7 +1139,8 @@ class StudioWindow(QWidget):
         for k, c in self.cards.items():
             c.set_selected(k == bid)
         if bid in self.cards:
-            QTimer.singleShot(0, lambda: self.side.ensureWidgetVisible(self.cards[bid], 0, 40))
+            # карточку могли пересоздать или удалить, пока ждали
+            QTimer.singleShot(0, lambda: bid in self.cards and self.side.ensureWidgetVisible(self.cards[bid], 0, 40))
 
     def _set_view_mode(self, mode: str) -> None:
         self.view_mode = mode
@@ -1117,38 +1163,80 @@ class StudioWindow(QWidget):
             self.view.items_[b.id].update()
         self._changed(True)
 
+    # ---------------------------------------------------------------- фоновые задачи блоков
+    def _run_task(self, fn, on_done, label: str) -> None:
+        self._task_seq += 1
+        self._tasks[self._task_seq] = (on_done, label)
+        self.task_pool.start(_TaskJob(self.task_signals, self._task_seq, fn))
+
+    def _on_task_done(self, token: int, result) -> None:
+        on_done, _label = self._tasks.pop(token, (None, ""))
+        if on_done is not None:
+            on_done(result)
+
+    def _on_task_failed(self, token: int, tb: str) -> None:
+        _on_done, label = self._tasks.pop(token, (None, ""))
+        self.last_error = tb
+        self._busy_blocks.clear()
+        self._status(f"{label}: ошибка — " + tb.strip().splitlines()[-1])
+
     def _add_block(self, box: Box) -> None:
+        """Новый блок рамкой. Блок появляется сразу, текст в нём распознаётся и переводится в фоне."""
         page = self._page()
         if page is None or self._original is None:
             return
-        uniform, color = _ring_stats(self._original, box, pad=6)
+        original = self._original
+        uniform, color = _ring_stats(original, box, pad=6)
         kind = ("bubble" if sum(color) / 3 >= 170 else "box") if uniform >= 0.8 else "free"
         b = Block.new(box, lines=[box], kind=kind, bg=color, manual=True)
-        # распознать текст в рамке, если получится
-        try:
-            arr = self._original[int(box.y):int(box.y2), int(box.x):int(box.x2)]
-            lines = self.pipeline.recognize(Image.fromarray(arr), self.cfg["source_lang"], "fast", False)[0]
-            if lines:
-                from ..bubbles import _join_lines
-                joiner = languages.src(self.cfg["source_lang"])["joiner"]
-                b.source = _join_lines(lines, joiner)
-                for ln in lines:
-                    ln.box = Box(ln.box.x + box.x, ln.box.y + box.y, ln.box.w, ln.box.h)
-                b.lines = [ln.box for ln in lines]
-                b.lang = languages.detect(b.source, self.cfg["source_lang"])
-                engine.find_angle(self._original, b, lines, joiner, self.cfg["source_lang"])
-        except Exception:  # noqa: BLE001
-            pass
         page.blocks.append(b)
         if page.status == "new":
             page.status = "done"
-        if b.source:
-            err = engine.translate(self.pipeline, [b])
-            if err:
-                self._status(err)
         self._fill_cards()
         self.view.select(b.id)
         self._changed(True)
+        self._status("Распознаю текст в рамке…")
+        self._busy_blocks.add(b.id)
+        lang = self.cfg["source_lang"]
+        crop = np.ascontiguousarray(original[int(box.y):int(box.y2), int(box.x):int(box.x2)])
+        pipeline = self.pipeline
+
+        def work():
+            # всё считается на копии блока: пока идёт работа, человек может править настоящий
+            tmp = dataclasses.replace(b, lines=[box])
+            err = ""
+            lines = pipeline.recognize(Image.fromarray(crop), lang, "fast", False)[0]
+            if lines:
+                from ..bubbles import _join_lines
+                joiner = languages.src(lang)["joiner"]
+                tmp.source = _join_lines(lines, joiner)
+                for ln in lines:
+                    ln.box = Box(ln.box.x + box.x, ln.box.y + box.y, ln.box.w, ln.box.h)
+                tmp.lines = [ln.box for ln in lines]
+                tmp.lang = languages.detect(tmp.source, lang)
+                engine.find_angle(original, tmp, lines, joiner, lang)
+                err = engine.translate(pipeline, [tmp])
+            return tmp, err
+
+        def done(result) -> None:
+            tmp, err = result
+            self._busy_blocks.discard(b.id)
+            if b not in page.blocks:
+                self._status("Блок удалён.")   # блок успели удалить, пока шло распознавание
+                return
+            if not b.source:                 # человек ничего не вписал сам — берём распознанное
+                for f in ("source", "lines", "lang", "angle", "src_angle", "line_h", "kind", "bg"):
+                    setattr(b, f, getattr(tmp, f))
+            if not b.translation:
+                b.translation = tmp.translation
+            if page is self._page():
+                self._fill_cards()
+                self.view.select(b.id)
+            self._changed(True)
+            self._status(err or ("Блок добавлен." if b.source else
+                                 "Текст в рамке не распознался — впишите оригинал или перевод вручную."))
+
+        self._run_task(work, done, "Новый блок")
 
     def _delete_block(self, bid: str) -> None:
         page = self._page()
@@ -1163,15 +1251,24 @@ class StudioWindow(QWidget):
         if page is None:
             return
         b = next((x for x in page.blocks if x.id == bid), None)
-        if b is None or not b.source:
+        if b is None or not b.source or bid in self._busy_blocks:
             return
+        self._busy_blocks.add(bid)
         self._status("Перевожу блок…")
-        QApplication.processEvents()
-        err = engine.translate(self.pipeline, [b], force=True)
-        self._status(err or "Блок переведён заново.")
-        if bid in self.cards:
-            self.cards[bid].set_translation(b.translation)
-        self._changed(True)
+        tmp = dataclasses.replace(b)
+        pipeline = self.pipeline
+
+        def done(err: str) -> None:
+            self._busy_blocks.discard(bid)
+            if tmp.translation:
+                b.translation = tmp.translation
+                if page is self._page() and bid in self.cards:
+                    self.cards[bid].set_translation(b.translation)
+                self._changed(True)
+            self._status(err or "Блок переведён заново.")
+
+        # запрос к переводчику — в фоне: окно не замирает, пока ждём ответ
+        self._run_task(lambda: engine.translate(pipeline, [tmp], force=True), done, "Перевод блока")
 
     # ---------------------------------------------------------------- отрисовка
     def _render_now(self) -> None:
