@@ -16,9 +16,14 @@ data class GlossaryEntry(val source: String, val target: String, val note: Strin
  */
 class Glossary(var name: String, var sourceLang: String = "", var entries: List<GlossaryEntry> = emptyList(),
                /** пополнять сам: ИИ-переводчик добавляет новые имена и термины */
-               var auto: Boolean = false) {
+               var auto: Boolean = false,
+               /** на какой язык переводы в записях ("" — подходит для любого) */
+               var targetLang: String = "") {
 
     val autoCount: Int get() = entries.count { it.auto }
+
+    /** Подходит ли глоссарий для перевода на этот язык (иначе в перевод попали бы чужие слова). */
+    fun fits(target: String): Boolean = targetLang.isBlank() || targetLang == target
 
     /**
      * Авто-глоссарий: добавить новые термины от ИИ-переводчика (те же правила, что в ПК-версии).
@@ -153,6 +158,7 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
             arr.put(o)
         }
         val root = JSONObject().put("name", name).put("source_lang", sourceLang)
+        if (targetLang.isNotBlank()) root.put("target_lang", targetLang)
         if (auto) root.put("auto", true)
         return root.put("entries", arr).toString(2)
     }
@@ -160,12 +166,16 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
     /** Текстовый вид для редактора: «оригинал = перевод | заметка» на строку; запись ИИ — с пометкой [авто]. */
     fun toText(): String = entries.joinToString("\n") { e ->
         val line = if (e.note.isBlank()) "${e.source} = ${e.target}" else "${e.source} = ${e.target} | ${e.note}"
-        if (e.auto) "$line $AUTO_MARK" else line
+        if (e.auto) "$line ${autoMark()}" else line
     }
 
     companion object {
         /** Пометка записи ИИ в текстовом редакторе. Убрали пометку — запись подтверждена человеком. */
         const val AUTO_MARK = "[авто]"
+        /** Пометка на языке интерфейса; при чтении понимаются обе. */
+        fun autoMark(): String = if (I18n.english) "[auto]" else AUTO_MARK
+        /** Встроенные глоссарии переводят на русский; в старых копиях поля target_lang ещё нет. */
+        val BUNDLED_RU = setOf("universal_ko.json", "universal_en.json")
         const val MAX_AUTO = 1500
         const val MAX_NEW_PER_PAGE = 8
         private val sentence = Regex("[.!?。！？…]")
@@ -192,7 +202,8 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
                 val s = e.optString("source")
                 if (s.isBlank()) null else GlossaryEntry(s, e.optString("target"), e.optString("note"), e.optBoolean("auto"))
             }
-            return Glossary(o.optString("name", fallbackName), o.optString("source_lang"), list, o.optBoolean("auto"))
+            val target = o.optString("target_lang").ifBlank { if ("$fallbackName.json" in BUNDLED_RU) "ru" else "" }
+            return Glossary(o.optString("name", fallbackName), o.optString("source_lang"), list, o.optBoolean("auto"), target)
         }
 
         fun parseText(text: String): List<GlossaryEntry> = text.lines().mapNotNull { line ->
@@ -233,6 +244,10 @@ object GlossaryStore {
             tmp.delete()
         }
     }
+
+    /** Название для показа: у встроенных глоссариев — на языке интерфейса. */
+    fun title(file: String, g: Glossary): String =
+        if (file in Glossary.BUNDLED_RU) tr(g.name) else g.name.ifBlank { file.removeSuffix(".json") }
 
     fun delete(ctx: Context, file: String) {
         File(dir(ctx), file).delete()

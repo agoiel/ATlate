@@ -133,9 +133,11 @@ class GlossaryActivity : Activity() {
         }
         val entries = Glossary.parseText(bodyField.edit.text.toString())
         val target = file ?: GlossaryStore.fileNameFor(this, name)
-        // «пополнять сам» сохраняется; пометку [авто] у записи можно стереть — тогда она подтверждена
-        val auto = file?.let { GlossaryStore.load(this, it)?.auto } ?: false
-        GlossaryStore.save(this, target, Glossary(name, settings.sourceLang, entries, auto))
+        // «пополнять сам», язык оригинала и язык перевода глоссария сохраняются;
+        // пометку [авто] у записи можно стереть — тогда она подтверждена
+        val old = file?.let { GlossaryStore.load(this, it) }
+        GlossaryStore.save(this, target, Glossary(name, old?.sourceLang?.ifBlank { null } ?: settings.sourceLang, entries,
+            old?.auto ?: false, old?.targetLang ?: ""))
         settings.glossary = target
         Toast.makeText(this, trf("Сохранено и выбрано: %s записей", entries.size), Toast.LENGTH_SHORT).show()
         finish()

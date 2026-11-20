@@ -255,7 +255,8 @@ class Pipeline(private val ctx: Context) {
         val texts = bubbles.map { it.text }
         RateLimit.intervalMs = (s.requestIntervalSec.coerceIn(0f, 30f) * 1000).toLong()
         val tr = Translators.create(s)
-        val glossary = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }
+        // глоссарий на другой язык не применяется: например, встроенный русский при переводе на английский
+        val glossary = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }?.takeIf { it.fits(s.targetLang) }
         val found = glossary?.find(texts) ?: emptyList()
         val anchored = if (glossary != null && !tr.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
         val n = s.contextSize
@@ -279,6 +280,7 @@ class Pipeline(private val ctx: Context) {
             val fresh = GlossaryStore.load(ctx, s.glossary) ?: glossary
             val added = fresh!!.addTerms(req.terms, texts)
             if (added.isNotEmpty()) {
+                if (fresh.targetLang.isBlank()) fresh.targetLang = s.targetLang     // термины переведены на этот язык
                 try {
                     GlossaryStore.save(ctx, s.glossary, fresh)
                     glossaryAdded += added.size

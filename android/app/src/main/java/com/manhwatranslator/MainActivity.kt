@@ -92,7 +92,7 @@ class MainActivity : Activity() {
         content.addView(buildGlossary(), lp().margins(this, top = 14))
         content.addView(buildTuning(), lp().margins(this, top = 14))
         content.addView(buildDeveloper(), lp().margins(this, top = 14))
-        content.addView(ui.caption(tr("ATlate 0.5 · распознавание: Google ML Kit")).apply {
+        content.addView(ui.caption(trf("ATlate %s · распознавание: Google ML Kit", BuildConfig.VERSION_NAME)).apply {
             gravity = Gravity.CENTER
             alpha = 0.8f
         }, lp().margins(this, top = 22))
@@ -245,7 +245,7 @@ class MainActivity : Activity() {
     private fun renderLanguages() {
         val name = Languages.src(s.sourceLang).name.substringBefore(" (")
         // в режиме «Авто» показываем и язык, который сейчас найден
-        srcPicker.setValue(if (s.autoLang) trf("Авто · %s", name.lowercase()) else name)
+        srcPicker.setValue(if (s.autoLang) trf("Авто · %s", I18n.lower(name)) else name)
         tgtPicker.setValue(Languages.tgt(s.targetLang).name)
     }
 
@@ -278,6 +278,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(items, cur) { d, which ->
                 s.targetLang = Languages.targets[which].code
                 renderLanguages()
+                refreshAutoGlossary()       // глоссарий мог стать неподходящим (или снова подходящим)
                 d.dismiss()
             }.show()
     }
@@ -431,6 +432,8 @@ class MainActivity : Activity() {
         autoGloss.alpha = if (autoGloss.isEnabled) 1f else 0.5f
         val llm = Translators.create(s).usesLlm
         val hint = when {
+            g != null && !g.fits(s.targetLang) -> trf("Этот глоссарий — для перевода на %s, поэтому сейчас он не используется. Выберите другой или создайте авто-глоссарий.",
+                I18n.lower(Languages.nameOf(g.targetLang)))
             g == null -> tr("Выберите или создайте глоссарий — или нажмите «Авто-глоссарий».")
             universal -> tr("Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий».")
             g.auto && !llm -> tr("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). С выбранным переводчиком глоссарий только используется.")
@@ -454,7 +457,7 @@ class MainActivity : Activity() {
         val title = TitleStore.load(this, s.activeTitle)
         askName(tr("Новый авто-глоссарий"), title?.name ?: "") { name ->
             val file = GlossaryStore.fileNameFor(this, name)
-            GlossaryStore.save(this, file, Glossary(name, s.sourceLang, emptyList(), auto = true))
+            GlossaryStore.save(this, file, Glossary(name, s.sourceLang, emptyList(), auto = true, targetLang = s.targetLang))
             s.glossary = file
             title?.let { it.glossary = file; TitleStore.save(this, it) }
             refreshGlossary()
@@ -475,14 +478,14 @@ class MainActivity : Activity() {
         val g = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(this, it) }
         if (g == null && s.glossary.isNotBlank()) s.glossary = ""
         glossPicker.setValue(g?.let {
-            trf("%s · %s зап.", it.name.ifBlank { s.glossary }, it.entries.size) + if (it.auto) tr(" · авто") else ""
+            trf("%s · %s зап.", GlossaryStore.title(s.glossary, it), it.entries.size) + if (it.auto) tr(" · авто") else ""
         } ?: tr("Без глоссария"))
         refreshAutoGlossary()
     }
 
     private fun pickGlossary() {
         val files = GlossaryStore.list(this)
-        val names = listOf(tr("Без глоссария")) + files.map { GlossaryStore.load(this, it)?.name?.ifBlank { null } ?: it }
+        val names = listOf(tr("Без глоссария")) + files.map { f -> GlossaryStore.load(this, f)?.let { GlossaryStore.title(f, it) } ?: f }
         val cur = files.indexOf(s.glossary) + 1
         AlertDialog.Builder(this).setTitle(tr("Глоссарий"))
             .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->

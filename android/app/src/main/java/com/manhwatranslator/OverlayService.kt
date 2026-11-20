@@ -480,11 +480,11 @@ class OverlayService : Service() {
             res.error.isNotEmpty() -> toast(res.error)
             // автоопределение переключило язык — говорим об этом один раз, в момент смены
             res.detectedLang.isNotEmpty() ->
-                toast(trf("Язык оригинала: %s", Languages.src(res.detectedLang).name.substringBefore(" (").lowercase()))
+                toast(trf("Язык оригинала: %s", I18n.lower(Languages.src(res.detectedLang).name.substringBefore(" ("))))
             // язык определил сам переводчик — тоже только когда он сменился
             res.sourceDetected.isNotEmpty() && !res.sourceDetected.equals(lastSourceShown, ignoreCase = true) -> {
                 lastSourceShown = res.sourceDetected
-                toast(trf("Язык определил переводчик: %s", Languages.nameOf(res.sourceDetected).lowercase()))
+                toast(trf("Язык определил переводчик: %s", I18n.lower(Languages.nameOf(res.sourceDetected))))
             }
             fromLive -> {}   // в Live не мешаем чтению сообщениями
             res.fallback.isNotEmpty() -> toast(res.fallback)
