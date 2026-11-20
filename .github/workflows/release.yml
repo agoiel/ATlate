@@ -61,10 +61,17 @@ jobs:
         shell: bash
         run: bash tools/get_fonts.sh fonts
 
+      - name: FriBiDi for Arabic and Thai text in Studio
+        # без него программа тоже собирается — Студия тогда верстает текст попроще
+        continue-on-error: true
+        run: ./tools/get_fribidi.ps1
+
       - name: Build exe
         run: |
+          $libs = @()
+          if (Test-Path libs/libfribidi-0.dll) { $libs = @("--add-data", "libs;libs") }
           python -m PyInstaller --noconfirm --clean --windowed --name ATlate `
-            --icon icon.ico --add-data "icon.png;." `
+            --icon icon.ico --add-data "icon.png;." @libs `
             --collect-all winrt --collect-data pyphen `
             --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32 `
             --exclude-module torch --exclude-module torchvision --exclude-module easyocr `

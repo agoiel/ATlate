@@ -5,10 +5,12 @@
 * в шрифте по умолчанию нет тайских и арабских букв — должен подобраться запасной шрифт
   (иначе вместо букв квадраты);
 * русские слова переносятся по словарю (пере-вод), а не по любой букве;
-* арабский текст рисуется справа налево со связанными буквами, если в Pillow есть raqm
-  (это видно по картинке; проверка печатает, есть ли он).
+* арабский текст рисуется справа налево со связанными буквами, если в Pillow есть raqm.
+  На Windows для этого нужен FriBiDi в папке libs (tools/get_fribidi.ps1): если он там лежит,
+  raqm обязан включиться, а арабское слово — рисоваться иначе, чем простой вёрсткой.
 
-Код возврата 1, если запасной шрифт не нашёлся там, где он должен быть (Windows).
+Код возврата 1, если запасной шрифт не нашёлся там, где он должен быть (Windows), или FriBiDi
+лежит, а сложная вёрстка не включилась.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
-from PIL import Image, ImageDraw, features  # noqa: E402
+from PIL import Image, ImageDraw, ImageFont, features  # noqa: E402
 
 from app.models import Box  # noqa: E402
 from app.studio import fonts  # noqa: E402
@@ -48,6 +50,29 @@ for lang, text in SAMPLES:
     res, lay = typeset_page(np.asarray(im), [b], Style(), lang)
     print(f"     строки: {[t for t, _, _ in lay[b.id].lines]}, размер {lay[b.id].size}")
     images.append(res)
+
+raqm = features.check("raqm")
+libs = Path(__file__).resolve().parents[1] / "libs"
+if sys.platform == "win32" and any(libs.glob("*fribidi*.dll")):
+    failed += not raqm
+    print(f"{'OK  ' if raqm else 'FAIL'} FriBiDi из папки libs подхватился — сложная вёрстка включена: {raqm}")
+
+
+def _shot(font, word: str) -> bytes:
+    im = Image.new("L", (260, 90), 0)
+    ImageDraw.Draw(im).text((10, 10), word, font=font, fill=255)
+    return im.tobytes()
+
+
+if raqm:
+    for lang, word, strict in (("ar", "تذهب", True), ("th", "ที่สุด", False)):
+        fp = fonts.font_for_text(fonts.default_font(), word)
+        shaped = _shot(ImageFont.truetype(fp, 40), word) != _shot(
+            ImageFont.truetype(fp, 40, layout_engine=ImageFont.Layout.BASIC), word)
+        if strict:
+            failed += not shaped
+        print(f"{'OK  ' if shaped or not strict else 'FAIL'} {lang}: буквы сверстаны сложной вёрсткой "
+              f"(отличается от простой): {shaped}")
 
 f = fonts.load(fonts.default_font(), 28)
 parts = _split_long("переводчица", f, f.getlength("переводчица") * 0.55, "ru")
