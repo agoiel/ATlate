@@ -12,6 +12,7 @@ import ctypes
 import sys
 from ctypes import wintypes
 
+from .i18n import tr
 from .ocr.windows_ocr import capability_name
 
 ERROR_CANCELLED = 1223          # пользователь нажал «Нет» в окне UAC
@@ -44,32 +45,43 @@ def is_supported() -> bool:
     return sys.platform == "win32"
 
 
+def _ps(text: str) -> str:
+    """Строка для PowerShell в одинарных кавычках."""
+    return "'" + text.replace("'", "''") + "'"
+
+
 def _ps_install_script(langs: list[str]) -> str:
     names = ", ".join(f"'{capability_name(l)}'" for l in langs)
+    title = _ps(tr("ATlate - установка OCR"))
+    intro1 = _ps(tr("Устанавливаю распознавание текста для Windows."))
+    intro2 = _ps(tr("Это может занять несколько минут. Не закрывайте окно."))
+    failed = _ps(tr("Не получилось. Нажмите Enter, чтобы закрыть окно."))
+    # имя пакета подставляет PowerShell: '...' + $n
+    already, loading, done = _ps(tr("Уже установлено: ")), _ps(tr("Скачиваю: ")), _ps(tr("Готово: "))
     return f"""
 $ErrorActionPreference = 'Stop'
-$Host.UI.RawUI.WindowTitle = 'ATlate - установка OCR'
+$Host.UI.RawUI.WindowTitle = {title}
 Write-Host ''
-Write-Host 'Устанавливаю распознавание текста для Windows.' -ForegroundColor Cyan
-Write-Host 'Это может занять несколько минут. Не закрывайте окно.' -ForegroundColor Cyan
+Write-Host {intro1} -ForegroundColor Cyan
+Write-Host {intro2} -ForegroundColor Cyan
 Write-Host ''
 try {{
     foreach ($n in @({names})) {{
         $c = Get-WindowsCapability -Online -Name $n
         if ($c -and $c.State -eq 'Installed') {{
-            Write-Host "Уже установлено: $n" -ForegroundColor Green
+            Write-Host ({already} + $n) -ForegroundColor Green
             continue
         }}
-        Write-Host "Скачиваю: $n ..."
+        Write-Host ({loading} + $n + ' ...')
         Add-WindowsCapability -Online -Name $n | Out-Null
-        Write-Host "Готово: $n" -ForegroundColor Green
+        Write-Host ({done} + $n) -ForegroundColor Green
     }}
     exit 0
 }} catch {{
     Write-Host ''
     Write-Host $_ -ForegroundColor Red
     Write-Host ''
-    Write-Host 'Не получилось. Нажмите Enter, чтобы закрыть окно.'
+    Write-Host {failed}
     Read-Host | Out-Null
     exit 1
 }}
@@ -108,7 +120,7 @@ def install_ocr_languages(langs: list[str]) -> int | None:
         err = ctypes.get_last_error()
         if err == ERROR_CANCELLED:
             return None
-        raise OSError(err, f"Не удалось запустить установку (код {err})")
+        raise OSError(err, tr("Не удалось запустить установку (код {0})", err))
     if not sei.hProcess:
         return 0
     kernel32.WaitForSingleObject(sei.hProcess, INFINITE)

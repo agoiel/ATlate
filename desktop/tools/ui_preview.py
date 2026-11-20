@@ -9,6 +9,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # на Windows-сборке задаётся windows
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 
 from app.ui import theme  # noqa: E402

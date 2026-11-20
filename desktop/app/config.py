@@ -88,6 +88,7 @@ DEFAULTS: dict = {
     "content_mode": "manhwa",         # manhwa — облака манхвы | screen — обычный текст на экране
     "full_width_select": False,       # выделять область по всей ширине экрана
     "theme": "system",                # system | light | dark
+    "ui_lang": "system",              # язык интерфейса: system — как в системе | ru | en
     "translate_mode": "shot",         # shot — перевод по кнопке | live — сам, когда страница остановилась
     "always_on_top": False,           # главное окно поверх всех окон
     "window_size": None,              # размер главного окна (запоминается)

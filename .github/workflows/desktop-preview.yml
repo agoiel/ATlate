@@ -54,6 +54,11 @@ jobs:
       - name: Languages on Latin script, language detection by translators, auto glossary
         working-directory: desktop
         run: python tools/test_languages.py ../preview/linux/languages
+      - name: Interface language (English everywhere, follows the system language)
+        working-directory: desktop
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/test_i18n.py ../preview/linux/i18n
       - uses: actions/upload-artifact@v4
         with:
           name: shots-linux

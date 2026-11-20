@@ -3,10 +3,12 @@
 Чтобы добавить язык, допишите сюда новую запись.
 """
 
+from .i18n import tr
+
 # Языки оригинала
 SOURCE_LANGUAGES: dict[str, dict] = {
     "ko": {
-        "name": "Корейский (манхва)",
+        "name": tr("Корейский (манхва)"),
         "windows": ["ko"],
         "easyocr": ["ko", "en"],
         "google": "ko",
@@ -17,7 +19,7 @@ SOURCE_LANGUAGES: dict[str, dict] = {
         "direction": "ltr",   # порядок облаков в одном ряду
     },
     "ja": {
-        "name": "Японский (манга)",
+        "name": tr("Японский (манга)"),
         "windows": ["ja"],
         "easyocr": ["ja", "en"],
         "google": "ja",
@@ -28,7 +30,7 @@ SOURCE_LANGUAGES: dict[str, dict] = {
         "direction": "rtl",
     },
     "zh": {
-        "name": "Китайский упрощённый (маньхуа)",
+        "name": tr("Китайский упрощённый (маньхуа)"),
         "windows": ["zh-Hans", "zh-CN"],
         "easyocr": ["ch_sim", "en"],
         "google": "zh-CN",
@@ -39,7 +41,7 @@ SOURCE_LANGUAGES: dict[str, dict] = {
         "direction": "ltr",
     },
     "zh-tw": {
-        "name": "Китайский традиционный",
+        "name": tr("Китайский традиционный"),
         "windows": ["zh-Hant", "zh-TW"],
         "easyocr": ["ch_tra", "en"],
         "google": "zh-TW",
@@ -50,7 +52,7 @@ SOURCE_LANGUAGES: dict[str, dict] = {
         "direction": "ltr",
     },
     "en": {
-        "name": "Английский (сканлейты)",
+        "name": tr("Английский (сканлейты)"),
         "windows": ["en"],
         "easyocr": ["en"],
         "google": "en",
@@ -62,19 +64,19 @@ SOURCE_LANGUAGES: dict[str, dict] = {
     },
     # Языки на латинице. Распознаются той же латинской моделью, что и английский: в Windows подойдёт
     # пакет распознавания самого языка, а если его нет — любой установленный пакет латиницы (обычно английский).
-    "de": {"name": "Немецкий", "windows": ["de"], "easyocr": ["de", "en"], "google": "de", "deepl": "DE",
+    "de": {"name": tr("Немецкий"), "windows": ["de"], "easyocr": ["de", "en"], "google": "de", "deepl": "DE",
            "microsoft": "de", "llm": "German", "joiner": " ", "direction": "ltr"},
-    "es": {"name": "Испанский", "windows": ["es"], "easyocr": ["es", "en"], "google": "es", "deepl": "ES",
+    "es": {"name": tr("Испанский"), "windows": ["es"], "easyocr": ["es", "en"], "google": "es", "deepl": "ES",
            "microsoft": "es", "llm": "Spanish", "joiner": " ", "direction": "ltr"},
-    "pt": {"name": "Португальский", "windows": ["pt"], "easyocr": ["pt", "en"], "google": "pt", "deepl": "PT",
+    "pt": {"name": tr("Португальский"), "windows": ["pt"], "easyocr": ["pt", "en"], "google": "pt", "deepl": "PT",
            "microsoft": "pt", "llm": "Portuguese", "joiner": " ", "direction": "ltr"},
-    "id": {"name": "Индонезийский", "windows": ["id"], "easyocr": ["id", "en"], "google": "id", "deepl": "ID",
+    "id": {"name": tr("Индонезийский"), "windows": ["id"], "easyocr": ["id", "en"], "google": "id", "deepl": "ID",
            "microsoft": "id", "llm": "Indonesian", "joiner": " ", "direction": "ltr"},
     # DeepL филиппинский не знает (пустой код — переводчик этот язык не поддерживает)
-    "fil": {"name": "Филиппинский", "windows": ["fil", "tl"], "easyocr": ["tl", "en"], "google": "tl", "deepl": "",
+    "fil": {"name": tr("Филиппинский"), "windows": ["fil", "tl"], "easyocr": ["tl", "en"], "google": "tl", "deepl": "",
             "microsoft": "fil", "llm": "Filipino (Tagalog)", "joiner": " ", "direction": "ltr"},
     # Любой другой текст на латинице: язык определяет сам переводчик (auto — «определи сам»)
-    "latin": {"name": "Латиница (язык определит переводчик)", "windows": ["en"], "easyocr": ["en"],
+    "latin": {"name": tr("Латиница (язык определит переводчик)"), "windows": ["en"], "easyocr": ["en"],
               "google": "auto", "deepl": "auto", "microsoft": "auto",
               "llm": "the original language (detect it from the text)", "joiner": " ", "direction": "ltr"},
 }
@@ -88,24 +90,24 @@ AUTO = "auto"       # код «пусть переводчик определи�
 # Языки перевода
 # Языки перевода. Пустой код — этот переводчик язык не поддерживает.
 TARGET_LANGUAGES: dict[str, dict] = {
-    "ru": {"name": "Русский", "google": "ru", "deepl": "RU", "microsoft": "ru", "llm": "Russian"},
-    "uk": {"name": "Украинский", "google": "uk", "deepl": "UK", "microsoft": "uk", "llm": "Ukrainian"},
-    "be": {"name": "Белорусский", "google": "be", "deepl": "", "microsoft": "", "llm": "Belarusian"},
-    "kk": {"name": "Казахский", "google": "kk", "deepl": "", "microsoft": "kk", "llm": "Kazakh"},
-    "uz": {"name": "Узбекский", "google": "uz", "deepl": "", "microsoft": "uz", "llm": "Uzbek"},
-    "en": {"name": "Английский", "google": "en", "deepl": "EN-US", "microsoft": "en", "llm": "English"},
-    "de": {"name": "Немецкий", "google": "de", "deepl": "DE", "microsoft": "de", "llm": "German"},
-    "fr": {"name": "Французский", "google": "fr", "deepl": "FR", "microsoft": "fr", "llm": "French"},
-    "es": {"name": "Испанский", "google": "es", "deepl": "ES", "microsoft": "es", "llm": "Spanish"},
-    "pt": {"name": "Португальский (Бразилия)", "google": "pt", "deepl": "PT-BR", "microsoft": "pt", "llm": "Brazilian Portuguese"},
-    "it": {"name": "Итальянский", "google": "it", "deepl": "IT", "microsoft": "it", "llm": "Italian"},
-    "pl": {"name": "Польский", "google": "pl", "deepl": "PL", "microsoft": "pl", "llm": "Polish"},
-    "cs": {"name": "Чешский", "google": "cs", "deepl": "CS", "microsoft": "cs", "llm": "Czech"},
-    "tr": {"name": "Турецкий", "google": "tr", "deepl": "TR", "microsoft": "tr", "llm": "Turkish"},
-    "id": {"name": "Индонезийский", "google": "id", "deepl": "ID", "microsoft": "id", "llm": "Indonesian"},
-    "vi": {"name": "Вьетнамский", "google": "vi", "deepl": "", "microsoft": "vi", "llm": "Vietnamese"},
-    "th": {"name": "Тайский", "google": "th", "deepl": "", "microsoft": "th", "llm": "Thai"},
-    "ar": {"name": "Арабский", "google": "ar", "deepl": "AR", "microsoft": "ar", "llm": "Arabic"},
+    "ru": {"name": tr("Русский"), "google": "ru", "deepl": "RU", "microsoft": "ru", "llm": "Russian"},
+    "uk": {"name": tr("Украинский"), "google": "uk", "deepl": "UK", "microsoft": "uk", "llm": "Ukrainian"},
+    "be": {"name": tr("Белорусский"), "google": "be", "deepl": "", "microsoft": "", "llm": "Belarusian"},
+    "kk": {"name": tr("Казахский"), "google": "kk", "deepl": "", "microsoft": "kk", "llm": "Kazakh"},
+    "uz": {"name": tr("Узбекский"), "google": "uz", "deepl": "", "microsoft": "uz", "llm": "Uzbek"},
+    "en": {"name": tr("Английский"), "google": "en", "deepl": "EN-US", "microsoft": "en", "llm": "English"},
+    "de": {"name": tr("Немецкий"), "google": "de", "deepl": "DE", "microsoft": "de", "llm": "German"},
+    "fr": {"name": tr("Французский"), "google": "fr", "deepl": "FR", "microsoft": "fr", "llm": "French"},
+    "es": {"name": tr("Испанский"), "google": "es", "deepl": "ES", "microsoft": "es", "llm": "Spanish"},
+    "pt": {"name": tr("Португальский (Бразилия)"), "google": "pt", "deepl": "PT-BR", "microsoft": "pt", "llm": "Brazilian Portuguese"},
+    "it": {"name": tr("Итальянский"), "google": "it", "deepl": "IT", "microsoft": "it", "llm": "Italian"},
+    "pl": {"name": tr("Польский"), "google": "pl", "deepl": "PL", "microsoft": "pl", "llm": "Polish"},
+    "cs": {"name": tr("Чешский"), "google": "cs", "deepl": "CS", "microsoft": "cs", "llm": "Czech"},
+    "tr": {"name": tr("Турецкий"), "google": "tr", "deepl": "TR", "microsoft": "tr", "llm": "Turkish"},
+    "id": {"name": tr("Индонезийский"), "google": "id", "deepl": "ID", "microsoft": "id", "llm": "Indonesian"},
+    "vi": {"name": tr("Вьетнамский"), "google": "vi", "deepl": "", "microsoft": "vi", "llm": "Vietnamese"},
+    "th": {"name": tr("Тайский"), "google": "th", "deepl": "", "microsoft": "th", "llm": "Thai"},
+    "ar": {"name": tr("Арабский"), "google": "ar", "deepl": "AR", "microsoft": "ar", "llm": "Arabic"},
 }
 
 

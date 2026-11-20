@@ -30,6 +30,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np  # noqa: E402

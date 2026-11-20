@@ -16,6 +16,7 @@ import json
 import re
 
 from .. import languages
+from ..i18n import tr
 from .base import TranslateError, TranslateRequest, Translator
 
 SYSTEM_PROMPT = """You are an experienced translator of webtoons, manhwa, manga and manhua.
@@ -119,7 +120,7 @@ def _translations(data, n: int) -> list[str]:
     if isinstance(data, dict):
         data = data.get("translations") or next((v for v in data.values() if isinstance(v, list)), None)
     if not isinstance(data, list):
-        raise TranslateError("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз или смените модель.")
+        raise TranslateError(tr("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз или смените модель."))
     out = [str(x).strip() for x in data]
     if len(out) < n:
         out += [""] * (n - len(out))
@@ -174,11 +175,11 @@ class LLMTranslator(Translator):
         if isinstance(data, dict) and not isinstance(items, list):
             items = next((v for v in data.values() if isinstance(v, list)), None)
         if not isinstance(items, list):
-            raise _Incomplete("ответ оборвался — слишком длинная страница" if truncated else
-                              "ИИ вернул ответ не в формате JSON. Попробуйте ещё раз или смените модель.")
+            raise _Incomplete(tr("ответ оборвался — слишком длинная страница") if truncated else
+                              tr("ИИ вернул ответ не в формате JSON. Попробуйте ещё раз или смените модель."))
         if (truncated or len(items) < n) and n > 1:
-            raise _Incomplete("ответ оборвался — слишком длинная страница" if truncated
-                              else "в ответе не все переводы")
+            raise _Incomplete(tr("ответ оборвался — слишком длинная страница") if truncated
+                              else tr("в ответе не все переводы"))
         return parse_reply(raw, n)
 
 
@@ -189,7 +190,7 @@ class GeminiTranslator(LLMTranslator):
     def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         key = self.settings.get("api_key", "").strip()
         if not key:
-            raise TranslateError("Gemini: укажите API-ключ в настройках (aistudio.google.com).")
+            raise TranslateError(tr("Gemini: укажите API-ключ в настройках (aistudio.google.com)."))
         model = self.settings.get("model", "gemini-2.5-flash-lite").strip()
         system, user = build_messages(req)
         body = {
@@ -205,19 +206,19 @@ class GeminiTranslator(LLMTranslator):
             raw = "".join(p.get("text", "") for p in cand["content"]["parts"])
         except (KeyError, IndexError) as e:
             reason = data.get("promptFeedback", {}).get("blockReason", "")
-            raise TranslateError(f"Gemini: пустой ответ {reason}".strip()) from e
+            raise TranslateError(tr("Gemini: пустой ответ {0}", reason).strip()) from e
         return self._reply(raw, len(req.texts), cand.get("finishReason") == "MAX_TOKENS")
 
 
 class OpenAICompatTranslator(LLMTranslator):
     name = "openai"
-    title = "OpenAI-совместимый"
+    title = tr("OpenAI-совместимый")
 
     def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         base = self.settings.get("base_url", "").strip().rstrip("/")
         model = self.settings.get("model", "").strip()
         if not base or not model:
-            raise TranslateError("Укажите адрес сервера и модель в настройках.")
+            raise TranslateError(tr("Укажите адрес сервера и модель в настройках."))
         headers = {}
         key = self.settings.get("api_key", "").strip()
         if key:
@@ -234,7 +235,7 @@ class OpenAICompatTranslator(LLMTranslator):
             choice = r.json()["choices"][0]
             raw = choice["message"]["content"]
         except (KeyError, IndexError, ValueError) as e:
-            raise TranslateError("Сервер вернул неожиданный ответ.") from e
+            raise TranslateError(tr("Сервер вернул неожиданный ответ.")) from e
         return self._reply(raw, len(req.texts), choice.get("finish_reason") == "length")
 
 
@@ -247,7 +248,7 @@ class ClaudeTranslator(LLMTranslator):
     def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:
         key = self.settings.get("api_key", "").strip()
         if not key:
-            raise TranslateError("Claude: укажите API-ключ в настройках (platform.claude.com).")
+            raise TranslateError(tr("Claude: укажите API-ключ в настройках (platform.claude.com)."))
         model = (self.settings.get("model") or "claude-haiku-5-5").strip()
         system, user = build_messages(req)
         r = self._post("https://api.anthropic.com/v1/messages",
@@ -258,5 +259,5 @@ class ClaudeTranslator(LLMTranslator):
             js = r.json()
             raw = "".join(b.get("text", "") for b in js["content"] if b.get("type") == "text")
         except (KeyError, ValueError) as e:
-            raise TranslateError("Claude: неожиданный ответ сервера.") from e
+            raise TranslateError(tr("Claude: неожиданный ответ сервера.")) from e
         return self._reply(raw, len(req.texts), js.get("stop_reason") == "max_tokens")

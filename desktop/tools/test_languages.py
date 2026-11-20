@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import json
 import shutil
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 from PIL import Image  # noqa: E402
 
@@ -268,6 +270,32 @@ def glossary() -> None:
     pipe.process(img)
     check("универсальный глоссарий не пополняется",
           (gdir / "universal_ko.json").read_bytes() == uni_before and not llm.requests[-1].collect_terms)
+
+    # глоссарий с переводами на один язык не подмешивается в перевод на другой
+    check("авто-глоссарий запомнил язык перевода", Glossary.load(gdir / "title.json").target_lang == "ru")
+    mt = FakeMT({})
+    pipe._translator = mt
+    ocr.lines = ["오빠 어디 가?"]
+    cfg["target_lang"] = "en"
+    pipe.cache.clear()
+    pipe.process(img)
+    req = mt.requests[-1]
+    check("встроенный русский глоссарий при переводе на английский не применяется",
+          not req.glossary and not req.anchored, f"{req.anchored}")
+    cfg["target_lang"] = "ru"
+    pipe.cache.clear()
+    pipe.process(img)
+    req = mt.requests[-1]
+    check("при переводе на русский — применяется", bool(req.anchored) and "оппа" in req.anchored[0], f"{req.anchored}")
+    data = json.loads((gdir / "universal_ko.json").read_text(encoding="utf-8"))
+    data.pop("target_lang", None)
+    (gdir / "universal_ko.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    check("старая копия встроенного глоссария без поля — язык по имени файла",
+          Glossary.load(gdir / "universal_ko.json").target_lang == "ru")
+    (gdir / "mine.json").write_text('{"name": "мой", "entries": []}', encoding="utf-8")
+    check("свой глоссарий без поля подходит для любого языка",
+          Glossary.load(gdir / "mine.json").fits("en") and Glossary.load(gdir / "mine.json").fits("ru"))
+    pipe._translator = llm
 
     # латиница: ИИ просят определить язык, программа показывает, какой
     from app.translators.llm import build_messages, parse_reply

@@ -7,6 +7,7 @@ import uuid
 from urllib.parse import quote
 
 from .. import languages
+from ..i18n import tr
 from .base import TranslateError, TranslateRequest, Translator
 
 
@@ -16,16 +17,16 @@ AUTO = languages.AUTO
 def _require(code: str, service: str, tgt: str) -> str:
     """Код языка для сервиса; пустой — сервис этот язык не поддерживает."""
     if not code:
-        raise TranslateError(f"{service} не поддерживает перевод на язык «{languages.tgt(tgt)['name']}». "
-                             "Выберите другой переводчик.")
+        raise TranslateError(tr("{0} не поддерживает перевод на язык «{1}». Выберите другой переводчик.",
+                                service, languages.tgt(tgt)['name']))
     return code
 
 
 def _source(code: str, service: str, src: str) -> str:
     """Код языка оригинала для сервиса. AUTO — пусть сервис определит язык сам; пустой — не поддерживает."""
     if not code:
-        raise TranslateError(f"{service} не поддерживает перевод с языка «{languages.src(src)['name']}». "
-                             "Выберите другой переводчик или язык «Латиница (язык определит переводчик)».")
+        raise TranslateError(tr("{0} не поддерживает перевод с языка «{1}». Выберите другой переводчик или язык "
+                                "«Латиница (язык определит переводчик)».", service, languages.src(src)['name']))
     return code
 
 
@@ -38,7 +39,7 @@ class GoogleFreeTranslator(Translator):
     """
 
     name = "google_free"
-    title = "Google (без ключа)"
+    title = tr("Google (без ключа)")
     URL = "https://translate.googleapis.com/translate_a/single"
 
     def _one(self, text: str, sl: str, tl: str) -> str:
@@ -47,9 +48,9 @@ class GoogleFreeTranslator(Translator):
         except TranslateError as e:
             if e.code == 429:
                 raise TranslateError(
-                    "Google временно ограничил бесплатные запросы с вашего адреса. Чаще всего так бывает "
-                    "при включённом VPN. Отключите VPN, подождите несколько минут или выберите другой "
-                    "переводчик (DeepL, Gemini).", 429) from e
+                    tr("Google временно ограничил бесплатные запросы с вашего адреса. Чаще всего так бывает "
+                       "при включённом VPN. Отключите VPN, подождите несколько минут или выберите другой "
+                       "переводчик (DeepL, Gemini)."), 429) from e
             raise
         try:
             data = r.json()
@@ -57,7 +58,7 @@ class GoogleFreeTranslator(Translator):
                 self.detected = data[2]         # Google сообщает, какой язык он определил
             return "".join(seg[0] for seg in data[0] if seg and seg[0])
         except (ValueError, TypeError, IndexError) as e:
-            raise TranslateError("Google: неожиданный ответ сервера.") from e
+            raise TranslateError(tr("Google: неожиданный ответ сервера.")) from e
 
     def translate(self, req: TranslateRequest) -> list[str]:
         self.detected = ""
@@ -95,7 +96,7 @@ class DeepLTranslator(Translator):
     def translate(self, req: TranslateRequest) -> list[str]:
         key = self.settings.get("api_key", "").strip()
         if not key:
-            raise TranslateError("DeepL: укажите API-ключ в настройках.")
+            raise TranslateError(tr("DeepL: укажите API-ключ в настройках."))
         host = "api-free.deepl.com" if key.endswith(":fx") else "api.deepl.com"
         self.detected = ""
         sl = _source(languages.src(req.src)["deepl"], "DeepL", req.src)
@@ -126,7 +127,7 @@ class MicrosoftTranslator(Translator):
     def translate(self, req: TranslateRequest) -> list[str]:
         key = self.settings.get("api_key", "").strip()
         if not key:
-            raise TranslateError("Microsoft: укажите API-ключ в настройках.")
+            raise TranslateError(tr("Microsoft: укажите API-ключ в настройках."))
         headers = {"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json"}
         region = self.settings.get("region", "").strip()
         if region and region != "global":
@@ -176,7 +177,7 @@ class YandexTranslator(Translator):
     """Яндекс: без ключа — неофициальный бесплатный способ, с ключом — Yandex Cloud Translate."""
 
     name = "yandex"
-    title = "Яндекс"
+    title = tr("Яндекс")
 
     def __init__(self, settings: dict):
         super().__init__(settings)
@@ -191,7 +192,7 @@ class YandexTranslator(Translator):
         if key:
             folder = self.settings.get("folder_id", "").strip()
             if not folder:
-                raise TranslateError("Яндекс: для ключа Yandex Cloud укажите ID каталога.")
+                raise TranslateError(tr("Яндекс: для ключа Yandex Cloud укажите ID каталога."))
             body = {"folderId": folder, "targetLanguageCode": tl, "texts": texts}
             if sl != AUTO:
                 body["sourceLanguageCode"] = sl     # без него Яндекс определяет язык сам
@@ -212,8 +213,8 @@ class YandexTranslator(Translator):
             if sl == AUTO and isinstance(js.get("lang"), str):
                 self.detected = js["lang"].split("-")[0]
         except (ValueError, KeyError) as e:
-            raise TranslateError("Яндекс: неожиданный ответ. Бесплатный способ мог перестать работать — "
-                                 "укажите ключ Yandex Cloud или выберите другой переводчик.") from e
+            raise TranslateError(tr("Яндекс: неожиданный ответ. Бесплатный способ мог перестать работать — "
+                                    "укажите ключ Yandex Cloud или выберите другой переводчик.")) from e
         return [str(x).strip() for x in out] + [""] * (len(texts) - len(out))
 
 
@@ -229,7 +230,7 @@ class DuckDuckGoTranslator(Translator):
                          headers={"User-Agent": self.UA}).text
         m = re.search(r"vqd=[\"']?([\d-]+)", page)
         if not m:
-            raise TranslateError("DuckDuckGo: не удалось начать сессию перевода. Попробуйте позже.")
+            raise TranslateError(tr("DuckDuckGo: не удалось начать сессию перевода. Попробуйте позже."))
         self.detected = ""
         sl = _source(languages.src(req.src)["microsoft"], "DuckDuckGo", req.src)
         params = {"vqd": m.group(1), "query": "translate",
@@ -246,7 +247,7 @@ class DuckDuckGoTranslator(Translator):
                     self.detected = str(js["detected_language"])
                 return js["translated"]
             except (ValueError, KeyError) as e:
-                raise TranslateError("DuckDuckGo: неожиданный ответ сервера.") from e
+                raise TranslateError(tr("DuckDuckGo: неожиданный ответ сервера.")) from e
 
         return _join_translate(req.anchored or req.texts, 1500, one)
 
@@ -269,7 +270,7 @@ class LingvaTranslator(Translator):
             try:
                 data = r.json()
             except ValueError as e:
-                raise TranslateError("Lingva: сервер ответил не JSON. Попробуйте другой адрес сервера.") from e
+                raise TranslateError(tr("Lingva: сервер ответил не JSON. Попробуйте другой адрес сервера.")) from e
             if "error" in data:
                 raise TranslateError(f"Lingva: {data['error']}")
             if sl == AUTO:
@@ -289,7 +290,7 @@ class PapagoTranslator(Translator):
         cid = self.settings.get("client_id", "").strip()
         secret = self.settings.get("client_secret", "").strip()
         if not cid or not secret:
-            raise TranslateError("Papago: укажите Client ID и Client Secret в настройках.")
+            raise TranslateError(tr("Papago: укажите Client ID и Client Secret в настройках."))
         headers = {"X-NCP-APIGW-API-KEY-ID": cid, "X-NCP-APIGW-API-KEY": secret}
         self.detected = ""
         sl, tl = languages.src(req.src)["google"], languages.tgt(req.tgt)["google"]
@@ -303,6 +304,6 @@ class PapagoTranslator(Translator):
                     self.detected = res["srcLangType"]
                 return res["translatedText"]
             except (ValueError, KeyError) as e:
-                raise TranslateError("Papago: неожиданный ответ сервера.") from e
+                raise TranslateError(tr("Papago: неожиданный ответ сервера.")) from e
 
         return _join_translate(req.anchored or req.texts, 4500, one)

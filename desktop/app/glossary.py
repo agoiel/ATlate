@@ -65,6 +65,11 @@ def _key(text: str) -> str:
     return k
 
 
+# Встроенные глоссарии переводят на русский. В старых копиях (уже скопированных в папку данных)
+# поля target_lang ещё нет — для них язык перевода берётся отсюда.
+BUNDLED_RU = {"universal_ko.json", "universal_en.json", "example_ko.json"}
+
+
 @dataclass
 class Glossary:
     name: str = ""
@@ -72,6 +77,19 @@ class Glossary:
     entries: list[GlossaryEntry] = field(default_factory=list)
     path: Path | None = None
     auto: bool = False        # пополнять сам (только с ИИ-переводчиками)
+    target_lang: str = ""     # на какой язык переводы в записях ('' — подходит для любого)
+
+    @property
+    def title(self) -> str:
+        """Название для показа: у встроенных глоссариев — на языке интерфейса."""
+        if self.path is not None and self.path.name in BUNDLED_RU:
+            from .i18n import tr
+            return tr(self.name)
+        return self.name or (self.path.stem if self.path is not None else "")
+
+    def fits(self, target_lang: str) -> bool:
+        """Подходит ли глоссарий для перевода на этот язык (иначе в перевод попали бы чужие слова)."""
+        return not self.target_lang or self.target_lang == target_lang
 
     # ------------------------------------------------------------ файлы
     @classmethod
@@ -79,8 +97,9 @@ class Glossary:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         entries = [GlossaryEntry(e.get("source", ""), e.get("target", ""), e.get("note", ""), bool(e.get("auto")))
                    for e in data.get("entries", []) if e.get("source")]
+        target = data.get("target_lang") or ("ru" if Path(path).name in BUNDLED_RU else "")
         return cls(name=data.get("name", Path(path).stem), source_lang=data.get("source_lang", ""),
-                   entries=entries, path=Path(path), auto=bool(data.get("auto")))
+                   entries=entries, path=Path(path), auto=bool(data.get("auto")), target_lang=target)
 
     def save(self, path: Path | None = None) -> None:
         path = Path(path or self.path)
@@ -93,6 +112,8 @@ class Glossary:
                 d["auto"] = True        # у записей человека пометки нет — файл не раздувается
             entries.append(d)
         data = {"name": self.name, "source_lang": self.source_lang}
+        if self.target_lang:
+            data["target_lang"] = self.target_lang
         if self.auto:
             data["auto"] = True
         data["entries"] = entries

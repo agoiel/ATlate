@@ -1,6 +1,7 @@
 {
   "name": "Пример (корейский)",
   "source_lang": "ko",
+  "target_lang": "ru",
   "entries": [
     {"source": "헌터", "target": "охотник", "note": "профессия"},
     {"source": "게이트", "target": "Врата", "note": "портал в подземелье"},

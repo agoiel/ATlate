@@ -13,12 +13,14 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QHeaderVi
 
 from ..config import GLOSSARY_DIR
 from ..glossary import Glossary, GlossaryEntry
+from ..i18n import tr
 
 
-def new_glossary_file(parent, source_lang: str, default: str = "", auto: bool = False) -> Path | None:
+def new_glossary_file(parent, source_lang: str, default: str = "", auto: bool = False,
+                      target_lang: str = "") -> Path | None:
     """Спрашивает название тайтла и создаёт пустой глоссарий (auto — авто-глоссарий, пополняется сам)."""
-    title = "Новый авто-глоссарий" if auto else "Новый глоссарий"
-    name, ok = QInputDialog.getText(parent, title, "Название тайтла:", text=default)
+    title = tr("Новый авто-глоссарий") if auto else tr("Новый глоссарий")
+    name, ok = QInputDialog.getText(parent, title, tr("Название тайтла:"), text=default)
     if not ok or not name.strip():
         return None
     slug = re.sub(r"[^\w\-]+", "_", name.strip(), flags=re.UNICODE).strip("_") or "glossary"
@@ -28,11 +30,11 @@ def new_glossary_file(parent, source_lang: str, default: str = "", auto: bool = 
     while path.exists():
         path = GLOSSARY_DIR / f"{slug}_{i}.json"
         i += 1
-    Glossary(name=name.strip(), source_lang=source_lang, auto=auto).save(path)
+    Glossary(name=name.strip(), source_lang=source_lang, auto=auto, target_lang=target_lang).save(path)
     return path
 
 
-AUTO_MARK = "авто"      # так в редакторе помечены записи, добавленные автоматически
+AUTO_MARK = tr("авто")      # так в редакторе помечены записи, добавленные автоматически
 
 
 class GlossaryEditor(QDialog):
@@ -40,12 +42,12 @@ class GlossaryEditor(QDialog):
         super().__init__(parent)
         self.path = Path(path)
         self.glossary = Glossary.load(self.path)
-        self.setWindowTitle(f"Глоссарий — {self.glossary.name}")
+        self.setWindowTitle(tr("Глоссарий — {0}", self.glossary.title))
         self.resize(720, 520)
 
         self.name_edit = QLineEdit(self.glossary.name)
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Оригинал", "Перевод", "Заметка (пол, кто это, как обращаться)", ""])
+        self.table.setHorizontalHeaderLabels([tr("Оригинал"), tr("Перевод"), tr("Заметка (пол, кто это, как обращаться)"), ""])
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -56,18 +58,18 @@ class GlossaryEditor(QDialog):
         # исправленная или подтверждённая запись перестаёт быть «авто»
         self.table.itemChanged.connect(self._on_item_changed)
 
-        add_btn = QPushButton("+ Добавить")
-        del_btn = QPushButton("− Удалить выбранное")
+        add_btn = QPushButton(tr("+ Добавить"))
+        del_btn = QPushButton(tr("− Удалить выбранное"))
         add_btn.clicked.connect(lambda: self._add_row("", "", "", focus=True))
         del_btn.clicked.connect(self._delete_rows)
-        self.auto_btn = QPushButton("Удалить все «авто»")
-        self.auto_btn.setToolTip("Удалить записи, которые добавил ИИ-переводчик и которые вы ещё не правили")
+        self.auto_btn = QPushButton(tr("Удалить все «авто»"))
+        self.auto_btn.setToolTip(tr("Удалить записи, которые добавил ИИ-переводчик и которые вы ещё не правили"))
         self.auto_btn.clicked.connect(self._delete_auto)
 
-        hint = QLabel("Имена, названия, звания, обращения. Заметки помогают ИИ-переводчикам "
-                      "(например: «главный герой, мужчина»). Обычные переводчики используют "
-                      "только колонку «Перевод». Пометка «авто» — запись добавил ИИ-переводчик: "
-                      "проверьте её; после правки пометка исчезнет.")
+        hint = QLabel(tr("Имена, названия, звания, обращения. Заметки помогают ИИ-переводчикам "
+                         "(например: «главный герой, мужчина»). Обычные переводчики используют "
+                         "только колонку «Перевод». Пометка «авто» — запись добавил ИИ-переводчик: "
+                         "проверьте её; после правки пометка исчезнет."))
         hint.setWordWrap(True)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save
@@ -76,7 +78,7 @@ class GlossaryEditor(QDialog):
         buttons.rejected.connect(self.reject)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel("Название:"))
+        top.addWidget(QLabel(tr("Название:")))
         top.addWidget(self.name_edit)
         row = QHBoxLayout()
         row.addWidget(add_btn)
@@ -100,7 +102,7 @@ class GlossaryEditor(QDialog):
             self.table.setItem(r, c, QTableWidgetItem(v))
         mark = QTableWidgetItem(AUTO_MARK if auto else "")
         mark.setFlags(mark.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        mark.setToolTip("Добавлено ИИ-переводчиком автоматически" if auto else "")
+        mark.setToolTip(tr("Добавлено ИИ-переводчиком автоматически") if auto else "")
         mark.setForeground(QColor("#AC8653"))
         self.table.setItem(r, 3, mark)
         self.table.blockSignals(False)
@@ -122,7 +124,7 @@ class GlossaryEditor(QDialog):
                 if self.table.item(r, 3) is not None and self.table.item(r, 3).text()]
         if not rows:
             return
-        if QMessageBox.question(self, "Удалить «авто»?", f"Удалить записей: {len(rows)}?") \
+        if QMessageBox.question(self, tr("Удалить «авто»?"), tr("Удалить записей: {0}?", len(rows))) \
                 != QMessageBox.StandardButton.Yes:
             return
         for r in reversed(rows):
@@ -147,6 +149,6 @@ class GlossaryEditor(QDialog):
         try:
             self.glossary.save(self.path)
         except OSError as e:
-            QMessageBox.warning(self, "Ошибка", f"Не удалось сохранить: {e}")
+            QMessageBox.warning(self, tr("Ошибка"), tr("Не удалось сохранить: {0}", e))
             return
         self.accept()

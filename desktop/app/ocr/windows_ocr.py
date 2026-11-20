@@ -14,6 +14,7 @@ import threading
 from PIL import Image
 
 from .. import languages
+from ..i18n import tr
 from ..models import Box, TextLine
 from ..angle import words_angle
 from .base import OcrBackend, OcrError, OcrLanguageMissing
@@ -70,7 +71,7 @@ class WindowsOcrBackend(OcrBackend):
     def __init__(self, cfg):
         super().__init__(cfg)
         if sys.platform != "win32":
-            raise OcrError("Windows OCR работает только в Windows. Выберите EasyOCR в настройках.")
+            raise OcrError(tr("Windows OCR работает только в Windows. Выберите EasyOCR в настройках."))
         _ensure_com()
         try:
             from winrt.windows.globalization import Language  # noqa: F401
@@ -79,9 +80,8 @@ class WindowsOcrBackend(OcrBackend):
             from winrt.windows.security.cryptography import CryptographicBuffer  # noqa: F401
         except ImportError as e:
             raise OcrError(
-                "Не установлены модули winrt для Windows OCR.\n"
-                "Выполните: pip install -r requirements.txt\n"
-                f"({e})"
+                tr("Не установлены модули winrt для Windows OCR.\nВыполните: pip install -r "
+                   "requirements.txt\n({0})", e)
             ) from e
         self._local = threading.local()
 
@@ -99,13 +99,13 @@ class WindowsOcrBackend(OcrBackend):
         tag = find_ocr_tag(lang, available)
         if tag is None:
             raise OcrLanguageMissing(
-                f"В Windows не установлен OCR для языка «{languages.src(lang)['name']}».\n"
-                f"Установленные: {', '.join(available) or 'нет'}.",
+                tr("В Windows не установлен OCR для языка «{0}».\nУстановленные: {1}.",
+                   languages.src(lang)['name'], ', '.join(available) or tr("нет")),
                 lang,
             )
         engine = OcrEngine.try_create_from_language(Language(tag))
         if engine is None:
-            raise OcrError(f"Не удалось запустить Windows OCR для «{tag}».")
+            raise OcrError(tr("Не удалось запустить Windows OCR для «{0}».", tag))
         engines[lang] = engine
         return engine
 
@@ -141,7 +141,7 @@ class WindowsOcrBackend(OcrBackend):
         try:
             result = asyncio.run(run())
         except Exception as e:  # noqa: BLE001
-            raise OcrError(f"Ошибка Windows OCR: {e}") from e
+            raise OcrError(tr("Ошибка Windows OCR: {0}", e)) from e
 
         joiner = languages.src(lang)["joiner"]
         out: list[TextLine] = []

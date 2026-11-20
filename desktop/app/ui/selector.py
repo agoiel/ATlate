@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPe
 from PySide6.QtWidgets import QWidget
 
 from ..capture import Region, grab_screen
+from ..i18n import tr
 
 
 class SelectionWindow(QWidget):
@@ -62,8 +63,8 @@ class SelectionWindow(QWidget):
             p.setFont(QFont("Segoe UI", 14))
             p.setPen(QColor(255, 255, 255))
             p.drawText(self.rect().adjusted(0, 40, 0, 0), Qt.AlignmentFlag.AlignHCenter,
-                       ("Проведите мышкой сверху вниз по высоте области  ·  Esc — отмена" if self.full_width
-                        else "Выделите область чтения мышкой  ·  Esc — отмена"))
+                       (tr("Проведите мышкой сверху вниз по высоте области  ·  Esc — отмена") if self.full_width
+                        else tr("Выделите область чтения мышкой  ·  Esc — отмена")))
         p.end()
 
     # ------------------------------------------------------------ мышь и клавиши

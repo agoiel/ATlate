@@ -15,6 +15,8 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
+from .i18n import tr
+
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x1, 0x2, 0x4, 0x8, 0x4000
 WM_HOTKEY = 0x0312
 ERROR_HOTKEY_ALREADY_REGISTERED = 1409
@@ -48,14 +50,14 @@ def parse(combo: str) -> tuple[int, int]:
     mods, vk = 0, None
     parts = [p for p in combo.strip().lower().split("+") if p]
     if not parts:
-        raise HotkeyError("пустое сочетание")
+        raise HotkeyError(tr("пустое сочетание"))
     for p in parts:
         name = p[1:-1] if p.startswith("<") and p.endswith(">") else p
         if name in _MODS:
             mods |= _MODS[name]
             continue
         if vk is not None:
-            raise HotkeyError(f"в сочетании «{combo}» больше одной обычной клавиши")
+            raise HotkeyError(tr("в сочетании «{0}» больше одной обычной клавиши", combo))
         name = _RU.get(name, name)
         if len(name) == 1 and ("a" <= name <= "z" or "0" <= name <= "9"):
             vk = ord(name.upper())
@@ -68,9 +70,9 @@ def parse(combo: str) -> tuple[int, int]:
         elif name.isdigit():
             vk = int(name)          # «<65>» — код клавиши напрямую, как в pynput
         else:
-            raise HotkeyError(f"неизвестная клавиша «{p}» в сочетании «{combo}»")
+            raise HotkeyError(tr("неизвестная клавиша «{0}» в сочетании «{1}»", p, combo))
     if vk is None:
-        raise HotkeyError(f"в сочетании «{combo}» нет обычной клавиши, только модификаторы")
+        raise HotkeyError(tr("в сочетании «{0}» нет обычной клавиши, только модификаторы", combo))
     return mods, vk
 
 
@@ -145,8 +147,9 @@ class _WindowsHotkeys:
                 self._ids[hid] = fn
             else:
                 code = ctypes.GetLastError()
-                errors.append(f"сочетание {combo} уже занято другой программой" if code == ERROR_HOTKEY_ALREADY_REGISTERED
-                              else f"не удалось зарегистрировать {combo} (ошибка Windows {code})")
+                errors.append(tr("сочетание {0} уже занято другой программой",
+                                 combo) if code == ERROR_HOTKEY_ALREADY_REGISTERED
+                              else tr("не удалось зарегистрировать {0} (ошибка Windows {1})", combo, code))
         return errors
 
     def stop(self) -> None:
@@ -181,7 +184,7 @@ class _PynputHotkeys:
             self._listener.start()
         except Exception as e:  # noqa: BLE001
             self._listener = None
-            return [f"горячие клавиши не запустились: {e}"]
+            return [tr("горячие клавиши не запустились: {0}", e)]
         return []
 
     def stop(self) -> None:

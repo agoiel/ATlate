@@ -15,10 +15,12 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 import app  # noqa: E402 — раньше Pillow: подгружает FriBiDi, как при запуске программы
 import numpy as np  # noqa: E402

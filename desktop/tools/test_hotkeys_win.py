@@ -10,12 +10,14 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 import time
 from ctypes import wintypes
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 if sys.platform != "win32":
     print("только для Windows — пропускаю")

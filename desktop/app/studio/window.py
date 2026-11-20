@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGraphicsItem,
 
 from .. import angle, languages, sysload
 from ..bubbles import _ring_stats
+from ..i18n import tr
 from ..models import Box
 from ..pipeline import Pipeline
 from ..ui import theme
@@ -31,7 +32,7 @@ from ..ui.widgets import (Card, ElideLabel, ScrollContent, Segmented, Select, St
 from . import engine, fonts
 from .project import ARCHIVE_EXT, IMAGE_EXT, Block, Page, Project
 
-KIND_NAMES = {"bubble": "Облако", "box": "Плашка", "free": "Надпись"}
+KIND_NAMES = {"bubble": tr("Облако"), "box": tr("Плашка"), "free": tr("Надпись")}
 
 
 def to_qimage(arr: np.ndarray) -> QImage:
@@ -105,10 +106,10 @@ class _ChapterJob(QRunnable):
         finally:
             self.priority.release()
         self.signals.progress.emit(done, len(self.indices), "")
-        msg = f"Остановлено. Готово страниц: {done} из {len(self.indices)}." if self.cancelled \
-            else f"Готово: страниц {done}."
+        msg = tr("Остановлено. Готово страниц: {0} из {1}.", done, len(self.indices)) if self.cancelled \
+            else tr("Готово: страниц {0}.", done)
         if errors:
-            msg += f" С ошибками: {errors} — подробности на странице."
+            msg += tr(" С ошибками: {0} — подробности на странице.", errors)
         self.signals.finished.emit(msg)
 
 
@@ -157,9 +158,9 @@ class _ExportJob(QRunnable):
         finally:
             prio.release()
         self.signals.progress.emit(len(pages), len(pages), "")
-        msg = f"Выгружено страниц: {len(pages) - failed}."
+        msg = tr("Выгружено страниц: {0}.", len(pages) - failed)
         if failed:
-            msg += f" Не удалось: {failed}."
+            msg += tr(" Не удалось: {0}.", failed)
         self.signals.finished.emit(msg)
 
 
@@ -525,20 +526,20 @@ class BlockCard(QFrame):
         num.setFixedSize(24, 24)
         num.setAlignment(Qt.AlignmentFlag.AlignCenter)
         head.addWidget(num)
-        kind = ElideLabel(KIND_NAMES.get(block.kind, block.kind) + (" · добавлен вручную" if block.manual else ""),
+        kind = ElideLabel(KIND_NAMES.get(block.kind, block.kind) + (tr(" · добавлен вручную") if block.manual else ""),
                           "fieldLabel")
         head.addWidget(kind, 1)
         self.enabled = Toggle(block.enabled)
-        self.enabled.setToolTip("Стирать оригинал и вписывать перевод")
+        self.enabled.setToolTip(tr("Стирать оригинал и вписывать перевод"))
         self.enabled.toggled.connect(self._on_enabled)
         head.addWidget(self.enabled)
         lay.addLayout(head)
 
-        self.source = _text_edit(block.source, 2, "Оригинал (можно поправить и перевести заново)")
+        self.source = _text_edit(block.source, 2, tr("Оригинал (можно поправить и перевести заново)"))
         self.source.setObjectName("sourceEdit")
         self.source.textChanged.connect(self._on_source)
         lay.addWidget(self.source)
-        self.translation = _text_edit(block.translation, 3, "Перевод")
+        self.translation = _text_edit(block.translation, 3, tr("Перевод"))
         self.translation.textChanged.connect(self._on_translation)
         lay.addWidget(self.translation)
 
@@ -548,7 +549,7 @@ class BlockCard(QFrame):
         self.more.setVisible(False)
         self._more_built = False
         lay.addWidget(self.more)
-        self.overflow = caption("Перевод не помещается — уменьшите текст или растяните рамку блока.")
+        self.overflow = caption(tr("Перевод не помещается — уменьшите текст или растяните рамку блока."))
         self.overflow.setStyleSheet("color: #C0392B;")
         self.overflow.setVisible(False)
         lay.addWidget(self.overflow)
@@ -568,41 +569,41 @@ class BlockCard(QFrame):
         ml.setSpacing(8)
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.clean = self._select([("auto", "Стирать: авто"), ("fill", "Залить цветом фона"),
-                                   ("inpaint", "Дорисовать фон"), ("none", "Не стирать")], block.clean)
+        self.clean = self._select([("auto", tr("Стирать: авто")), ("fill", tr("Залить цветом фона")),
+                                   ("inpaint", tr("Дорисовать фон")), ("none", tr("Не стирать"))], block.clean)
         self.clean.currentIndexChanged.connect(lambda _i: self._set("clean", self.clean.currentData()))
         row.addWidget(self.clean, 1)
-        sizes = [(0, "Размер: авто")] + [(s, f"{s} px") for s in range(10, 74, 2)]
+        sizes = [(0, tr("Размер: авто"))] + [(s, f"{s} px") for s in range(10, 74, 2)]
         self.size = self._select(sizes, block.size)
         self.size.currentIndexChanged.connect(lambda _i: self._set("size", int(self.size.currentData())))
         row.addWidget(self.size, 1)
         ml.addLayout(row)
         row2 = QHBoxLayout()
         row2.setSpacing(8)
-        self.color = self._select([("", "Цвет: авто"), ("#141414", "Чёрный"), ("#FAFAFA", "Белый"),
-                                   ("#C0392B", "Красный")], block.color)
+        self.color = self._select([("", tr("Цвет: авто")), ("#141414", tr("Чёрный")), ("#FAFAFA", tr("Белый")),
+                                   ("#C0392B", tr("Красный"))], block.color)
         self.color.currentIndexChanged.connect(lambda _i: self._set("color", self.color.currentData()))
         row2.addWidget(self.color, 1)
-        self.outline = self._select([("auto", "Обводка: авто"), ("on", "С обводкой"), ("off", "Без обводки")],
+        self.outline = self._select([("auto", tr("Обводка: авто")), ("on", tr("С обводкой")), ("off", tr("Без обводки"))],
                                     block.outline)
         self.outline.currentIndexChanged.connect(lambda _i: self._set("outline", self.outline.currentData()))
         row2.addWidget(self.outline, 1)
         ml.addLayout(row2)
-        self.in_box = SwitchRow("Вписывать в рамку блока", "Иначе — во всё облако целиком",
+        self.in_box = SwitchRow(tr("Вписывать в рамку блока"), tr("Иначе — во всё облако целиком"),
                                 block.area is not None)
         self.in_box.toggled.connect(self._on_in_box)
         ml.addWidget(self.in_box)
-        self.tilt = Stepper("Наклон текста", "Плюс — правый край выше", float(block.angle),
-                            1, -90, 90, lambda v: "ровно" if abs(v) < 0.5 else f"{v:+.0f}°")
+        self.tilt = Stepper(tr("Наклон текста"), tr("Плюс — правый край выше"), float(block.angle),
+                            1, -90, 90, lambda v: tr("ровно") if abs(v) < 0.5 else f"{v:+.0f}°")
         self.tilt.changed.connect(lambda v: self.tilt_changed.emit(self.block.id, float(v)))
         ml.addWidget(self.tilt)
         btns = QHBoxLayout()
         btns.setSpacing(8)
-        again = pill("Перевести заново", "tonal", "refresh")
+        again = pill(tr("Перевести заново"), "tonal", "refresh")
         again.clicked.connect(lambda: self.retranslate.emit(self.block.id))
         btns.addWidget(again)
         btns.addStretch(1)
-        rm = pill("Удалить", "outline", "trash")
+        rm = pill(tr("Удалить"), "outline", "trash")
         rm.clicked.connect(lambda: self.delete.emit(self.block.id))
         btns.addWidget(rm)
         ml.addLayout(btns)
@@ -695,7 +696,7 @@ class StudioWindow(QWidget):
         self._progress_text = ""
 
         self.setObjectName("root")
-        self.setWindowTitle("ATlate — Студия перевода")
+        self.setWindowTitle(tr("ATlate — Студия перевода"))
         self.setWindowIcon(QIcon(str(theme.resource("icon.png"))))
         self.setAcceptDrops(True)
         self.resize(1320, 860)
@@ -739,25 +740,25 @@ class StudioWindow(QWidget):
         lay.addWidget(icon)
         col = QVBoxLayout()
         col.setSpacing(0)
-        title = QLabel("Студия перевода")
+        title = QLabel(tr("Студия перевода"))
         title.setObjectName("studioTitle")
         col.addWidget(title)
-        self.chapter = ElideLabel("Откройте главу: папку с картинками или архив", "studioSub")
+        self.chapter = ElideLabel(tr("Откройте главу: папку с картинками или архив"), "studioSub")
         col.addWidget(self.chapter)
         lay.addLayout(col, 1)
 
-        open_btn = pill("Открыть", "heroOutline", "folder")
+        open_btn = pill(tr("Открыть"), "heroOutline", "folder")
         menu = QMenu(open_btn)
-        menu.addAction("Папку с главой…", self.open_folder)
-        menu.addAction("Архив .zip / .cbz…", self.open_archive)
-        menu.addAction("Картинки…", self.open_images)
+        menu.addAction(tr("Папку с главой…"), self.open_folder)
+        menu.addAction(tr("Архив .zip / .cbz…"), self.open_archive)
+        menu.addAction(tr("Картинки…"), self.open_images)
         open_btn.setMenu(menu)
         lay.addWidget(open_btn)
-        self.run_btn = pill("Перевести главу", "hero", "play",
-                            "Найти текст на всех страницах, перевести, стереть оригинал и вписать перевод")
+        self.run_btn = pill(tr("Перевести главу"), "hero", "play",
+                            tr("Найти текст на всех страницах, перевести, стереть оригинал и вписать перевод"))
         self.run_btn.clicked.connect(self.run_chapter)
         lay.addWidget(self.run_btn)
-        self.export_btn = pill("Выгрузить", "heroOutline", "download", "Сохранить готовые страницы в папку")
+        self.export_btn = pill(tr("Выгрузить"), "heroOutline", "download", tr("Сохранить готовые страницы в папку"))
         self.export_btn.clicked.connect(self.export)
         lay.addWidget(self.export_btn)
         return bar
@@ -777,20 +778,20 @@ class StudioWindow(QWidget):
         ic.setPixmap(theme.pixmap("brush", theme.palette().primary, 48))
         ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cl.addWidget(ic)
-        t = QLabel("Перетащите сюда папку с главой")
+        t = QLabel(tr("Перетащите сюда папку с главой"))
         t.setObjectName("cardTitle")
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cl.addWidget(t)
-        s = caption("Или архив .zip / .cbz, или несколько картинок. Студия найдёт текст на каждой странице, "
-                    "переведёт его, сотрёт оригинал и впишет перевод. Всё можно поправить вручную, "
-                    "а готовые страницы — выгрузить в папку.")
+        s = caption(tr("Или архив .zip / .cbz, или несколько картинок. Студия найдёт текст на каждой странице, "
+                       "переведёт его, сотрёт оригинал и впишет перевод. Всё можно поправить вручную, "
+                       "а готовые страницы — выгрузить в папку."))
         s.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cl.addWidget(s)
         row = QHBoxLayout()
         row.addStretch(1)
-        for text, kind, icon, fn in (("Папка", "primary", "folder", self.open_folder),
-                                     ("Архив", "tonal", "book", self.open_archive),
-                                     ("Картинки", "tonal", "image", self.open_images)):
+        for text, kind, icon, fn in ((tr("Папка"), "primary", "folder", self.open_folder),
+                                     (tr("Архив"), "tonal", "book", self.open_archive),
+                                     (tr("Картинки"), "tonal", "image", self.open_images)):
             b = pill(text, kind, icon)
             b.clicked.connect(fn)
             row.addWidget(b)
@@ -828,21 +829,21 @@ class StudioWindow(QWidget):
         cl.setSpacing(8)
         tools = QHBoxLayout()
         tools.setSpacing(8)
-        self.mode = Segmented([("original", "Оригинал"), ("clean", "Без текста"), ("result", "Перевод")], "result")
+        self.mode = Segmented([("original", tr("Оригинал")), ("clean", tr("Без текста")), ("result", tr("Перевод"))], "result")
         self.mode.setObjectName("segmentedPlain")
         self.mode.changed.connect(self._set_view_mode)
         tools.addWidget(self.mode)
-        self.boxes_toggle = pill("Рамки", "tonal", "select", "Показать или скрыть рамки блоков")
+        self.boxes_toggle = pill(tr("Рамки"), "tonal", "select", tr("Показать или скрыть рамки блоков"))
         self.boxes_toggle.setCheckable(True)
         self.boxes_toggle.setChecked(True)
         self.boxes_toggle.toggled.connect(lambda on: self.view.set_boxes_visible(on))
         tools.addWidget(self.boxes_toggle)
-        add = pill("Блок", "tonal", "plus", "Обвести рамкой текст, который не нашёлся")
+        add = pill(tr("Блок"), "tonal", "plus", tr("Обвести рамкой текст, который не нашёлся"))
         add.clicked.connect(lambda: self.view.start_add())
         tools.addWidget(add)
         tools.addStretch(1)
-        self.page_btn = pill("Перевести страницу", "outline", "refresh",
-                             "Найти текст на этой странице заново и перевести")
+        self.page_btn = pill(tr("Перевести страницу"), "outline", "refresh",
+                             tr("Найти текст на этой странице заново и перевести"))
         self.page_btn.clicked.connect(self.run_page)
         tools.addWidget(self.page_btn)
         cl.addLayout(tools)
@@ -870,7 +871,7 @@ class StudioWindow(QWidget):
         self.side_lay.setSpacing(10)
         self.side_lay.addWidget(self._build_languages())
         self.side_lay.addWidget(self._build_style())
-        self.blocks_title = label("БЛОКИ СТРАНИЦЫ", "fieldLabel")
+        self.blocks_title = label(tr("БЛОКИ СТРАНИЦЫ"), "fieldLabel")
         self.side_lay.addWidget(self.blocks_title)
         self.blocks_box = QWidget()
         self.blocks_lay = QVBoxLayout(self.blocks_box)
@@ -889,7 +890,7 @@ class StudioWindow(QWidget):
         return split
 
     def _build_languages(self) -> Card:
-        card = Card("Перевод", "Общие с главным окном настройки", "lang", collapsible=True, collapsed=True)
+        card = Card(tr("Перевод"), tr("Общие с главным окном настройки"), "lang", collapsible=True, collapsed=True)
         src = Select()
         for k, v in languages.SOURCE_LANGUAGES.items():
             src.addItem(v["name"], k)
@@ -901,50 +902,50 @@ class StudioWindow(QWidget):
         tgt.setCurrentIndex(max(0, tgt.findData(self.cfg["target_lang"])))
         tgt.currentIndexChanged.connect(lambda _i: self._set_cfg("target_lang", tgt.currentData()))
         from ..ui.main_window import TRANSLATOR_INFO
-        tr = Select()
+        tor_box = Select()
         for key, title, _sub, _grp in TRANSLATOR_INFO:
-            tr.addItem(title, key)
-        tr.setCurrentIndex(max(0, tr.findData(self.cfg["translator"])))
-        tr.currentIndexChanged.connect(lambda _i: self._set_cfg("translator", tr.currentData()))
+            tor_box.addItem(title, key)
+        tor_box.setCurrentIndex(max(0, tor_box.findData(self.cfg["translator"])))
+        tor_box.currentIndexChanged.connect(lambda _i: self._set_cfg("translator", tor_box.currentData()))
         load = Select()
         for k, v in sysload.LOAD_NAMES.items():
             load.addItem(v, k)
         load.setCurrentIndex(max(0, load.findData(self.cfg.get("studio_load", sysload.DEFAULT_LOAD))))
-        load.setToolTip("Сколько ресурсов компьютера отдавать переводу главы. Можно менять прямо во время перевода")
+        load.setToolTip(tr("Сколько ресурсов компьютера отдавать переводу главы. Можно менять прямо во время перевода"))
         load.currentIndexChanged.connect(lambda _i: self._set_load(load.currentData()))
-        for cap_text, w in (("С языка", src), ("На язык", tgt), ("Переводчик", tr), ("Нагрузка на ПК", load)):
+        for cap_text, w in ((tr("С языка"), src), (tr("На язык"), tgt), (tr("Переводчик"), tor_box), (tr("Нагрузка на ПК"), load)):
             card.add(label(cap_text.upper(), "fieldLabel"))
             card.add(w)
-        card.add(caption("Ключи переводчиков, глоссарий и тайтл — в главном окне."))
+        card.add(caption(tr("Ключи переводчиков, глоссарий и тайтл — в главном окне.")))
         return card
 
     def _build_style(self) -> Card:
-        card = Card("Оформление", "Шрифт и размер текста перевода", "tune", collapsible=True, collapsed=True)
+        card = Card(tr("Оформление"), tr("Шрифт и размер текста перевода"), "tune", collapsible=True, collapsed=True)
         self.font_select = Select()
         self._fill_fonts()
         self.font_select.currentIndexChanged.connect(self._on_font)
-        card.add(label("ШРИФТ", "fieldLabel"))
+        card.add(label(tr("ШРИФТ"), "fieldLabel"))
         card.add(self.font_select)
-        add = pill("Добавить шрифт…", "link", "plus", "Скопировать файл шрифта .ttf/.otf в папку fonts программы")
+        add = pill(tr("Добавить шрифт…"), "link", "plus", tr("Скопировать файл шрифта .ttf/.otf в папку fonts программы"))
         add.clicked.connect(self._add_font)
         card.add(add)
-        self.min_size = Stepper("Самый мелкий", "Мельче не уменьшается", 12, 1, 6, 40, lambda v: f"{int(v)} px")
-        self.max_size = Stepper("Самый крупный", "Крупнее не бывает", 36, 2, 12, 96, lambda v: f"{int(v)} px")
-        self.spacing = Stepper("Между строками", "", 1.1, 0.05, 0.8, 1.8, lambda v: f"×{v:.2f}")
+        self.min_size = Stepper(tr("Самый мелкий"), tr("Мельче не уменьшается"), 12, 1, 6, 40, lambda v: f"{int(v)} px")
+        self.max_size = Stepper(tr("Самый крупный"), tr("Крупнее не бывает"), 36, 2, 12, 96, lambda v: f"{int(v)} px")
+        self.spacing = Stepper(tr("Между строками"), "", 1.1, 0.05, 0.8, 1.8, lambda v: f"×{v:.2f}")
         for st in (self.min_size, self.max_size, self.spacing):
             st.changed.connect(lambda _v: self._on_style())
             card.add(st)
-        self.caps = SwitchRow("ЗАГЛАВНЫМИ БУКВАМИ", "Как принято во многих переводах", False)
+        self.caps = SwitchRow(tr("ЗАГЛАВНЫМИ БУКВАМИ"), tr("Как принято во многих переводах"), False)
         self.caps.toggled.connect(lambda _v: self._on_style())
         card.add(self.caps)
-        self.bold = SwitchRow("Жирнее", "Тонкие шрифты читаются лучше", True)
+        self.bold = SwitchRow(tr("Жирнее"), tr("Тонкие шрифты читаются лучше"), True)
         self.bold.toggled.connect(lambda _v: self._on_style())
         card.add(self.bold)
-        self.tilt = SwitchRow("Повторять наклон", "Перевод под тем же углом, что и оригинал", True)
+        self.tilt = SwitchRow(tr("Повторять наклон"), tr("Перевод под тем же углом, что и оригинал"), True)
         self.tilt.toggled.connect(lambda _v: self._on_style())
         card.add(self.tilt)
         self.fmt = Select()
-        for k, t in (("png", "Выгружать в PNG"), ("jpg", "Выгружать в JPG"), ("same", "Формат как у оригинала")):
+        for k, t in (("png", tr("Выгружать в PNG")), ("jpg", tr("Выгружать в JPG")), ("same", tr("Формат как у оригинала"))):
             self.fmt.addItem(t, k)
         self.fmt.currentIndexChanged.connect(lambda _i: self._on_style())
         card.add(self.fmt)
@@ -956,23 +957,23 @@ class StudioWindow(QWidget):
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(16, 6, 16, 6)
         lay.setSpacing(10)
-        self.status = ElideLabel("Готов к работе.", "caption")
+        self.status = ElideLabel(tr("Готов к работе."), "caption")
         lay.addWidget(self.status, 1)
         self.progress = QProgressBar()
         self.progress.setFixedWidth(220)
         self.progress.setTextVisible(False)
         self.progress.setVisible(False)
         lay.addWidget(self.progress)
-        self.pause_btn = pill("Пауза", "outline", "pause",
-                              "Приостановить перевод — компьютер сразу освобождается. Продолжить можно в любой момент")
+        self.pause_btn = pill(tr("Пауза"), "outline", "pause",
+                              tr("Приостановить перевод — компьютер сразу освобождается. Продолжить можно в любой момент"))
         self.pause_btn.setVisible(False)
         self.pause_btn.clicked.connect(self.toggle_pause)
         lay.addWidget(self.pause_btn)
-        self.stop_btn = pill("Остановить", "outline", "stop", "Прервать перевод. Готовые страницы сохранятся")
+        self.stop_btn = pill(tr("Остановить"), "outline", "stop", tr("Прервать перевод. Готовые страницы сохранятся"))
         self.stop_btn.setVisible(False)
         self.stop_btn.clicked.connect(self.stop)
         lay.addWidget(self.stop_btn)
-        self.open_out = pill("Открыть папку", "link", "folder")
+        self.open_out = pill(tr("Открыть папку"), "link", "folder")
         self.open_out.setVisible(False)
         self.open_out.clicked.connect(self._open_out_dir)
         lay.addWidget(self.open_out)
@@ -980,18 +981,18 @@ class StudioWindow(QWidget):
 
     # ---------------------------------------------------------------- открытие
     def open_folder(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Папка с главой")
+        path = QFileDialog.getExistingDirectory(self, tr("Папка с главой"))
         if path:
             self.load(Path(path))
 
     def open_archive(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Архив главы", "", "Архивы (*.zip *.cbz)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Архив главы"), "", tr("Архивы (*.zip *.cbz)"))
         if path:
             self.load(Path(path))
 
     def open_images(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Страницы главы", "",
-                                                "Изображения (*.png *.jpg *.jpeg *.webp *.bmp)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("Страницы главы"), "",
+                                                tr("Изображения (*.png *.jpg *.jpeg *.webp *.bmp)"))
         if paths:
             files = [Path(p) for p in paths]
             self.load(files[0].parent, files)
@@ -1017,14 +1018,14 @@ class StudioWindow(QWidget):
         try:
             proj = Project.open(path, files)
         except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, "Студия", f"Не удалось открыть главу:\n{e}")
+            QMessageBox.warning(self, tr("Студия"), tr("Не удалось открыть главу:\n{0}", e))
             return
         if not proj.pages:
-            QMessageBox.information(self, "Студия", "В этой папке нет картинок (png, jpg, webp).")
+            QMessageBox.information(self, tr("Студия"), tr("В этой папке нет картинок (png, jpg, webp)."))
             return
         self.project = proj
         self._apply_style_to_controls()
-        self.chapter.setText(f"{proj.title} · страниц: {len(proj.pages)} · {proj.root}")
+        self.chapter.setText(tr("{0} · страниц: {1} · {2}", proj.title, len(proj.pages), proj.root))
         self.stack_empty.setVisible(False)
         self.body.setVisible(True)
         self.pages.blockSignals(True)
@@ -1040,8 +1041,8 @@ class StudioWindow(QWidget):
         self.index = -1
         self.pages.setCurrentRow(0)
         done = sum(1 for p in proj.pages if p.status == "done")
-        self._status(f"Открыто страниц: {len(proj.pages)}" + (f", уже переведено: {done}." if done else
-                                                              ". Нажмите «Перевести главу»."))
+        self._status(tr("Открыто страниц: {0}", len(proj.pages)) + (tr(", уже переведено: {0}.", done) if done else
+                                                              tr(". Нажмите «Перевести главу».")))
 
     # ---------------------------------------------------------------- миниатюры
     def _start_thumbs(self) -> None:
@@ -1089,7 +1090,7 @@ class StudioWindow(QWidget):
         try:
             self._original = engine.load_image(self.project.image_path(page))
         except OSError as e:
-            self._status(f"Не удалось открыть {page.file}: {e}")
+            self._status(tr("Не удалось открыть {0}: {1}", page.file, e))
             return
         self._rendered = None
         self._images = {"original": to_qimage(self._original)}
@@ -1116,14 +1117,14 @@ class StudioWindow(QWidget):
         busy = self.index in self._busy_pages
         self.view.set_blocks([] if busy else page.blocks)
         if busy:
-            self.blocks_title.setText("СТРАНИЦА ОБРАБАТЫВАЕТСЯ…")
+            self.blocks_title.setText(tr("СТРАНИЦА ОБРАБАТЫВАЕТСЯ…"))
             return
         if page.status == "new":
-            self.blocks_title.setText("ТЕКСТ ЕЩЁ НЕ ИСКАЛИ — НАЖМИТЕ «ПЕРЕВЕСТИ СТРАНИЦУ»")
+            self.blocks_title.setText(tr("ТЕКСТ ЕЩЁ НЕ ИСКАЛИ — НАЖМИТЕ «ПЕРЕВЕСТИ СТРАНИЦУ»"))
         else:
-            self.blocks_title.setText(f"БЛОКИ СТРАНИЦЫ · {len(page.blocks)}")
+            self.blocks_title.setText(tr("БЛОКИ СТРАНИЦЫ · {0}", len(page.blocks)))
         note = page.error if page.status == "error" else ""
-        self.page_note.setText(f"Ошибка: {note}" if note else "")
+        self.page_note.setText(tr("Ошибка: {0}", note) if note else "")
         self.page_note.setVisible(bool(note))
         for n, b in enumerate(page.blocks, 1):
             card = BlockCard(b, n)
@@ -1178,7 +1179,7 @@ class StudioWindow(QWidget):
         _on_done, label = self._tasks.pop(token, (None, ""))
         self.last_error = tb
         self._busy_blocks.clear()
-        self._status(f"{label}: ошибка — " + tb.strip().splitlines()[-1])
+        self._status(tr("{0}: ошибка — ", label) + tb.strip().splitlines()[-1])
 
     def _add_block(self, box: Box) -> None:
         """Новый блок рамкой. Блок появляется сразу, текст в нём распознаётся и переводится в фоне."""
@@ -1195,7 +1196,7 @@ class StudioWindow(QWidget):
         self._fill_cards()
         self.view.select(b.id)
         self._changed(True)
-        self._status("Распознаю текст в рамке…")
+        self._status(tr("Распознаю текст в рамке…"))
         self._busy_blocks.add(b.id)
         lang = self.cfg["source_lang"]
         crop = np.ascontiguousarray(original[int(box.y):int(box.y2), int(box.x):int(box.x2)])
@@ -1222,7 +1223,7 @@ class StudioWindow(QWidget):
             tmp, err = result
             self._busy_blocks.discard(b.id)
             if b not in page.blocks:
-                self._status("Блок удалён.")   # блок успели удалить, пока шло распознавание
+                self._status(tr("Блок удалён."))   # блок успели удалить, пока шло распознавание
                 return
             if not b.source:                 # человек ничего не вписал сам — берём распознанное
                 for f in ("source", "lines", "lang", "angle", "src_angle", "line_h", "kind", "bg"):
@@ -1233,10 +1234,10 @@ class StudioWindow(QWidget):
                 self._fill_cards()
                 self.view.select(b.id)
             self._changed(True)
-            self._status(err or ("Блок добавлен." if b.source else
-                                 "Текст в рамке не распознался — впишите оригинал или перевод вручную."))
+            self._status(err or (tr("Блок добавлен.") if b.source else
+                                 tr("Текст в рамке не распознался — впишите оригинал или перевод вручную.")))
 
-        self._run_task(work, done, "Новый блок")
+        self._run_task(work, done, tr("Новый блок"))
 
     def _delete_block(self, bid: str) -> None:
         page = self._page()
@@ -1254,7 +1255,7 @@ class StudioWindow(QWidget):
         if b is None or not b.source or bid in self._busy_blocks:
             return
         self._busy_blocks.add(bid)
-        self._status("Перевожу блок…")
+        self._status(tr("Перевожу блок…"))
         tmp = dataclasses.replace(b)
         pipeline = self.pipeline
 
@@ -1265,10 +1266,10 @@ class StudioWindow(QWidget):
                 if page is self._page() and bid in self.cards:
                     self.cards[bid].set_translation(b.translation)
                 self._changed(True)
-            self._status(err or "Блок переведён заново.")
+            self._status(err or tr("Блок переведён заново."))
 
         # запрос к переводчику — в фоне: окно не замирает, пока ждём ответ
-        self._run_task(lambda: engine.translate(pipeline, [tmp], force=True), done, "Перевод блока")
+        self._run_task(lambda: engine.translate(pipeline, [tmp], force=True), done, tr("Перевод блока"))
 
     # ---------------------------------------------------------------- отрисовка
     def _render_now(self) -> None:
@@ -1296,7 +1297,7 @@ class StudioWindow(QWidget):
 
     def _on_render_failed(self, tb: str) -> None:
         self.last_error = tb
-        self._status("Не удалось нарисовать страницу: " + tb.strip().splitlines()[-1])
+        self._status(tr("Не удалось нарисовать страницу: ") + tb.strip().splitlines()[-1])
         self._render_finished()
 
     def _on_rendered(self, index: int, token: int, payload) -> None:
@@ -1330,8 +1331,8 @@ class StudioWindow(QWidget):
         todo = [i for i, p in enumerate(self.project.pages) if p.status != "done"]
         retranslate = False
         if not todo:
-            ans = QMessageBox.question(self, "Студия", "Все страницы уже переведены. Перевести главу заново?\n"
-                                       "Ручные правки текста перевода будут заменены.")
+            ans = QMessageBox.question(self, tr("Студия"), tr("Все страницы уже переведены. Перевести главу заново?\n"
+                                                              "Ручные правки текста перевода будут заменены."))
             if ans != QMessageBox.StandardButton.Yes:
                 return
             todo = list(range(len(self.project.pages)))
@@ -1343,8 +1344,8 @@ class StudioWindow(QWidget):
         if page is None:
             return
         if page.status != "new" and page.blocks:
-            ans = QMessageBox.question(self, "Студия", "Найти текст на странице заново?\n"
-                                       "Блоки и правки этой страницы будут заменены.")
+            ans = QMessageBox.question(self, tr("Студия"), tr("Найти текст на странице заново?\n"
+                                                              "Блоки и правки этой страницы будут заменены."))
             if ans != QMessageBox.StandardButton.Yes:
                 return
         page.status = "new"
@@ -1374,7 +1375,7 @@ class StudioWindow(QWidget):
             self.job.control.cancel()
             self.pause_btn.setEnabled(False)
             self.stop_btn.setEnabled(False)
-            self._status("Останавливаю… Текущий шаг распознавания закончится через пару секунд.")
+            self._status(tr("Останавливаю… Текущий шаг распознавания закончится через пару секунд."))
 
     def toggle_pause(self) -> None:
         job = self.job
@@ -1383,18 +1384,18 @@ class StudioWindow(QWidget):
         if job.control.paused:
             job.control.resume()
             self._show_pause(False)
-            self._status(self._progress_text or "Продолжаю перевод…")
+            self._status(self._progress_text or tr("Продолжаю перевод…"))
         else:
             job.control.pause()
             self._show_pause(True)
-            self._status("Пауза. Перевод стоит и не нагружает компьютер — нажмите «Продолжить», когда будет удобно.")
+            self._status(tr("Пауза. Перевод стоит и не нагружает компьютер — нажмите «Продолжить», когда будет удобно."))
 
     def _show_pause(self, paused: bool) -> None:
         from ..ui.widgets import set_pill
         if paused:
-            set_pill(self.pause_btn, "Продолжить", "tonal", "play")
+            set_pill(self.pause_btn, tr("Продолжить"), "tonal", "play")
         else:
-            set_pill(self.pause_btn, "Пауза", "outline", "pause")
+            set_pill(self.pause_btn, tr("Пауза"), "outline", "pause")
 
     def _set_running(self, on: bool) -> None:
         self.progress.setVisible(on)
@@ -1413,7 +1414,7 @@ class StudioWindow(QWidget):
         self.progress.setMaximum(max(1, total))
         self.progress.setValue(done)
         if current:
-            self._progress_text = f"Страница {done + 1} из {total}: {current}"
+            self._progress_text = tr("Страница {0} из {1}: {2}", done + 1, total, current)
             job = self.job
             if isinstance(job, _ChapterJob) and (job.control.paused or job.cancelled):
                 return      # не затирать «Пауза» / «Останавливаю»
@@ -1441,7 +1442,7 @@ class StudioWindow(QWidget):
         if self.project is None or self.job is not None:
             return
         if not any(p.status == "done" for p in self.project.pages):
-            QMessageBox.information(self, "Студия", "Сначала переведите главу или хотя бы одну страницу.")
+            QMessageBox.information(self, tr("Студия"), tr("Сначала переведите главу или хотя бы одну страницу."))
             return
         self._save()
         job = _ExportJob(self.project, self.cfg.get("studio_load", sysload.DEFAULT_LOAD), self.cfg["target_lang"])
@@ -1457,7 +1458,7 @@ class StudioWindow(QWidget):
     def _on_exported(self, msg: str) -> None:
         self.job = None
         self._set_running(False)
-        self._status(f"{msg} Папка: {self.project.out_dir}")
+        self._status(tr("{0} Папка: {1}", msg, self.project.out_dir))
         self.open_out.setVisible(True)
 
     def _open_out_dir(self) -> None:
@@ -1468,14 +1469,14 @@ class StudioWindow(QWidget):
     def _fill_fonts(self, current: str = "") -> None:
         self.font_select.blockSignals(True)
         self.font_select.clear()
-        self.font_select.addItem(f"По умолчанию ({fonts.name_of(fonts.default_font())})", "")
+        self.font_select.addItem(tr("По умолчанию ({0})", fonts.name_of(fonts.default_font())), "")
         for name, path in fonts.list_fonts():
             self.font_select.addItem(name, path)
         self.font_select.setCurrentIndex(max(0, self.font_select.findData(current)))
         self.font_select.blockSignals(False)
 
     def _add_font(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Файлы шрифтов", "", "Шрифты (*.ttf *.otf *.ttc)")
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("Файлы шрифтов"), "", tr("Шрифты (*.ttf *.otf *.ttc)"))
         if not paths:
             return
         fonts.FONT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1486,7 +1487,7 @@ class StudioWindow(QWidget):
                 shutil.copy2(p, target)
                 last = str(target)
             except OSError as e:
-                self._status(f"Не удалось скопировать шрифт: {e}")
+                self._status(tr("Не удалось скопировать шрифт: {0}", e))
         fonts.refresh()
         self._fill_fonts(last)
         if last:
@@ -1539,7 +1540,7 @@ class StudioWindow(QWidget):
             try:
                 self.project.save()
             except OSError as e:
-                self._status(f"Не удалось сохранить проект: {e}")
+                self._status(tr("Не удалось сохранить проект: {0}", e))
 
     def _status(self, text: str) -> None:
         self.status.setText(text)

@@ -20,11 +20,12 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
                                QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QScrollArea,
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
-from .. import __version__, languages, titles
+from .. import __version__, i18n, languages, titles
 from ..capture import Region, find_screen, grab_region, grab_region_raw, gray_thumb, qimage_to_pil
 from ..config import DATA_ROOT, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
 from ..hotkeys import Hotkeys
+from ..i18n import tr
 from ..models import PageResult
 from ..ocr import easyocr_available
 from ..pipeline import Pipeline
@@ -40,16 +41,16 @@ from .widgets import (Card, Columns, Dropdown, Field, FlowLayout, Hero, Responsi
 
 # Описание переводчиков для списка (как в Android-версии)
 TRANSLATOR_INFO = [
-    ("google_free", "Google", "Без ключа · среднее качество", "Бесплатно, без ключа"),
-    ("yandex", "Яндекс", "Без ключа · хорошо знает русский", "Бесплатно, без ключа"),
-    ("duckduckgo", "DuckDuckGo", "Без ключа · переводит через Bing", "Бесплатно, без ключа"),
-    ("lingva", "Lingva", "Без ключа · Google через посредника, выручает при VPN", "Бесплатно, без ключа"),
-    ("deepl", "DeepL", "Ключ · 500 тыс. символов в месяц бесплатно", "С ключом"),
-    ("microsoft", "Microsoft", "Ключ · 2 млн символов в месяц бесплатно", "С ключом"),
-    ("papago", "Papago", "Ключ Naver Cloud · лучший для корейского", "С ключом"),
-    ("gemini", "Gemini", "ИИ · есть бесплатный лимит", "ИИ — понимают контекст"),
-    ("claude", "Claude", "ИИ · естественный живой перевод", "ИИ — понимают контекст"),
-    ("openai", "OpenAI-совместимый", "ИИ · OpenAI, OpenRouter, DeepSeek, Ollama, LM Studio", "ИИ — понимают контекст"),
+    ("google_free", "Google", tr("Без ключа · среднее качество"), tr("Бесплатно, без ключа")),
+    ("yandex", tr("Яндекс"), tr("Без ключа · хорошо знает русский"), tr("Бесплатно, без ключа")),
+    ("duckduckgo", "DuckDuckGo", tr("Без ключа · переводит через Bing"), tr("Бесплатно, без ключа")),
+    ("lingva", "Lingva", tr("Без ключа · Google через посредника, выручает при VPN"), tr("Бесплатно, без ключа")),
+    ("deepl", "DeepL", tr("Ключ · 500 тыс. символов в месяц бесплатно"), tr("С ключом")),
+    ("microsoft", "Microsoft", tr("Ключ · 2 млн символов в месяц бесплатно"), tr("С ключом")),
+    ("papago", "Papago", tr("Ключ Naver Cloud · лучший для корейского"), tr("С ключом")),
+    ("gemini", "Gemini", tr("ИИ · есть бесплатный лимит"), tr("ИИ — понимают контекст")),
+    ("claude", "Claude", tr("ИИ · естественный живой перевод"), tr("ИИ — понимают контекст")),
+    ("openai", tr("OpenAI-совместимый"), tr("ИИ · OpenAI, OpenRouter, DeepSeek, Ollama, LM Studio"), tr("ИИ — понимают контекст")),
 ]
 
 
@@ -97,7 +98,7 @@ class _CompareJob(QRunnable):
         try:
             text = self.pipeline.compare(self.image)
         except Exception:  # noqa: BLE001
-            text = "Ошибка сравнения:\n" + traceback.format_exc()
+            text = tr("Ошибка сравнения:\n") + traceback.format_exc()
         self.signals.done.emit(text)
 
 
@@ -245,8 +246,8 @@ class MainWindow(QWidget):
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
                                 self._build_tuning(), self._build_hotkeys(), self._build_developer()])
         bl.addWidget(self.columns)
-        foot = caption(f"ATlate {__version__} · распознавание: "
-                       f"{'Windows OCR' if self.cfg['ocr_engine'] == 'windows' else 'EasyOCR'}")
+        foot = caption(tr("ATlate {0} · распознавание: {1}",
+                          __version__, 'Windows OCR' if self.cfg['ocr_engine'] == 'windows' else 'EasyOCR'))
         foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bl.addWidget(foot)
         v.addWidget(body)
@@ -274,19 +275,19 @@ class MainWindow(QWidget):
         names.setSpacing(0)
         t = QLabel("ATlate")
         t.setStyleSheet("color: white; font-size: 20pt; font-weight: 700; background: transparent;")
-        sub = QLabel("Перевод манхвы прямо с экрана")
+        sub = QLabel(tr("Перевод манхвы прямо с экрана"))
         sub.setStyleSheet(f"color: {theme.CREAM}; background: transparent;")
         sub.setWordWrap(True)
         names.addWidget(t)
         names.addWidget(sub)
         brand.addLayout(names, 1)
-        self.pin = pill("", "heroOutline", "pin", "Окно поверх всех окон")
+        self.pin = pill("", "heroOutline", "pin", tr("Окно поверх всех окон"))
         self.pin.setCheckable(True)
         self.pin.setChecked(bool(self.cfg.get("always_on_top", False)))
         self.pin.setFixedSize(QSize(44, 40))
         self.pin.toggled.connect(self._toggle_on_top)
         self.btn_mini = pill("", "heroOutline", "compact",
-                             "Компактный режим: вместо окна — маленькая панель поверх экрана")
+                             tr("Компактный режим: вместо окна — маленькая панель поверх экрана"))
         self.btn_mini.setFixedSize(QSize(44, 40))
         self.btn_mini.clicked.connect(self.enter_mini)
         brand.addWidget(self.btn_mini, 0, Qt.AlignmentFlag.AlignTop)
@@ -296,7 +297,7 @@ class MainWindow(QWidget):
         self.chip = StatusChip()
         lay.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.mode_switch = Segmented([("shot", "Скриншот"), ("live", "Live")], self.cfg.get("translate_mode", "shot"))
+        self.mode_switch = Segmented([("shot", tr("Скриншот")), ("live", "Live")], self.cfg.get("translate_mode", "shot"))
         self.mode_switch.setMaximumWidth(360)
         self.mode_switch.changed.connect(self._set_mode)
         lay.addWidget(self.mode_switch)
@@ -308,11 +309,13 @@ class MainWindow(QWidget):
         hk = self.cfg["hotkeys"]
         self.btn_main = pill("", "hero", "play")
         self.btn_main.clicked.connect(self._main_action)
-        self.btn_select = pill("Выделить область", "heroOutline", "select", f"Горячая клавиша: {hk.get('select', '')}")
+        self.btn_select = pill(tr("Выделить область"), "heroOutline", "select", tr("Горячая клавиша: {0}",
+                                                                                   hk.get('select', '')))
         self.btn_select.clicked.connect(self.start_selection)
-        self.btn_zone = pill("Показать зону", "heroOutline", "eye", "Показать рамку текущей зоны перевода")
+        self.btn_zone = pill(tr("Показать зону"), "heroOutline", "eye", tr("Показать рамку текущей зоны перевода"))
         self.btn_zone.clicked.connect(self.show_zone)
-        self.btn_hide = pill("Скрыть перевод", "heroOutline", "hide", f"Горячая клавиша: {hk.get('toggle', '')}")
+        self.btn_hide = pill(tr("Скрыть перевод"), "heroOutline", "hide", tr("Горячая клавиша: {0}",
+                                                                             hk.get('toggle', '')))
         self.btn_hide.clicked.connect(self.toggle_overlay)
         for b in (self.btn_main, self.btn_select, self.btn_zone, self.btn_hide):
             flow.addWidget(b)
@@ -331,10 +334,10 @@ class MainWindow(QWidget):
     # ---------------------------------------------------------------- плитки
     def _build_tiles(self) -> QWidget:
         tiles = [
-            Tile("Перевести\nкартинку", "image", "Перевести сохранённый скриншот или страницу"),
-            Tile("Новый\nтайтл", "refresh", "Создать тайтл со своим контекстом и глоссарием"),
-            Tile("Окно\nсо списком", "list", "Оригинал и перевод каждой реплики списком"),
-            Tile("Как\nпользоваться", "help", "Короткая инструкция"),
+            Tile(tr("Перевести\nкартинку"), "image", tr("Перевести сохранённый скриншот или страницу")),
+            Tile(tr("Новый\nтайтл"), "refresh", tr("Создать тайтл со своим контекстом и глоссарием")),
+            Tile(tr("Окно\nсо списком"), "list", tr("Оригинал и перевод каждой реплики списком")),
+            Tile(tr("Как\nпользоваться"), "help", tr("Короткая инструкция")),
         ]
         tiles[0].clicked.connect(self.translate_file)
         tiles[1].clicked.connect(self.create_title)
@@ -358,11 +361,11 @@ class MainWindow(QWidget):
         lay.addWidget(ic)
         col = QVBoxLayout()
         col.setSpacing(1)
-        col.addWidget(label("Студия перевода", "cardTitle"))
-        col.addWidget(caption("Перевести главу целиком: найти текст, стереть оригинал, вписать перевод и выгрузить "
-                              "готовые страницы"))
+        col.addWidget(label(tr("Студия перевода"), "cardTitle"))
+        col.addWidget(caption(tr("Перевести главу целиком: найти текст, стереть оригинал, вписать перевод и выгрузить "
+                                 "готовые страницы")))
         lay.addLayout(col, 1)
-        btn = pill("Открыть", "primary", "brush")
+        btn = pill(tr("Открыть"), "primary", "brush")
         btn.clicked.connect(self.open_studio)
         lay.addWidget(btn)
         return box
@@ -400,21 +403,21 @@ class MainWindow(QWidget):
         return box
 
     def _build_languages(self) -> Card:
-        card = Card("Языки", "Откуда и куда переводить", "lang")
+        card = Card(tr("Языки"), tr("Откуда и куда переводить"), "lang")
         auto = bool(self.cfg.get("auto_lang"))
         self.src_combo = self._combo([("auto", self._auto_title())]
                                      + [(k, v["name"]) for k, v in languages.SOURCE_LANGUAGES.items()],
                                      "auto" if auto else self.cfg["source_lang"], self._set_source)
-        self.src_combo.setToolTip("«Авто» — программа сама поймёт, на каком языке текст в выделенной области")
+        self.src_combo.setToolTip(tr("«Авто» — программа сама поймёт, на каком языке текст в выделенной области"))
         self.tgt_combo = self._combo([(k, v["name"]) for k, v in languages.TARGET_LANGUAGES.items()],
-                                     self.cfg["target_lang"], lambda v: self._set("target_lang", v))
+                                     self.cfg["target_lang"], self._set_target)
         arrow = QLabel()
         arrow.setPixmap(theme.pixmap("arrow", theme.palette().primary, 20))
-        card.add(ResponsiveRow(self._labeled("С языка", self.src_combo), arrow,
-                               self._labeled("На язык", self.tgt_combo), anchor=self.src_combo.header))
-        content = Dropdown("Что переводим", [
-            ("manhwa", "Манхва, манга, маньхуа", "Облака с репликами, звуки, плашки", ""),
-            ("screen", "Текст на экране", "Статьи, чаты, игры, приложения — перевод прямо поверх текста", ""),
+        card.add(ResponsiveRow(self._labeled(tr("С языка"), self.src_combo), arrow,
+                               self._labeled(tr("На язык"), self.tgt_combo), anchor=self.src_combo.header))
+        content = Dropdown(tr("Что переводим"), [
+            ("manhwa", tr("Манхва, манга, маньхуа"), tr("Облака с репликами, звуки, плашки"), ""),
+            ("screen", tr("Текст на экране"), tr("Статьи, чаты, игры, приложения — перевод прямо поверх текста"), ""),
         ], self.cfg.get("content_mode", "manhwa"))
         content.changed.connect(lambda v: self._set("content_mode", v))
         card.add(content)
@@ -426,32 +429,33 @@ class MainWindow(QWidget):
     def _auto_title(self) -> str:
         """Подпись пункта «Авто»: вместе с языком, который сейчас найден."""
         name = languages.src(self.cfg["source_lang"])["name"].split(" (")[0]
-        return f"Авто · сейчас {name.lower()}" if self.cfg.get("auto_lang") else "Авто — определить по экрану"
+        return tr("Авто · сейчас {0}",
+                  i18n.lower(name)) if self.cfg.get("auto_lang") else tr("Авто — определить по экрану")
 
     def _refresh_auto_hint(self) -> None:
         """Под списком языков: из чего «Авто» выбирает (в Windows — только из установленных языков)."""
         text = ""
         if self.cfg.get("auto_lang"):
-            text = "Язык оригинала определяется сам при переводе."
+            text = tr("Язык оригинала определяется сам при переводе.")
             if sys.platform == "win32" and self.cfg["ocr_engine"] == "windows":
                 try:
                     from ..win_setup import missing_ocr_languages
                     missing = missing_ocr_languages(list(languages.SOURCE_LANGUAGES))
                 except Exception:  # noqa: BLE001
                     missing = []
-                have = [v["name"].split(" (")[0].lower() for k, v in languages.SOURCE_LANGUAGES.items()
+                have = [i18n.lower(v["name"].split(" (")[0]) for k, v in languages.SOURCE_LANGUAGES.items()
                         if k not in missing]
                 if missing:
-                    text += (" Выбор — из языков, для которых в Windows установлено распознавание: "
-                             f"{', '.join(have) or 'пока ни одного'}. Чтобы добавить язык, выберите его "
-                             "в списке один раз — программа предложит его докачать.")
+                    text += tr(" Выбор — из языков, для которых в Windows установлено распознавание: {0}. Чтобы "
+                               "добавить язык, выберите его в списке один раз — программа предложит его докачать.",
+                               ", ".join(have) or tr("пока ни одного"))
         self.auto_hint.setText(text)
         self.auto_hint.setVisible(bool(text))
 
     # ---------------------------------------------------------------- переводчик
     def _build_translator(self) -> Card:
-        card = Card("Переводчик", "Чем переводить текст", "bolt")
-        dd = Dropdown("Переводчик", TRANSLATOR_INFO, self.cfg["translator"])
+        card = Card(tr("Переводчик"), tr("Чем переводить текст"), "bolt")
+        dd = Dropdown(tr("Переводчик"), TRANSLATOR_INFO, self.cfg["translator"])
         dd.changed.connect(self._set_translator)
         card.add(dd)
         self.keys_box = QWidget()
@@ -460,16 +464,16 @@ class MainWindow(QWidget):
         self.keys_lay.setSpacing(8)
         card.add(self.keys_box)
         self._render_keys()
-        ctx = Stepper("Контекст", "Сколько прошлых реплик учитывать", float(self.cfg["context_size"]),
+        ctx = Stepper(tr("Контекст"), tr("Сколько прошлых реплик учитывать"), float(self.cfg["context_size"]),
                       1, 0, 40, lambda v: str(int(v)))
         ctx.changed.connect(lambda v: self._set("context_size", int(v)))
         card.add(ctx)
-        pause = Stepper("Пауза между запросами", "Защищает от блокировки за частые запросы",
-                        float(self.cfg.get("request_interval", 1.0)), 0.5, 0, 10, lambda v: f"{v:.1f} с")
+        pause = Stepper(tr("Пауза между запросами"), tr("Защищает от блокировки за частые запросы"),
+                        float(self.cfg.get("request_interval", 1.0)), 0.5, 0, 10, lambda v: tr("{0:.1f} с", v))
         pause.changed.connect(lambda v: self._set("request_interval", v))
         card.add(pause)
-        fb = SwitchRow("Запасные бесплатные переводчики",
-                       "Если бесплатный переводчик не отвечает, перевести другим бесплатным",
+        fb = SwitchRow(tr("Запасные бесплатные переводчики"),
+                       tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным"),
                        bool(self.cfg.get("free_fallback", True)))
         fb.toggled.connect(lambda v: self._set("free_fallback", v))
         card.add(fb)
@@ -501,63 +505,63 @@ class MainWindow(QWidget):
             self.keys_lay.addWidget(b, 0, Qt.AlignmentFlag.AlignLeft)
 
         if name == "google_free":
-            note("Ключ не нужен. Это неофициальный способ: при VPN Google часто ограничивает запросы — "
-                 "тогда выберите Lingva или Яндекс.")
+            note(tr("Ключ не нужен. Это неофициальный способ: при VPN Google часто ограничивает запросы — "
+                    "тогда выберите Lingva или Яндекс."))
         elif name == "yandex":
-            note("Работает без ключа. Если бесплатный способ перестанет отвечать, укажите ключ Yandex Cloud — "
-                 "тогда перевод пойдёт через официальный API (платно, по символам).")
-            field("API-ключ Yandex Cloud (необязательно)", "api_key", "AQVN…", secret=True)
-            field("ID каталога (нужен вместе с ключом)", "folder_id", "b1g…")
-            link("Как получить ключ", "https://yandex.cloud/ru/docs/translate/quickstart")
+            note(tr("Работает без ключа. Если бесплатный способ перестанет отвечать, укажите ключ Yandex Cloud — "
+                    "тогда перевод пойдёт через официальный API (платно, по символам)."))
+            field(tr("API-ключ Yandex Cloud (необязательно)"), "api_key", "AQVN…", secret=True)
+            field(tr("ID каталога (нужен вместе с ключом)"), "folder_id", "b1g…")
+            link(tr("Как получить ключ"), "https://yandex.cloud/ru/docs/translate/quickstart")
         elif name == "duckduckgo":
-            note("Ключ не нужен. DuckDuckGo переводит через Microsoft Bing. Способ неофициальный "
-                 "и может временно не отвечать.")
+            note(tr("Ключ не нужен. DuckDuckGo переводит через Microsoft Bing. Способ неофициальный "
+                    "и может временно не отвечать."))
         elif name == "lingva":
-            note("Ключ не нужен. Lingva — открытый посредник к Google Переводчику: Google видит запрос "
-                 "от сервера Lingva, а не от вас, поэтому ограничения VPN обычно не мешают.")
-            field("Адрес сервера Lingva", "base_url", "https://lingva.ml", default="https://lingva.ml")
-            link("Список других серверов", "https://github.com/thedaviddelta/lingva-translate#instances")
+            note(tr("Ключ не нужен. Lingva — открытый посредник к Google Переводчику: Google видит запрос "
+                    "от сервера Lingva, а не от вас, поэтому ограничения VPN обычно не мешают."))
+            field(tr("Адрес сервера Lingva"), "base_url", "https://lingva.ml", default="https://lingva.ml")
+            link(tr("Список других серверов"), "https://github.com/thedaviddelta/lingva-translate#instances")
         elif name == "deepl":
-            field("API-ключ DeepL", "api_key", "xxxxxxxx-xxxx:fx", secret=True)
-            link("Получить бесплатный ключ", "https://www.deepl.com/pro-api")
+            field(tr("API-ключ DeepL"), "api_key", "xxxxxxxx-xxxx:fx", secret=True)
+            link(tr("Получить бесплатный ключ"), "https://www.deepl.com/pro-api")
         elif name == "microsoft":
-            field("Ключ Azure Translator", "api_key", "ключ ресурса", secret=True)
-            field("Регион", "region", "global", default="global")
-            link("Открыть портал Azure", "https://portal.azure.com")
+            field(tr("Ключ Azure Translator"), "api_key", tr("ключ ресурса"), secret=True)
+            field(tr("Регион"), "region", "global", default="global")
+            link(tr("Открыть портал Azure"), "https://portal.azure.com")
         elif name == "papago":
-            note("Переводчик Naver — лучший для корейского. Нужна регистрация в Naver Cloud Platform. "
-                 "На русский Papago переводит только с корейского и английского.")
+            note(tr("Переводчик Naver — лучший для корейского. Нужна регистрация в Naver Cloud Platform. "
+                    "На русский Papago переводит только с корейского и английского."))
             field("Client ID", "client_id", secret=True)
             field("Client Secret", "client_secret", secret=True)
-            link("Открыть Naver Cloud Platform", "https://www.ncloud.com/product/aiService/papagoTranslation")
+            link(tr("Открыть Naver Cloud Platform"), "https://www.ncloud.com/product/aiService/papagoTranslation")
         elif name == "gemini":
-            field("API-ключ Gemini", "api_key", "AIza…", secret=True)
-            field("Модель", "model", "gemini-2.5-flash-lite", default="gemini-2.5-flash-lite")
-            link("Получить ключ в Google AI Studio", "https://aistudio.google.com/apikey")
+            field(tr("API-ключ Gemini"), "api_key", "AIza…", secret=True)
+            field(tr("Модель"), "model", "gemini-2.5-flash-lite", default="gemini-2.5-flash-lite")
+            link(tr("Получить ключ в Google AI Studio"), "https://aistudio.google.com/apikey")
         elif name == "claude":
-            field("API-ключ Claude", "api_key", "sk-ant-…", secret=True)
-            field("Модель", "model", "claude-haiku-5-5", default="claude-haiku-5-5")
-            link("Получить ключ", "https://platform.claude.com")
+            field(tr("API-ключ Claude"), "api_key", "sk-ant-…", secret=True)
+            field(tr("Модель"), "model", "claude-haiku-5-5", default="claude-haiku-5-5")
+            link(tr("Получить ключ"), "https://platform.claude.com")
         elif name == "openai":
-            note("Подходит для OpenAI, OpenRouter, DeepSeek и бесплатных локальных моделей: "
-                 "Ollama (http://localhost:11434/v1) или LM Studio (http://localhost:1234/v1).")
-            field("Адрес сервера", "base_url", "https://api.openai.com/v1")
-            field("API-ключ", "api_key", "sk-…", secret=True)
-            field("Модель", "model", "gpt-4o-mini")
+            note(tr("Подходит для OpenAI, OpenRouter, DeepSeek и бесплатных локальных моделей: "
+                    "Ollama (http://localhost:11434/v1) или LM Studio (http://localhost:1234/v1)."))
+            field(tr("Адрес сервера"), "base_url", "https://api.openai.com/v1")
+            field(tr("API-ключ"), "api_key", "sk-…", secret=True)
+            field(tr("Модель"), "model", "gpt-4o-mini")
         relayout(self.keys_box)
 
     # ---------------------------------------------------------------- тайтл и глоссарий
     def _build_title(self) -> Card:
-        card = Card("Тайтл", "Контекст и глоссарий сохраняются для каждой манхвы", "book")
+        card = Card(tr("Тайтл"), tr("Контекст и глоссарий сохраняются для каждой манхвы"), "book")
         self.title_combo = Select()
         self.title_combo.currentIndexChanged.connect(self._on_title_combo)
-        card.add(self._labeled("Активный тайтл", self.title_combo))
+        card.add(self._labeled(tr("Активный тайтл"), self.title_combo))
         row = FlowLayout(8)
         host = QWidget()
         host.setLayout(row)
-        manage = pill("Управление", "outline")
+        manage = pill(tr("Управление"), "outline")
         manage.clicked.connect(lambda: self._title_menu(manage))
-        new_t = pill("Новый тайтл", "tonal", "plus")
+        new_t = pill(tr("Новый тайтл"), "tonal", "plus")
         new_t.clicked.connect(self.create_title)
         row.addWidget(manage)
         row.addWidget(new_t)
@@ -565,24 +569,24 @@ class MainWindow(QWidget):
 
         self.gloss_combo = Select()
         self.gloss_combo.currentIndexChanged.connect(self._on_gloss_combo)
-        card.add(self._labeled("Глоссарий", self.gloss_combo))
+        card.add(self._labeled(tr("Глоссарий"), self.gloss_combo))
         grow = FlowLayout(8)
         ghost = QWidget()
         ghost.setLayout(grow)
-        edit = pill("Изменить", "outline")
+        edit = pill(tr("Изменить"), "outline")
         edit.clicked.connect(self.edit_glossary)
-        new_g = pill("Новый", "tonal", "plus")
+        new_g = pill(tr("Новый"), "tonal", "plus")
         new_g.clicked.connect(self.new_glossary)
-        auto_g = pill("Авто-глоссарий", "tonal", "bolt",
-                      "Новый глоссарий, который ИИ-переводчик пополняет сам: имена и термины из переводов")
+        auto_g = pill(tr("Авто-глоссарий"), "tonal", "bolt",
+                      tr("Новый глоссарий, который ИИ-переводчик пополняет сам: имена и термины из переводов"))
         auto_g.clicked.connect(self.new_auto_glossary)
-        folder = pill("Папка", "tonal", "folder", "Открыть папку с глоссариями")
+        folder = pill(tr("Папка"), "tonal", "folder", tr("Открыть папку с глоссариями"))
         folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(GLOSSARY_DIR))))
         for b in (edit, new_g, auto_g, folder):
             grow.addWidget(b)
         card.add(ghost)
-        self.auto_gloss = SwitchRow("Пополнять глоссарий сам",
-                                    "ИИ-переводчик добавляет новые имена и термины, повторы пропускаются", False)
+        self.auto_gloss = SwitchRow(tr("Пополнять глоссарий сам"),
+                                    tr("ИИ-переводчик добавляет новые имена и термины, повторы пропускаются"), False)
         self.auto_gloss.toggled.connect(self._set_glossary_auto)
         card.add(self.auto_gloss)
         self.auto_gloss_hint = caption("")
@@ -613,16 +617,19 @@ class MainWindow(QWidget):
         self.auto_gloss.setEnabled(g is not None and not universal)
         from ..translators import TRANSLATORS
         llm = getattr(TRANSLATORS.get(self.cfg["translator"]), "uses_llm", False)
-        if g is None:
-            hint = "Выберите или создайте глоссарий — или нажмите «Авто-глоссарий»."
+        if g is not None and not g.fits(self.cfg["target_lang"]):
+            hint = tr("Этот глоссарий — для перевода на {0}, поэтому сейчас он не используется. Выберите другой "
+                      "или создайте авто-глоссарий.", i18n.lower(languages.name_of(g.target_lang)))
+        elif g is None:
+            hint = tr("Выберите или создайте глоссарий — или нажмите «Авто-глоссарий».")
         elif universal:
-            hint = "Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий»."
+            hint = tr("Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий».")
         elif g.auto and not llm:
-            hint = ("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). "
-                    "С выбранным переводчиком глоссарий только используется.")
+            hint = (tr("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). "
+                       "С выбранным переводчиком глоссарий только используется."))
         elif g.auto:
-            hint = (f"Добавлено автоматически: {g.auto_count}. Такие записи помечены в редакторе — "
-                    "проверьте их и исправьте, если ИИ ошибся.")
+            hint = (tr("Добавлено автоматически: {0}. Такие записи помечены в редакторе — проверьте их и "
+                       "исправьте, если ИИ ошибся.", g.auto_count))
         else:
             hint = ""
         self.auto_gloss_hint.setText(hint)
@@ -637,14 +644,15 @@ class MainWindow(QWidget):
         try:
             g.save()
         except OSError as e:
-            self._set_status(f"Не удалось сохранить глоссарий: {e}", True)
+            self._set_status(tr("Не удалось сохранить глоссарий: {0}", e), True)
         self.pipeline.reload()
         self._refresh_auto_glossary()
 
     def new_auto_glossary(self) -> None:
         """Новый пустой глоссарий, который пополняется сам; сразу выбирается для текущего тайтла."""
         t = titles.load(self.cfg.get("active_title", ""))
-        path = new_glossary_file(self, self.cfg["source_lang"], default=t.name if t else "", auto=True)
+        path = new_glossary_file(self, self.cfg["source_lang"], default=t.name if t else "", auto=True,
+                                 target_lang=self.cfg["target_lang"])
         if not path:
             return
         self.cfg["glossary"] = path.name
@@ -655,16 +663,16 @@ class MainWindow(QWidget):
         self._fill_titles()
         from ..translators import TRANSLATORS
         llm = getattr(TRANSLATORS.get(self.cfg["translator"]), "uses_llm", False)
-        self._set_status("Авто-глоссарий создан: новые имена и термины будут добавляться при переводе."
-                         if llm else "Авто-глоссарий создан. Чтобы он пополнялся, выберите ИИ-переводчик "
-                                     "(Gemini, Claude или OpenAI-совместимый).", notify=True)
+        self._set_status(tr("Авто-глоссарий создан: новые имена и термины будут добавляться при переводе.")
+                         if llm else tr("Авто-глоссарий создан. Чтобы он пополнялся, выберите ИИ-переводчик "
+                                        "(Gemini, Claude или OpenAI-совместимый)."), notify=True)
 
     def _fill_titles(self) -> None:
         self._filling = True
         self.title_combo.clear()
-        self.title_combo.addItem("Без тайтла — контекст только до выхода", "")
+        self.title_combo.addItem(tr("Без тайтла — контекст только до выхода"), "")
         for t in titles.list_titles():
-            self.title_combo.addItem(f"{t.name} · {len(t.history)} реплик", t.id)
+            self.title_combo.addItem(tr("{0} · {1} реплик", t.name, len(t.history)), t.id)
         idx = self.title_combo.findData(self.cfg.get("active_title", ""))
         if idx < 0:
             self.cfg["active_title"] = ""
@@ -674,12 +682,12 @@ class MainWindow(QWidget):
         if t and t.glossary != self.cfg.get("glossary"):
             self.cfg["glossary"] = t.glossary
         self.gloss_combo.clear()
-        self.gloss_combo.addItem("Без глоссария", "")
+        self.gloss_combo.addItem(tr("Без глоссария"), "")
         for p in list_glossaries(GLOSSARY_DIR):
             try:
                 g = Glossary.load(p)
-                mark = " · авто" if g.auto else ""
-                self.gloss_combo.addItem(f"{g.name or p.stem} · {len(g.entries)} зап.{mark}", p.name)
+                mark = tr(" · авто") if g.auto else ""
+                self.gloss_combo.addItem(tr("{0} · {1} зап.{2}", g.title, len(g.entries), mark), p.name)
             except (OSError, ValueError):
                 continue
         self.gloss_combo.setCurrentIndex(max(0, self.gloss_combo.findData(self.cfg.get("glossary", ""))))
@@ -714,17 +722,17 @@ class MainWindow(QWidget):
         t = titles.load(self.cfg.get("active_title", ""))
         m = QMenu(self)
         if t is None:
-            m.addAction("Создать тайтл", self.create_title)
-            m.addAction("Очистить контекст", self.reset_session)
+            m.addAction(tr("Создать тайтл"), self.create_title)
+            m.addAction(tr("Очистить контекст"), self.reset_session)
         else:
-            m.addAction("Переименовать", self.rename_title)
-            m.addAction("Очистить контекст", self.reset_session)
+            m.addAction(tr("Переименовать"), self.rename_title)
+            m.addAction(tr("Очистить контекст"), self.reset_session)
             m.addSeparator()
-            m.addAction("Удалить тайтл", self.delete_title)
+            m.addAction(tr("Удалить тайтл"), self.delete_title)
         m.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def create_title(self) -> None:
-        name, ok = QInputDialog.getText(self, "Новый тайтл", "Название тайтла:")
+        name, ok = QInputDialog.getText(self, tr("Новый тайтл"), tr("Название тайтла:"))
         if not ok or not name.strip():
             return
         t = titles.create(name, universal_for(GLOSSARY_DIR, self.cfg["source_lang"]))
@@ -732,13 +740,13 @@ class MainWindow(QWidget):
         self.cfg["glossary"] = t.glossary
         self._save_and_reload()
         self._fill_titles()
-        self._set_status(f"Тайтл «{t.name}» создан. Контекст будет сохраняться между запусками.")
+        self._set_status(tr("Тайтл «{0}» создан. Контекст будет сохраняться между запусками.", t.name))
 
     def rename_title(self) -> None:
         t = titles.load(self.cfg.get("active_title", ""))
         if not t:
             return
-        name, ok = QInputDialog.getText(self, "Переименовать", "Название тайтла:", text=t.name)
+        name, ok = QInputDialog.getText(self, tr("Переименовать"), tr("Название тайтла:"), text=t.name)
         if ok and name.strip():
             t.name = name.strip()
             titles.save(t)
@@ -748,9 +756,9 @@ class MainWindow(QWidget):
         t = titles.load(self.cfg.get("active_title", ""))
         if not t:
             return
-        if QMessageBox.question(self, "Удалить тайтл?",
-                                f"Сохранённые реплики и кэш переводов «{t.name}» будут удалены. "
-                                "Глоссарий останется.") != QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, tr("Удалить тайтл?"),
+                                tr("Сохранённые реплики и кэш переводов «{0}» будут удалены. Глоссарий останется.",
+                                   t.name)) != QMessageBox.StandardButton.Yes:
             return
         titles.delete(t.id)
         self.cfg["active_title"] = ""
@@ -781,47 +789,51 @@ class MainWindow(QWidget):
     # ---------------------------------------------------------------- тонкая настройка
     def _build_tuning(self) -> Card:
         c = self.cfg
-        card = Card("Тонкая настройка", "Распознавание, вид перевода, оформление", "tune",
+        card = Card(tr("Тонкая настройка"), tr("Распознавание, вид перевода, оформление"), "tune",
                     collapsible=True, collapsed=True)
-        rec = Dropdown("Распознавание текста", [
-            ("fast", "Быстрый", "1 проход · для обычных облаков", ""),
-            ("thorough", "Тщательный", "3 прохода · тёмные фоны, светлый текст", ""),
-            ("max", "Максимальный", "5 проходов · пёстрые фоны, цветной текст", ""),
+        rec = Dropdown(tr("Распознавание текста"), [
+            ("fast", tr("Быстрый"), tr("1 проход · для обычных облаков"), ""),
+            ("thorough", tr("Тщательный"), tr("3 прохода · тёмные фоны, светлый текст"), ""),
+            ("max", tr("Максимальный"), tr("5 проходов · пёстрые фоны, цветной текст"), ""),
         ], c.get("ocr_mode", "thorough"))
         rec.changed.connect(lambda v: self._set("ocr_mode", v))
         card.add(rec)
-        card.add(caption("Если текст на тёмном или пёстром фоне не находится, выберите режим потщательнее."))
+        card.add(caption(tr("Если текст на тёмном или пёстром фоне не находится, выберите режим потщательнее.")))
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        self.disp_combo = self._combo([("overlay", "Поверх облаков"), ("list", "Окно со списком"),
-                                       ("both", "И то, и другое")], c["display_mode"],
+        self.disp_combo = self._combo([("overlay", tr("Поверх облаков")), ("list", tr("Окно со списком")),
+                                       ("both", tr("И то, и другое"))], c["display_mode"],
                                       lambda v: self._set("display_mode", v))
         # EasyOCR — только если он установлен: в собранную программу он не входит,
         # и раньше выбор этого пункта давал ошибку при каждом переводе
         engines = [("windows", "Windows OCR")] + ([("easyocr", "EasyOCR")] if easyocr_available() else [])
         engine = self._combo(engines, c["ocr_engine"], self._set_engine)
-        themes = self._combo([("system", "Как в Windows"), ("light", "Светлая"), ("dark", "Тёмная")],
+        themes = self._combo([("system", tr("Как в Windows")), ("light", tr("Светлая")), ("dark", tr("Тёмная"))],
                              c.get("theme", "system"), self._set_theme)
-        grid.addWidget(self._labeled("Показ перевода", self.disp_combo), 0, 0)
-        grid.addWidget(self._labeled("Движок OCR", engine), 0, 1)
-        grid.addWidget(self._labeled("Тема", themes), 1, 0)
+        grid.addWidget(self._labeled(tr("Показ перевода"), self.disp_combo), 0, 0)
+        grid.addWidget(self._labeled(tr("Движок OCR"), engine), 0, 1)
+        # названия языков — на самих языках, чтобы найти свой при любом интерфейсе
+        ui_lang = self._combo([("system", tr("Как в системе")), ("ru", "Русский"), ("en", "English")],
+                              c.get("ui_lang", "system"), self._set_ui_lang)
+        grid.addWidget(self._labeled(tr("Тема"), themes), 1, 0)
+        grid.addWidget(self._labeled(tr("Язык интерфейса"), ui_lang), 1, 1)
         card.add(grid)
 
         for title, sub, key, val, step, lo, hi, fmt in (
-            ("Склейка строк", "Больше — охотнее собирает строки в одно облако", "bubble_gap",
+            (tr("Склейка строк"), tr("Больше — охотнее собирает строки в одно облако"), "bubble_gap",
              float(c["bubble_gap"]), 0.1, 0.2, 4.0, lambda v: f"{v:.1f}"),
-            ("Увеличение перед OCR", "Мелкий текст читается лучше", "ocr_upscale",
+            (tr("Увеличение перед OCR"), tr("Мелкий текст читается лучше"), "ocr_upscale",
              float(c["ocr_upscale"]), 0.25, 1.0, 4.0, lambda v: f"×{v:.2f}"),
-            ("Шрифт перевода", "Максимальный размер", "overlay_max_font_size",
+            (tr("Шрифт перевода"), tr("Максимальный размер"), "overlay_max_font_size",
              float(c["overlay_max_font_size"]), 1, 8, 48, lambda v: f"{int(v)} px"),
-            ("Непрозрачность плашек", "", "overlay_opacity",
+            (tr("Непрозрачность плашек"), "", "overlay_opacity",
              float(c["overlay_opacity"]), 0.05, 0.3, 1.0, lambda v: f"{int(v * 100)} %"),
-            ("Live: проверка экрана", "Как часто смотреть, остановилась ли страница", "auto_interval_ms",
-             float(c["auto_interval_ms"]), 100, 300, 5000, lambda v: f"{int(v)} мс"),
-            ("Компактная панель", "Через сколько сворачивается, когда мышь ушла", "mini_collapse_delay",
-             float(c.get("mini_collapse_delay", 5)), 1, 0, 30, lambda v: f"{int(v)} с"),
+            (tr("Live: проверка экрана"), tr("Как часто смотреть, остановилась ли страница"), "auto_interval_ms",
+             float(c["auto_interval_ms"]), 100, 300, 5000, lambda v: tr("{0} мс", int(v))),
+            (tr("Компактная панель"), tr("Через сколько сворачивается, когда мышь ушла"), "mini_collapse_delay",
+             float(c.get("mini_collapse_delay", 5)), 1, 0, 30, lambda v: tr("{0} с", int(v))),
         ):
             st = Stepper(title, sub, val, step, lo, hi, fmt)
             st.changed.connect(lambda v, k=key: self._set(k, int(v) if k in ("overlay_max_font_size",
@@ -830,11 +842,11 @@ class MainWindow(QWidget):
             card.add(st)
 
         for title, sub, key in (
-            ("Не переводить звуки", "Текст поверх рисунка, а не в облаке", "skip_free_text"),
-            ("Пропускать обрезанное", "Текст, который режет край области", "skip_cut_bubbles"),
-            ("Повторять наклон текста", "Перевод под тем же углом, что и оригинал", "keep_tilt"),
-            ("Разделять облака по контуру", "Не склеивать облака, стоящие вплотную", "bubble_border_check"),
-            ("Выделять по всей ширине", "Проводите мышкой только сверху вниз — ширина берётся вся",
+            (tr("Не переводить звуки"), tr("Текст поверх рисунка, а не в облаке"), "skip_free_text"),
+            (tr("Пропускать обрезанное"), tr("Текст, который режет край области"), "skip_cut_bubbles"),
+            (tr("Повторять наклон текста"), tr("Перевод под тем же углом, что и оригинал"), "keep_tilt"),
+            (tr("Разделять облака по контуру"), tr("Не склеивать облака, стоящие вплотную"), "bubble_border_check"),
+            (tr("Выделять по всей ширине"), tr("Проводите мышкой только сверху вниз — ширина берётся вся"),
              "full_width_select"),
         ):
             sw = SwitchRow(title, sub, bool(c.get(key, False)))
@@ -844,33 +856,33 @@ class MainWindow(QWidget):
 
     # ---------------------------------------------------------------- горячие клавиши
     def _build_hotkeys(self) -> Card:
-        card = Card("Горячие клавиши", "Работают, даже когда окно свёрнуто", "keyboard",
+        card = Card(tr("Горячие клавиши"), tr("Работают, даже когда окно свёрнуто"), "keyboard",
                     collapsible=True, collapsed=True)
         hk = self.cfg["hotkeys"]
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
-        for i, (key, title) in enumerate((("select", "Выделить область"), ("translate", "Перевести"),
-                                          ("toggle", "Показать или скрыть перевод"), ("auto", "Live вкл/выкл"),
-                                          ("mini", "Компактный режим"))):
+        for i, (key, title) in enumerate((("select", tr("Выделить область")), ("translate", tr("Перевести")),
+                                          ("toggle", tr("Показать или скрыть перевод")), ("auto", tr("Live вкл/выкл")),
+                                          ("mini", tr("Компактный режим")))):
             f = Field(title, hk.get(key, ""), "<alt>+q")
             f.edited.connect(lambda v, k=key: self._set_hotkey(k, v))
             grid.addWidget(f, i // 2, i % 2)
         card.add(grid)
-        card.add(caption("Формат: <alt>+q, <ctrl>+<shift>+t, <f8>. Пустое поле — клавиша отключена. "
-                         "Работают при любой раскладке: Alt+Q сработает и на русской."))
+        card.add(caption(tr("Формат: <alt>+q, <ctrl>+<shift>+t, <f8>. Пустое поле — клавиша отключена. "
+                            "Работают при любой раскладке: Alt+Q сработает и на русской.")))
         return card
 
     # ---------------------------------------------------------------- для разработчиков
     def _build_developer(self) -> Card:
         c = self.cfg
-        card = Card("Для разработчиков", "Отладочная информация и проверка скорости", "code",
+        card = Card(tr("Для разработчиков"), tr("Отладочная информация и проверка скорости"), "code",
                     collapsible=True, collapsed=True)
-        dev = SwitchRow("Режим разработчика", "Время каждого этапа, проходы распознавания, рамки строк и журнал",
+        dev = SwitchRow(tr("Режим разработчика"), tr("Время каждого этапа, проходы распознавания, рамки строк и журнал"),
                         bool(c.get("dev_mode")))
         card.add(dev)
-        par = SwitchRow("Параллельное распознавание",
-                        "Проходы распознавания идут одновременно — быстрее на многоядерных процессорах",
+        par = SwitchRow(tr("Параллельное распознавание"),
+                        tr("Проходы распознавания идут одновременно — быстрее на многоядерных процессорах"),
                         bool(c.get("parallel_ocr", True)))
         par.toggled.connect(lambda v: self._set("parallel_ocr", v))
         card.add(par)
@@ -879,14 +891,14 @@ class MainWindow(QWidget):
         el = QVBoxLayout(extra)
         el.setContentsMargins(0, 0, 0, 0)
         el.setSpacing(10)
-        boxes = SwitchRow("Рамки распознанных строк", "Поверх страницы, своим цветом для каждого прохода",
+        boxes = SwitchRow(tr("Рамки распознанных строк"), tr("Поверх страницы, своим цветом для каждого прохода"),
                           bool(c.get("debug_boxes", True)))
         boxes.toggled.connect(lambda v: self._set("debug_boxes", v))
         el.addWidget(boxes)
-        el.addWidget(label("ПОСЛЕДНИЙ ЗАПУСК", "fieldLabel"))
+        el.addWidget(label(tr("ПОСЛЕДНИЙ ЗАПУСК"), "fieldLabel"))
         self.dev_report = QPlainTextEdit()
         self.dev_report.setReadOnly(True)
-        self.dev_report.setPlaceholderText("Здесь появятся подробности после перевода.")
+        self.dev_report.setPlaceholderText(tr("Здесь появятся подробности после перевода."))
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.StyleHint.Monospace)
         mono.setPointSize(9)
@@ -898,17 +910,17 @@ class MainWindow(QWidget):
         buttons.setObjectName("transparent")
         fl = FlowLayout(8)
         buttons.setLayout(fl)
-        cmp_btn = pill("Сравнить на текущей зоне", "outline", "bolt",
-                       "Распознать зону по очереди и параллельно: что быстрее и совпал ли результат")
+        cmp_btn = pill(tr("Сравнить на текущей зоне"), "outline", "bolt",
+                       tr("Распознать зону по очереди и параллельно: что быстрее и совпал ли результат"))
         cmp_btn.clicked.connect(self.compare_now)
         fl.addWidget(cmp_btn)
-        copy_btn = pill("Копировать журнал", "tonal", "link")
+        copy_btn = pill(tr("Копировать журнал"), "tonal", "link")
         copy_btn.clicked.connect(self._copy_dev_log)
         fl.addWidget(copy_btn)
-        open_btn = pill("Открыть журнал", "tonal", "folder")
+        open_btn = pill(tr("Открыть журнал"), "tonal", "folder")
         open_btn.clicked.connect(lambda: DEV_LOG.exists() and QDesktopServices.openUrl(QUrl.fromLocalFile(str(DEV_LOG))))
         fl.addWidget(open_btn)
-        clear_btn = pill("Очистить", "tonal", "refresh")
+        clear_btn = pill(tr("Очистить"), "tonal", "refresh")
         clear_btn.clicked.connect(self._clear_dev_log)
         fl.addWidget(clear_btn)
         el.addWidget(buttons)
@@ -927,17 +939,17 @@ class MainWindow(QWidget):
     def _copy_dev_log(self) -> None:
         text = DEV_LOG.read_text(encoding="utf-8") if DEV_LOG.exists() else ""
         if not text.strip():
-            self._set_status("Журнал пуст: включите режим разработчика и выполните перевод.")
+            self._set_status(tr("Журнал пуст: включите режим разработчика и выполните перевод."))
             return
         QApplication.clipboard().setText(text)
-        self._set_status("Журнал скопирован.")
+        self._set_status(tr("Журнал скопирован."))
 
     def _clear_dev_log(self) -> None:
         try:
             DEV_LOG.unlink()
         except OSError:
             pass
-        self._set_status("Журнал очищен.")
+        self._set_status(tr("Журнал очищен."))
 
     def _show_dev(self, text: str) -> None:
         if getattr(self, "dev_report", None) is not None:
@@ -946,12 +958,12 @@ class MainWindow(QWidget):
 
     def compare_now(self) -> None:
         if self.region is None:
-            self._set_status("Область ещё не выделена.", True)
+            self._set_status(tr("Область ещё не выделена."), True)
             return
         if self.busy:
             return
         self.busy = True
-        self._set_status("Сравниваю… это займёт несколько секунд")
+        self._set_status(tr("Сравниваю… это займёт несколько секунд"))
         hidden = self.overlay.isVisible() and not self.overlay.excluded
         if hidden:
             self.overlay.hide()
@@ -1029,6 +1041,10 @@ class MainWindow(QWidget):
         self._apply_source(lang)
         self.src_combo.setItemText(0, self._auto_title())
 
+    def _set_target(self, lang: str) -> None:
+        self._set("target_lang", lang)
+        self._refresh_auto_glossary()       # глоссарий мог стать неподходящим (или снова подходящим)
+
     def _set_engine(self, engine: str) -> None:
         self._set("ocr_engine", engine)
         QTimer.singleShot(200, self.check_ocr_language)
@@ -1038,6 +1054,19 @@ class MainWindow(QWidget):
         self.cfg.save()
         theme.apply(QApplication.instance(), mode)
         QTimer.singleShot(0, self._rebuild)
+
+    def _set_ui_lang(self, lang: str) -> None:
+        if lang == self.cfg.get("ui_lang", "system"):
+            return
+        self.cfg["ui_lang"] = lang
+        self.cfg.save()
+        if i18n.resolve(lang) == i18n.english:
+            return          # «как в системе» и так совпадает с текущим языком
+        if QMessageBox.question(self, tr("Язык интерфейса"),
+                                tr("Язык сменится после перезапуска программы. Перезапустить сейчас?"),
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                                ) == QMessageBox.StandardButton.Yes:
+            self.restart_app()
 
     def _rebuild(self) -> None:
         pos = self.scroll.verticalScrollBar().value()
@@ -1072,22 +1101,21 @@ class MainWindow(QWidget):
         live = self.cfg.get("translate_mode", "shot") == "live"
         hk = self.cfg["hotkeys"]
         if self.region:
-            area = f"Область {self.region.w}×{self.region.h}"
+            area = tr("Область {0}×{1}", self.region.w, self.region.h)
         else:
-            area = "Область не выделена"
+            area = tr("Область не выделена")
         if live:
-            self.chip.set(self.live_on, f"{area} · Live {'работает' if self.live_on else 'на паузе'}")
-            set_pill(self.btn_main, "Пауза Live" if self.live_on else "Включить Live", "hero",
+            self.chip.set(self.live_on, f"{area} · Live {tr('работает') if self.live_on else tr('на паузе')}")
+            set_pill(self.btn_main, tr("Пауза Live") if self.live_on else tr("Включить Live"), "hero",
                      "stop" if self.live_on else "play")
-            self.hint.setText("Live: листайте главу — перевод появится сам, когда страница остановится. "
-                              f"{hk.get('auto', '')} — пауза, {hk.get('select', '')} — новая область.")
+            self.hint.setText(tr("Live: листайте главу — перевод появится сам, когда страница остановится. {0} — пауза, "
+                                 "{1} — новая область.", hk.get('auto', ''), hk.get('select', '')))
         else:
             self.chip.set(bool(self.region), area)
-            set_pill(self.btn_main, "Перевести", "hero", "play")
-            self.btn_main.setToolTip(f"Горячая клавиша: {hk.get('translate', '')}")
-            self.hint.setText(f"{hk.get('select', '')} — выделить область · {hk.get('translate', '')} — перевести · "
-                              f"{hk.get('toggle', '')} — показать или скрыть перевод · "
-                              f"{hk.get('auto', '')} — Live")
+            set_pill(self.btn_main, tr("Перевести"), "hero", "play")
+            self.btn_main.setToolTip(tr("Горячая клавиша: {0}", hk.get('translate', '')))
+            self.hint.setText(tr("{0} — выделить область · {1} — перевести · {2} — показать или скрыть перевод · {3} — "
+                                 "Live", hk.get('select', ''), hk.get('translate', ''), hk.get('toggle', ''), hk.get('auto', '')))
         self.mode_switch.select("live" if live else "shot")
         self.btn_zone.setEnabled(self.region is not None)
         self._sync_mini()
@@ -1198,7 +1226,7 @@ class MainWindow(QWidget):
         except Exception as e:  # noqa: BLE001
             errors = [str(e)]
         if errors:
-            self._set_status("Горячие клавиши: " + "; ".join(errors), True)
+            self._set_status(tr("Горячие клавиши: ") + "; ".join(errors), True)
 
     def _stop_hotkeys(self) -> None:
         if self._hotkeys is not None:
@@ -1267,7 +1295,7 @@ class MainWindow(QWidget):
     def show_zone(self, hold: bool = False) -> None:
         """Показать рамку зоны: на пару секунд или (hold) пока её не скроют."""
         if not self.region:
-            self._set_status("Область ещё не выделена.", True)
+            self._set_status(tr("Область ещё не выделена."), True)
             return
         self.overlay.place(self.region)
         self.overlay.show_frame = True
@@ -1316,7 +1344,7 @@ class MainWindow(QWidget):
     def _run(self, image: Image.Image, k: float, token=None, live: bool = False) -> None:
         self._set_busy(True)
         self._token += 1
-        self._set_status("Распознаю и перевожу…")
+        self._set_status(tr("Распознаю и перевожу…"))
         self.pool.start(_Job(self.job_signals, self.pipeline, image, k,
                              token if token is not None else self._token, live))
 
@@ -1350,11 +1378,11 @@ class MainWindow(QWidget):
         t = titles.load(self.cfg.get("active_title", ""))
         i = self.title_combo.currentIndex()
         if t and i > 0:
-            self.title_combo.setItemText(i, f"{t.name} · {len(t.history)} реплик")
+            self.title_combo.setItemText(i, tr("{0} · {1} реплик", t.name, len(t.history)))
 
     def _on_failed(self, tb: str) -> None:
         self._set_busy(False)
-        self._set_status("Непредвиденная ошибка, подробности в error.log", True)
+        self._set_status(tr("Непредвиденная ошибка, подробности в error.log"), True)
         try:
             (DATA_ROOT / "error.log").write_text(tb, encoding="utf-8")
         except OSError:
@@ -1373,21 +1401,21 @@ class MainWindow(QWidget):
             self._set_status(result.error.split("\n")[0], True)
             return
         n = sum(1 for b in result.bubbles if b.translation)
-        parts = [f"Переведено облаков: {n}"]
+        parts = [tr("Переведено облаков: {0}", n)]
         if result.detected_lang:
-            parts.append("язык: " + languages.src(result.detected_lang)["name"].split(" (")[0].lower())
+            parts.append(tr("язык: ") + i18n.lower(languages.src(result.detected_lang)["name"].split(" (")[0]))
         if result.source_detected:
-            parts.append("язык определил переводчик: " + languages.name_of(result.source_detected).lower())
+            parts.append(tr("язык определил переводчик: ") + i18n.lower(languages.name_of(result.source_detected)))
         if result.fallback:
             parts.append(result.fallback)
         if result.glossary_added:
-            parts.append(f"в глоссарий добавлено: {result.glossary_added}")
+            parts.append(tr("в глоссарий добавлено: {0}", result.glossary_added))
             self._fill_titles()         # число записей в списке глоссариев
         # технические подробности — только в режиме разработчика
         if self.cfg.get("dev_mode") and result.debug is not None:
             parts.append(result.debug.summary())
         if not result.bubbles:
-            parts = ["Текст не найден. Попробуйте режим распознавания «Тщательный» или «Максимальный»."]
+            parts = [tr("Текст не найден. Попробуйте режим распознавания «Тщательный» или «Максимальный».")]
         self._set_status(" · ".join(parts), notify=not result.bubbles)
 
     # ================================================================ режим Live
@@ -1400,10 +1428,10 @@ class MainWindow(QWidget):
             self._last_thumb = None
             self._dirty = True
             self.auto_timer.start(int(self.cfg["auto_interval_ms"]))
-            self._set_status("Live: перевожу, когда страница перестаёт двигаться.")
+            self._set_status(tr("Live: перевожу, когда страница перестаёт двигаться."))
         else:
             self.auto_timer.stop()
-            self._set_status("Live на паузе.")
+            self._set_status(tr("Live на паузе."))
         self._refresh_status()
 
     def _auto_tick(self) -> None:
@@ -1441,13 +1469,13 @@ class MainWindow(QWidget):
 
     # ================================================================ картинка из файла
     def translate_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Картинка", "", "Изображения (*.png *.jpg *.jpeg *.webp *.bmp)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Картинка"), "", tr("Изображения (*.png *.jpg *.jpeg *.webp *.bmp)"))
         if not path or self.busy:
             return
         try:
             image = Image.open(path).convert("RGB")
         except OSError as e:
-            self._set_status(f"Не удалось открыть: {e}", True)
+            self._set_status(tr("Не удалось открыть: {0}", e), True)
             return
         self._file_image = image
         self._run(image, 1.0, token="file")
@@ -1482,7 +1510,7 @@ class MainWindow(QWidget):
         self.overlay.clear()
         self.list_window.set_result(None)
         self._fill_titles()
-        self._set_status("Контекст и кэш очищены.")
+        self._set_status(tr("Контекст и кэш очищены."))
 
     def show_help(self) -> None:
         HelpDialog(self, self.cfg["hotkeys"]).exec()
@@ -1505,17 +1533,17 @@ class MainWindow(QWidget):
             return
         if lang in self._install_declined and not force:
             return
-        name = languages.src(lang)["name"].split(" (")[0].lower()
+        name = i18n.lower(languages.src(lang)["name"].split(" (")[0])
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Нужно докачать распознавание текста")
-        box.setText(f"В Windows не установлено распознавание текста для языка: {name}.\n\n"
-                    "Программа может докачать его сама (это компонент Windows, несколько МБ).\n"
-                    "Windows один раз спросит разрешение администратора — нажмите «Да».\n"
-                    "Потом программа перезапустится и права больше не понадобятся.")
-        btn_one = box.addButton(f"Установить: {name}", QMessageBox.ButtonRole.AcceptRole)
-        btn_all = box.addButton("Установить все языки", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton("Позже", QMessageBox.ButtonRole.RejectRole)
+        box.setWindowTitle(tr("Нужно докачать распознавание текста"))
+        box.setText(tr("В Windows не установлено распознавание текста для языка: {0}.\n\nПрограмма может докачать "
+                       "его сама (это компонент Windows, несколько МБ).\nWindows один раз спросит разрешение "
+                       "администратора — нажмите «Да».\nПотом программа перезапустится и права больше не "
+                       "понадобятся.", name))
+        btn_one = box.addButton(tr("Установить: {0}", name), QMessageBox.ButtonRole.AcceptRole)
+        btn_all = box.addButton(tr("Установить все языки"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Позже"), QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(btn_one)
         box.exec()
         clicked = box.clickedButton()
@@ -1525,15 +1553,15 @@ class MainWindow(QWidget):
             self._start_install(list(languages.SOURCE_LANGUAGES))
         else:
             self._install_declined.add(lang)
-            self._set_status("OCR не установлен — перевод не заработает. "
-                             "Окно установки появится при следующем переводе.", True)
+            self._set_status(tr("OCR не установлен — перевод не заработает. "
+                                "Окно установки появится при следующем переводе."), True)
 
     def _start_install(self, langs: list[str]) -> None:
         from ..win_setup import install_ocr_languages
 
         self._installing = True
         self.set_live(False)
-        self._set_status("Устанавливаю распознавание текста… Следите за окном PowerShell.")
+        self._set_status(tr("Устанавливаю распознавание текста… Следите за окном PowerShell."))
 
         def work():
             try:
@@ -1547,22 +1575,22 @@ class MainWindow(QWidget):
     def _on_install_finished(self, code, langs) -> None:
         self._installing = False
         if code is None:
-            self._set_status("Установка отменена: Windows не получила разрешение администратора.", True)
+            self._set_status(tr("Установка отменена: Windows не получила разрешение администратора."), True)
             return
         if code == 0:
-            QMessageBox.information(self, "Готово",
-                                    "Распознавание текста установлено.\nПрограмма сейчас перезапустится.")
+            QMessageBox.information(self, tr("Готово"),
+                                    tr("Распознавание текста установлено.\nПрограмма сейчас перезапустится."))
             self.restart_app()
             return
         cap = languages.src(langs[0])["name"].split(" (")[0]
         QMessageBox.warning(
-            self, "Не получилось установить",
-            "Windows не смогла докачать компонент (нужен интернет и работающий Центр обновления).\n\n"
-            "Можно установить вручную: Параметры Windows → Время и язык → Язык и регион → "
-            f"Добавить язык → {cap}. Отметьте «Распознавание текста».\n"
-            "После этого перезапустите программу."
-            + (f"\n\nОшибка: {code}" if isinstance(code, str) else ""))
-        self._set_status("OCR не установлен.", True)
+            self, tr("Не получилось установить"),
+            tr("Windows не смогла докачать компонент (нужен интернет и работающий Центр "
+               "обновления).\n\nМожно установить вручную: Параметры Windows → Время и язык → Язык и "
+               "регион → Добавить язык → {0}. Отметьте «Распознавание текста».\nПосле этого "
+               "перезапустите программу.", cap)
+            + (tr("\n\nОшибка: {0}", code) if isinstance(code, str) else ""))
+        self._set_status(tr("OCR не установлен."), True)
 
     def restart_app(self) -> None:
         from PySide6.QtCore import QProcess
@@ -1595,15 +1623,15 @@ class ResultDialog(QDialog):
 
     def __init__(self, parent, result: PageResult, image: Image.Image | None, cfg):
         super().__init__(parent)
-        self.setWindowTitle("Результат")
+        self.setWindowTitle(tr("Результат"))
         self.resize(760, 820)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 16, 18, 16)
         lay.setSpacing(10)
-        lay.addWidget(label("Результат", "cardTitle"))
+        lay.addWidget(label(tr("Результат"), "cardTitle"))
         n = sum(1 for b in result.bubbles if b.translation)
-        lay.addWidget(caption(f"Строк: {result.line_count} · облаков: {n}"
-                              + (f" · из кэша {result.cache_hits}" if result.cache_hits else "")))
+        lay.addWidget(caption(tr("Строк: {0} · облаков: {1}", result.line_count, n)
+                              + (tr(" · из кэша {0}", result.cache_hits) if result.cache_hits else "")))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -1623,18 +1651,18 @@ class ResultDialog(QDialog):
         if result.error:
             parts.append(f"<p style='color:{theme.BOW}'>{html.escape(result.error)}</p>")
         for i, b in enumerate(result.bubbles, 1):
-            tr = html.escape(b.translation) if b.translation else \
-                f"<i>— {html.escape(b.skip_reason or 'нет перевода')} —</i>"
+            shown = html.escape(b.translation) if b.translation else \
+                f"<i>— {html.escape(tr(b.skip_reason or 'нет перевода'))} —</i>"
             tag = f"{b.lang.upper()} · " if b.lang else ""
             parts.append(f"<p><b style='color:{theme.palette().primary}'>{i}.</b> "
-                         f"<span style='font-size:11pt'>{tr}</span><br>"
+                         f"<span style='font-size:11pt'>{shown}</span><br>"
                          f"<span style='color:{theme.palette().text2}'>{tag}{html.escape(b.text)}</span></p>")
-        text.setHtml("".join(parts) or "<i>Текст не найден.</i>")
+        text.setHtml("".join(parts) or tr("<i>Текст не найден.</i>"))
         text.setMinimumHeight(260)
         il.addWidget(text)
         scroll.setWidget(inner)
         lay.addWidget(scroll, 1)
-        ok = pill("Готово", "primary")
+        ok = pill(tr("Готово"), "primary")
         ok.clicked.connect(self.accept)
         lay.addWidget(ok, 0, Qt.AlignmentFlag.AlignRight)
 
@@ -1654,22 +1682,22 @@ def _render_translated(image: Image.Image, result: PageResult, cfg) -> QPixmap:
 class HelpDialog(QDialog):
     def __init__(self, parent, hk: dict):
         super().__init__(parent)
-        self.setWindowTitle("Как пользоваться")
+        self.setWindowTitle(tr("Как пользоваться"))
         self.resize(560, 560)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 18, 20, 16)
         lay.setSpacing(12)
-        lay.addWidget(label("Как пользоваться", "cardTitle"))
+        lay.addWidget(label(tr("Как пользоваться"), "cardTitle"))
         steps = [
-            f"Откройте главу в браузере или читалке. Нажмите «Выделить область» ({hk.get('select', '')}) и обведите "
-            "мышкой место, где идёт текст. Область запомнится.",
-            f"Режим «Скриншот»: нажмите «Перевести» ({hk.get('translate', '')}) — перевод появится прямо поверх облаков. "
-            f"{hk.get('toggle', '')} — показать или скрыть перевод.",
-            "Режим Live: листайте главу, перевод появится сам, когда страница остановится. "
-            f"{hk.get('auto', '')} — пауза.",
-            "Создайте тайтл для каждой манхвы: переводчик будет помнить имена и прошлые реплики даже после перезапуска.",
-            "Если текст не находится на тёмном или пёстром фоне — в «Тонкой настройке» выберите режим "
-            "распознавания «Тщательный» или «Максимальный».",
+            tr("Откройте главу в браузере или читалке. Нажмите «Выделить область» ({0}) и обведите "
+               "мышкой место, где идёт текст. Область запомнится.", hk.get('select', '')),
+            tr("Режим «Скриншот»: нажмите «Перевести» ({0}) — перевод появится прямо поверх облаков. "
+               "{1} — показать или скрыть перевод.", hk.get('translate', ''), hk.get('toggle', '')),
+            tr("Режим Live: листайте главу, перевод появится сам, когда страница остановится. {0} — "
+               "пауза.", hk.get('auto', '')),
+            tr("Создайте тайтл для каждой манхвы: переводчик будет помнить имена и прошлые реплики даже после перезапуска."),
+            tr("Если текст не находится на тёмном или пёстром фоне — в «Тонкой настройке» выберите режим "
+               "распознавания «Тщательный» или «Максимальный»."),
         ]
         for i, s in enumerate(steps, 1):
             row = QHBoxLayout()
@@ -1682,7 +1710,7 @@ class HelpDialog(QDialog):
             row.addWidget(label(s), 1)
             lay.addLayout(row)
         lay.addStretch(1)
-        ok = pill("Понятно", "primary")
+        ok = pill(tr("Понятно"), "primary")
         ok.clicked.connect(self.accept)
         lay.addWidget(ok, 0, Qt.AlignmentFlag.AlignRight)
 

@@ -35,6 +35,8 @@ jobs:
         run: python tools/test_hotkeys_win.py
       - name: Languages, translator requests, glossary
         run: python tools/test_languages.py ../out/languages
+      - name: Interface language (English everywhere, follows the system language)
+        run: python tools/test_i18n.py ../out/i18n
       - name: Studio text in Thai and Arabic (fonts, hyphenation, shaping)
         run: python tools/test_typeset_langs.py ../out/typeset
       - name: Files bundled into the exe are found (FriBiDi, hyphenation dictionaries)

@@ -18,10 +18,11 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image
 
-from . import angle, autolang, languages, titles
+from . import angle, autolang, i18n, languages, titles
 from .bubbles import group_lines
 from .config import GLOSSARY_DIR, Config
 from .glossary import Glossary
+from .i18n import tr
 from .models import DebugInfo, PageResult, PassInfo
 from .ocr import OcrBackend, OcrError, OcrLanguageMissing, create_ocr, enhance
 from .translators import (TRANSLATORS, RateLimit, TranslateError, TranslateRequest, Translator,
@@ -182,7 +183,7 @@ class Pipeline:
                 out = alt.translate(req)
             except TranslateError:
                 continue
-            self.fallback_note = f"{self.translator.title} не ответил — перевёл {alt.title}"
+            self.fallback_note = tr("{0} не ответил — перевёл {1}", self.translator.title, alt.title)
             return out, alt
         raise err
 
@@ -195,6 +196,8 @@ class Pipeline:
             added = glossary.add_terms(terms, texts)
             if not added:
                 return
+            if not glossary.target_lang:
+                glossary.target_lang = self.cfg["target_lang"]     # термины переведены на этот язык
             try:
                 glossary.save()
                 self._glossary_stamp = glossary.path.stat().st_mtime_ns
@@ -233,9 +236,9 @@ class Pipeline:
             else:
                 texts = {c: read(c) for c in cands}
             best, scores = autolang.choose(texts, current)
-        names = {c: languages.src(c)["name"].split(" (")[0].lower() for c in cands}
-        self._auto_note = "Язык: " + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
-            + f" → {names.get(best, 'не определён')}"
+        names = {c: i18n.lower(languages.src(c)["name"].split(" (")[0]) for c in cands}
+        self._auto_note = tr("Язык: ") + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
+            + f" → {names.get(best, tr('не определён'))}"
         if best is None:
             # текста слишком мало; но язык без установленного распознавания оставлять нельзя
             usable = current in cands or (languages.is_latin(current) and "latin" in cands)
@@ -356,12 +359,12 @@ class Pipeline:
             return result
         except OcrError as e:
             result.error = str(e)
-            watch.mark("распознавание")
+            watch.mark(tr("распознавание"))
             result.debug = DebugInfo(stages=watch.stages, total_ms=watch.total(), error=str(e))
             return result
         t1 = time.perf_counter()
         result.timings["ocr"] = t1 - t0
-        watch.mark("распознавание")
+        watch.mark(tr("распознавание"))
 
         def debug() -> DebugInfo:
             return DebugInfo(passes=passes, stages=list(watch.stages), total_ms=watch.total(), threads=threads,
@@ -393,7 +396,7 @@ class Pipeline:
         result.line_count = len(lines)
         t2 = time.perf_counter()
         result.timings["bubbles"] = t2 - t1
-        watch.mark("облака")
+        watch.mark(tr("облака"))
         if not translate:
             result.debug = debug()
             return result
@@ -426,7 +429,7 @@ class Pipeline:
             result.source_detected = self.last_detected
             result.fallback = self.fallback_note
         result.timings["translate"] = time.perf_counter() - t2
-        watch.mark("перевод")
+        watch.mark(tr("перевод"))
         result.debug = debug()
         return result
 
@@ -476,18 +479,19 @@ class Pipeline:
                           for l in ls)
 
         a, b = keys(seq), keys(par)
-        out = ["Сравнение распознавания", f"По очереди: {seq_ms:.0f} мс"]
+        out = [tr("Сравнение распознавания"), tr("По очереди: {0:.0f} мс", seq_ms)]
         if threads > 1:
-            out.append(f"Параллельно (×{threads}): {par_ms:.0f} мс")
+            out.append(tr("Параллельно (×{0}): {1:.0f} мс", threads, par_ms))
             k = seq_ms / par_ms if par_ms else 0
-            out.append(f"Быстрее в {k:.1f} раза" if k >= 1 else f"Медленнее в {1 / k:.1f} раза" if k else "")
+            out.append(tr("Быстрее в {0:.1f} раза",
+                          k) if k >= 1 else tr("Медленнее в {0:.1f} раза", 1 / k) if k else "")
         else:
-            out.append("Параллельно: недоступно (один проход, одно ядро или EasyOCR)")
+            out.append(tr("Параллельно: недоступно (один проход, одно ядро или EasyOCR)"))
         if a == b:
-            out.append(f"Результат совпал: {len(a)} строк")
+            out.append(tr("Результат совпал: {0} строк", len(a)))
         else:
             diff = len(set(a) ^ set(b))
-            out.append(f"Результат различается: {len(a)} и {len(b)} строк, расхождений {diff}")
+            out.append(tr("Результат различается: {0} и {1} строк, расхождений {2}", len(a), len(b), diff))
         return "\n".join(x for x in out if x)
 
     def _cache_key(self, text: str) -> str:
@@ -499,8 +503,10 @@ class Pipeline:
         cfg = self.cfg
         texts = [b.text for b in bubbles]
         glossary = self._load_glossary()
+        if glossary is not None and not glossary.fits(cfg["target_lang"]):
+            glossary = None         # например, встроенный русский глоссарий при переводе на английский
         RateLimit.interval = max(0.0, float(cfg.get("request_interval", 1.0)))
-        tr = self.translator
+        tor = self.translator
 
         n_ctx = int(cfg["context_size"])
         req = TranslateRequest(
@@ -510,20 +516,20 @@ class Pipeline:
         )
         if glossary:
             req.glossary = glossary.find(texts)
-            if not tr.uses_llm and req.glossary:
+            if not tor.uses_llm and req.glossary:
                 req.anchored = [glossary.apply_anchors(t) for t in texts]
         # авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
-        req.collect_terms = bool(glossary and glossary.auto and tr.uses_llm
+        req.collect_terms = bool(glossary and glossary.auto and tor.uses_llm
                                  and not (self._glossary_name or "").startswith("universal_"))
 
         try:
-            out = tr.translate(req)
+            out = tor.translate(req)
         except TranslateError as e:
-            out, tr = self._fallback(req, e)
-        if tr.detected:
-            self.last_detected = tr.detected
-        if req.collect_terms and tr.terms:
-            self._grow_glossary(glossary, tr.terms, texts)
+            out, tor = self._fallback(req, e)
+        if tor.detected:
+            self.last_detected = tor.detected
+        if req.collect_terms and tor.terms:
+            self._grow_glossary(glossary, tor.terms, texts)
         for b, t in zip(bubbles, out):
             b.translation = t
             if t:

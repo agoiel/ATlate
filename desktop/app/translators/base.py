@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import requests
 
 from ..glossary import GlossaryEntry
+from ..i18n import tr
 
 TIMEOUT = 30
 # Временные сбои сервиса: перегружен, ошибка на его стороне. Такие запросы повторяются с паузой.
@@ -52,7 +53,7 @@ class TranslateRequest:
 
 class Translator:
     name = "base"
-    title = "Базовый"
+    title = tr("Базовый")
     uses_llm = False
     timeout = TIMEOUT       # сколько ждать ответа на один запрос, секунды
 
@@ -86,12 +87,12 @@ class Translator:
                 r = self.http.request(method, url, timeout=self.timeout, **kw)
             except requests.Timeout as e:
                 # долгое ожидание не повторяем: это ещё столько же секунд
-                raise TranslateError(f"{self.title}: сервис не ответил за {self.timeout} с.") from e
+                raise TranslateError(tr("{0}: сервис не ответил за {1} с.", self.title, self.timeout)) from e
             except requests.RequestException as e:
                 if attempt < RETRIES:
                     time.sleep(1.5 * attempt)       # оборвалась связь — пробуем ещё раз
                     continue
-                raise TranslateError(f"{self.title}: нет связи ({e.__class__.__name__}).") from e
+                raise TranslateError(tr("{0}: нет связи ({1}).", self.title, e.__class__.__name__)) from e
             if r.status_code == 429 and attempt == 1:
                 # Сервис попросил притормозить: ждём и пробуем ещё раз
                 time.sleep(max(3.0, RateLimit.interval * 2))
@@ -116,17 +117,18 @@ class Translator:
         if r.status_code < 400:
             return
         hint = {
-            401: "неверный API-ключ",
-            403: "доступ запрещён — проверьте ключ и регион",
-            429: "слишком много запросов или закончился лимит",
-            456: "закончился месячный лимит символов",
-            500: "ошибка на стороне сервиса — попробуйте позже",
-            502: "ошибка на стороне сервиса — попробуйте позже",
-            503: "сервис перегружен — попробуйте позже",
-            504: "сервис не успел ответить — попробуйте позже",
-            529: "сервис перегружен — попробуйте позже",
+            401: tr("неверный API-ключ"),
+            403: tr("доступ запрещён — проверьте ключ и регион"),
+            429: tr("слишком много запросов или закончился лимит"),
+            456: tr("закончился месячный лимит символов"),
+            500: tr("ошибка на стороне сервиса — попробуйте позже"),
+            502: tr("ошибка на стороне сервиса — попробуйте позже"),
+            503: tr("сервис перегружен — попробуйте позже"),
+            504: tr("сервис не успел ответить — попробуйте позже"),
+            529: tr("сервис перегружен — попробуйте позже"),
         }.get(r.status_code, "")
         text = r.text.lstrip()
         # HTML-страницы ошибок не показываем — в них нет ничего полезного
         body = "" if text.startswith("<") else text[:200].replace("\n", " ")
-        raise TranslateError(f"{self.title}: ошибка {r.status_code} — {hint}\n{body}".strip(), r.status_code)
+        raise TranslateError(tr("{0}: ошибка {1} — {2}\n{3}",
+                                self.title, r.status_code, hint, body).strip(), r.status_code)
