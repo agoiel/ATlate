@@ -59,14 +59,31 @@ def qimage_to_pil(img: QImage) -> Image.Image:
     return Image.fromarray(arr.copy(), "RGB")
 
 
-def grab_region(region: Region) -> tuple[Image.Image, float]:
-    """Снимок области. Возвращает (картинка, коэффициент пикселей на логический пиксель)."""
+def grab_region_raw(region: Region) -> tuple[QImage, float]:
+    """Снимок области как QImage — без перевода в картинку PIL (для Live: следить за страницей)."""
     screen = find_screen(region.screen)
     pix = screen.grabWindow(0)
     k = pix.width() / max(1, screen.geometry().width())
     rect = QRect(round(region.x * k), round(region.y * k), round(region.w * k), round(region.h * k))
     rect = rect.intersected(QRect(0, 0, pix.width(), pix.height()))
-    return qimage_to_pil(pix.copy(rect).toImage()), k
+    return pix.copy(rect).toImage(), k
+
+
+def grab_region(region: Region) -> tuple[Image.Image, float]:
+    """Снимок области. Возвращает (картинка, коэффициент пикселей на логический пиксель)."""
+    img, k = grab_region_raw(region)
+    return qimage_to_pil(img), k
+
+
+def gray_thumb(img: QImage, width: int = 64) -> np.ndarray:
+    """Маленькая серая копия кадра — по ней Live сравнивает кадры. Уменьшает сам Qt, без копии кадра в PIL."""
+    from PySide6.QtCore import Qt
+    h = max(1, int(width * img.height() / max(1, img.width())))
+    small = img.scaled(width, h, Qt.AspectRatioMode.IgnoreAspectRatio,
+                       Qt.TransformationMode.SmoothTransformation).convertToFormat(QImage.Format.Format_Grayscale8)
+    bpl = small.bytesPerLine()
+    buf = np.frombuffer(bytes(small.constBits()), dtype=np.uint8)[: bpl * small.height()]
+    return buf.reshape(small.height(), bpl)[:, : small.width()].astype(np.int16)
 
 
 def exclude_from_capture(widget) -> bool:

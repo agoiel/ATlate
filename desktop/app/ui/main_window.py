@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
 from .. import __version__, languages, titles
-from ..capture import Region, find_screen, grab_region
+from ..capture import Region, find_screen, grab_region, grab_region_raw, gray_thumb, qimage_to_pil
 from ..config import DATA_ROOT, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
 from ..hotkeys import Hotkeys
@@ -1419,13 +1419,14 @@ class MainWindow(QWidget):
             hidden = True
         if hidden or hidden_mini:
             QApplication.processEvents()
-        image, k = grab_region(self.region)
+        # кадр остаётся в виде QImage: пока страница движется, полная картинка не нужна —
+        # раньше каждый кадр Live целиком переводился в PIL, хотя сравнивалась только маленькая копия
+        frame, k = grab_region_raw(self.region)
         if hidden and not self.overlay.user_hidden:
             self.overlay.show()
         if hidden_mini:
             self._mini_hide_for_shot(False)
-        thumb = np.asarray(image.convert("L").resize((64, max(1, int(64 * image.height / max(1, image.width))))),
-                           dtype=np.int16)
+        thumb = gray_thumb(frame)
         changed = self._last_thumb is None or self._last_thumb.shape != thumb.shape \
             or float(np.abs(thumb - self._last_thumb).mean()) > 1.5
         self._last_thumb = thumb
@@ -1436,7 +1437,7 @@ class MainWindow(QWidget):
             return
         if self._dirty:
             self._dirty = False
-            self._run(image, k, live=True)
+            self._run(qimage_to_pil(frame), k, live=True)
 
     # ================================================================ картинка из файла
     def translate_file(self) -> None:

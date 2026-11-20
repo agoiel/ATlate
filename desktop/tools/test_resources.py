@@ -100,6 +100,14 @@ def fake_grab(region):
     return img.copy(), 1.0
 
 
+def fake_grab_raw(region):
+    """То же, но как QImage — так снимок получает Live."""
+    from PySide6.QtGui import QImage
+    img, k = fake_grab(region)
+    arr = np.ascontiguousarray(np.asarray(img.convert("RGB")))
+    return QImage(arr.data, arr.shape[1], arr.shape[0], 3 * arr.shape[1], QImage.Format.Format_RGB888).copy(), k
+
+
 class ScreenOcr(OcrBackend):
     """Отдаёт строки, нарисованные на текущей странице, — но только «своему» языку."""
 
@@ -216,6 +224,7 @@ def main() -> int:
     show("straight")
 
     mw.grab_region = fake_grab
+    mw.grab_region_raw = fake_grab_raw
     pipeline_module.create_translator = lambda key, c: CountingTranslator({})
     rss_start = rss_mb()
     win = mw.MainWindow(cfg)
