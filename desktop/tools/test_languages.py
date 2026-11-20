@@ -286,11 +286,11 @@ def glossary_speed() -> None:
 
     def slow_find(g, texts):
         joined = "\n".join(texts)
-        return [e.source for e in g._sorted() if re.compile(r"(?<![^\W_])" + g._term(e), re.I).search(joined)]
+        return [e.source for e in g._sorted() if re.compile(g._term(e), re.I).search(joined)]
 
     def slow_anchor(g, text):
         for e in g._sorted():
-            text = re.compile(r"(?<![^\W_])" + g._term(e) + r"(?![하했한할해합함됐된될되돼])", re.I).sub(
+            text = re.compile(g._term(e) + r"(?![하했한할해합함됐된될되돼])", re.I).sub(
                 lambda _m, t=e.target: t, text)
         return text
 
@@ -307,6 +307,15 @@ def glossary_speed() -> None:
             diffs += slow_find(g, texts) != [e.source for e in g.find(texts)]
             diffs += any(slow_anchor(g, t) != g.apply_anchors(t) for t in texts)
     check("глоссарий: поиск и подстановка — как у простого способа", diffs == 0, f"страниц {pages}, расхождений {diffs}")
+
+    # японский и китайский: пробелов нет — имя посреди фразы тоже должно находиться
+    cjk = Glossary(entries=[GlossaryEntry("田中", "Танака"), GlossaryEntry("王都", "столица"),
+                            GlossaryEntry("王", "король"), GlossaryEntry("민준", "Минджун")])
+    cases = [("強くなった田中さん", ["田中"]), ("我们去王都吧", ["王都"]), ("大王国很大", []), ("王说", ["王"]),
+             ("어제 민준이 왔다", ["민준"]), ("인민준비", [])]
+    got = [[e.source for e in cjk.find([t])] for t, _ in cases]
+    check("глоссарий: японские и китайские имена посреди фразы", got == [w for _, w in cases], f"{got}")
+    check("глоссарий: подстановка посреди японской фразы", cjk.apply_anchors("強くなった田中さん") == "強くなったТанакаさん")
 
     syl = "가나다라마바사아자차카타파하강진우민준서연지호"
     big = Glossary(entries=[GlossaryEntry("".join(random.choice(syl) for _ in range(random.randint(2, 4))), "x")

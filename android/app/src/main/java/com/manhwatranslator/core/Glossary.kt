@@ -57,16 +57,26 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
      * Шаблон одного термина. Термин ищется только в начале слова: «인형» (кукла) не совпадёт с «형».
      * После термина могут идти частицы и окончания (선배님, 선배가, 길드에서).
      */
-    private fun term(e: GlossaryEntry): String {
+    private fun term(e: GlossaryEntry, inside: Boolean = false): String {
+        // японский и китайский: пробелов нет, поэтому для терминов из иероглифов и каны длиной от
+        // двух знаков начало слова не требуется («強くなった田中さん»); однознаковые — только
+        // в начале слова, иначе «王» находился бы внутри «王国»
+        val cjk = e.source.firstOrNull()?.let { cjkChar.matches(it.toString()) } == true
+        var begin = if (cjk && e.source.length >= 2) "" else start
+        if (inside && !cjk) begin = ""      // внутри общего шаблона начало слова уже проверено (mayStart)
         // английские термины — целым словом: «Gate» не должен совпасть с «Gatekeeper»
         val latinEnd = e.source.lastOrNull()?.let { it in 'a'..'z' || it in 'A'..'Z' } == true
         val end = if (latinEnd) "(?![\\p{L}\\p{N}])" else ""
-        return Regex.escape(e.source) + end
+        return begin + Regex.escape(e.source) + end
     }
 
     /** Глагольные окончания: «각성했다» — «пробудился», а не «пробуждение했다». */
     private val verbEnding = "(?![하했한할해합함됐된될되돼])"
     private val start = "(?<![\\p{L}\\p{N}])"
+    private val cjkChars = "\\u3040-\\u30FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF"
+    private val cjkChar = Regex("[$cjkChars]")
+    /** Быстрый отсев: термин может начаться только в начале слова или на иероглифе/кане. */
+    private val mayStart = "(?:$start|(?=[$cjkChars]))"
 
     /**
      * Один общий шаблон на весь глоссарий — собирается заново, только когда записи изменились.
@@ -89,11 +99,11 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
         compiled?.let { if (it.forEntries === list) return it }
         val terms = sorted()
         val byKey = terms.groupBy { it.source.lowercase() }
-        val alts = terms.joinToString("|") { term(it) }
+        val alts = terms.joinToString("|") { term(it, inside = true) }
         // поиск: на каждой позиции (заглядыванием вперёд) — самый длинный термин, который там начинается;
         // подстановка: альтернативы от длинных к коротким — «Кан Джину» не разобьётся на «Кан»
-        val find = if (terms.isEmpty()) null else Regex("(?=$start($alts))", RegexOption.IGNORE_CASE)
-        val anchors = if (terms.isEmpty()) null else Regex("$start(?:$alts)$verbEnding", RegexOption.IGNORE_CASE)
+        val find = if (terms.isEmpty()) null else Regex("(?=$mayStart($alts))", RegexOption.IGNORE_CASE)
+        val anchors = if (terms.isEmpty()) null else Regex("$mayStart(?:$alts)$verbEnding", RegexOption.IGNORE_CASE)
         // термины, которые сами являются началом другого (선배 → 선배님): на той же позиции шаблон
         // найдёт только длинный, короткие проверяются отдельно
         val prefixes = HashMap<GlossaryEntry, List<GlossaryEntry>>()
