@@ -28,6 +28,7 @@ rows = [("собрано PyInstaller", bool(getattr(sys, "frozen", False))),
         ("словари переносов на месте", "ru" in pyphen.LANGUAGES and "de" in pyphen.LANGUAGES)]
 for name, ok in rows:
     print(f"{'OK  ' if ok else 'FAIL'} {name}")
+print(f"FriBiDi: {app.fribidi or 'не загружался'}")
 failed = sum(not ok for _, ok in rows)
 print(f"failed: {failed}")
 sys.exit(1 if failed else 0)

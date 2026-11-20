@@ -2,6 +2,9 @@
 
 __version__ = "0.6.3"
 
+# что с FriBiDi: путь загруженной библиотеки, текст ошибки или пусто (нет файла / не Windows)
+fribidi = ""
+
 
 def _load_fribidi() -> None:
     """Windows: подгрузить FriBiDi раньше Pillow, если он лежит в папке libs.
@@ -11,8 +14,12 @@ def _load_fribidi() -> None:
     когда загружается его модуль шрифтов, — а уже загруженная библиотека находится по имени из
     любой папки. Без неё всё работает как раньше, только с простой вёрсткой.
     """
+    global fribidi
     import sys
     if sys.platform != "win32":
+        return
+    if "PIL._imagingft" in sys.modules:
+        fribidi = "Pillow загрузил модуль шрифтов раньше — FriBiDi уже не подхватится"
         return
     import ctypes
     from pathlib import Path
@@ -22,9 +29,10 @@ def _load_fribidi() -> None:
         if (base / name).exists():
             try:
                 ctypes.WinDLL(str(base / name))
+                fribidi = str(base / name)
                 return
-            except OSError:
-                pass
+            except OSError as e:
+                fribidi = f"{name}: {e}"
 
 
 _load_fribidi()

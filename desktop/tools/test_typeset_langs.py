@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import app  # noqa: E402 — раньше Pillow: подгружает FriBiDi, как при запуске программы
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont, features  # noqa: E402
 
@@ -55,7 +56,8 @@ raqm = features.check("raqm")
 libs = Path(__file__).resolve().parents[1] / "libs"
 if sys.platform == "win32" and any(libs.glob("*fribidi*.dll")):
     failed += not raqm
-    print(f"{'OK  ' if raqm else 'FAIL'} FriBiDi из папки libs подхватился — сложная вёрстка включена: {raqm}")
+    print(f"{'OK  ' if raqm else 'FAIL'} FriBiDi из папки libs подхватился — сложная вёрстка включена: {raqm}"
+          f" ({app.fribidi or 'не загружался'})")
 
 
 def _shot(font, word: str) -> bytes:
