@@ -278,10 +278,54 @@ def glossary() -> None:
     check("ИИ: ответ с языком и терминами читается", trans == ["Привет"] and det == "es" and terms == [])
 
 
+def glossary_speed() -> None:
+    """Поиск терминов: тот же результат, что у простого способа «шаблон на каждую запись», но быстро."""
+    import random
+    import re
+    import time
+
+    def slow_find(g, texts):
+        joined = "\n".join(texts)
+        return [e.source for e in g._sorted() if re.compile(r"(?<![^\W_])" + g._term(e), re.I).search(joined)]
+
+    def slow_anchor(g, text):
+        for e in g._sorted():
+            text = re.compile(r"(?<![^\W_])" + g._term(e) + r"(?![하했한할해합함됐된될되돼])", re.I).sub(
+                lambda _m, t=e.target: t, text)
+        return text
+
+    random.seed(7)
+    diffs = pages = 0
+    for name in ("universal_ko.json", "universal_en.json"):
+        g = Glossary.load(Path(__file__).resolve().parents[1] / "glossaries" / name)
+        srcs = [e.source for e in g.entries]
+        for _ in range(200):
+            words = random.sample(srcs, random.randint(1, 6))
+            glue = random.choice([" ", "", "가 ", "님이 ", "s ", "했다 ", "keeper ", ", "])
+            texts = [glue.join(words) + random.choice(["!", "했다", "", "s"])]
+            pages += 1
+            diffs += slow_find(g, texts) != [e.source for e in g.find(texts)]
+            diffs += any(slow_anchor(g, t) != g.apply_anchors(t) for t in texts)
+    check("глоссарий: поиск и подстановка — как у простого способа", diffs == 0, f"страниц {pages}, расхождений {diffs}")
+
+    syl = "가나다라마바사아자차카타파하강진우민준서연지호"
+    big = Glossary(entries=[GlossaryEntry("".join(random.choice(syl) for _ in range(random.randint(2, 4))), "x")
+                            for _ in range(1500)])
+    texts = ["강진우는 북쪽 성문 길드에서 민준이를 만났다. 어디 가는 거야?"] * 8
+    big.find(texts)
+    t = time.perf_counter()
+    for _ in range(10):
+        big.find(texts)
+        [big.apply_anchors(x) for x in texts]
+    ms = (time.perf_counter() - t) * 100
+    check("глоссарий на 1500 записей: поиск на странице быстрый", ms < 50, f"{ms:.1f} мс на страницу (раньше ~1200 мс)")
+
+
 def main() -> int:
     translators()
     ocr_and_detect()
     glossary()
+    glossary_speed()
     failed = [r for r in rows if not r[0]]
     lines = [f"{'OK  ' if ok else 'FAIL'} {name} {details}" for ok, name, details in rows]
     (out / "report_languages.txt").write_text("\n".join(lines + [f"failed: {len(failed)}"]), encoding="utf-8")

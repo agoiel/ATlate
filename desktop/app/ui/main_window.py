@@ -24,6 +24,7 @@ from .. import __version__, languages, titles
 from ..capture import Region, find_screen, grab_region
 from ..config import GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
+from ..hotkeys import Hotkeys
 from ..models import PageResult
 from ..pipeline import Pipeline
 from . import theme
@@ -845,7 +846,8 @@ class MainWindow(QWidget):
             f.edited.connect(lambda v, k=key: self._set_hotkey(k, v))
             grid.addWidget(f, i // 2, i % 2)
         card.add(grid)
-        card.add(caption("Формат: <alt>+q, <ctrl>+<shift>+t, <f8>. Пустое поле — клавиша отключена."))
+        card.add(caption("Формат: <alt>+q, <ctrl>+<shift>+t, <f8>. Пустое поле — клавиша отключена. "
+                         "Работают при любой раскладке: Alt+Q сработает и на русской."))
         return card
 
     # ---------------------------------------------------------------- для разработчиков
@@ -1171,24 +1173,21 @@ class MainWindow(QWidget):
 
     # ================================================================ горячие клавиши
     def _start_hotkeys(self) -> None:
+        """Глобальные сочетания (работают при любой раскладке — см. app/hotkeys.py)."""
         self._stop_hotkeys()
-        try:
-            from pynput import keyboard
-        except Exception:  # noqa: BLE001 — нет pynput или нет экрана
-            return
         mapping = {}
         for action, combo in self.cfg["hotkeys"].items():
             if combo:
                 mapping[combo] = (lambda a=action: self.bridge.fired.emit(a))
         if not mapping:
             return
+        self._hotkeys = Hotkeys()
         try:
-            self._hotkeys = keyboard.GlobalHotKeys(mapping)
-            self._hotkeys.daemon = True
-            self._hotkeys.start()
+            errors = self._hotkeys.start(mapping)
         except Exception as e:  # noqa: BLE001
-            self._hotkeys = None
-            self._set_status(f"Ошибка в горячих клавишах: {e}", True)
+            errors = [str(e)]
+        if errors:
+            self._set_status("Горячие клавиши: " + "; ".join(errors), True)
 
     def _stop_hotkeys(self) -> None:
         if self._hotkeys is not None:

@@ -153,26 +153,80 @@ class Glossary:
                       key=lambda e: len(e.source), reverse=True)
 
     @staticmethod
-    def _pattern(e: GlossaryEntry) -> re.Pattern:
-        """Термин ищется только в начале слова: «인형» (кукла) не совпадёт с «형».
-        После термина могут идти частицы и окончания (선배님, 선배가, 길드에서)."""
+    def _term(e: GlossaryEntry) -> str:
+        """Шаблон одного термина. Термин ищется только в начале слова: «인형» (кукла) не совпадёт
+        с «형». После термина могут идти частицы и окончания (선배님, 선배가, 길드에서)."""
         # английские термины — целым словом: «Gate» не должен совпасть с «Gatekeeper»
         end = r"(?![^\W_])" if e.source[-1:].isascii() and e.source[-1:].isalpha() else ""
-        return re.compile(r"(?<![^\W_])" + re.escape(e.source) + end, re.IGNORECASE)
+        return re.escape(e.source) + end
+
+    def _compiled(self):
+        """Один общий шаблон на весь глоссарий — собирается заново, только когда глоссарий изменился.
+
+        Раньше на каждой странице для каждой записи собирался свой шаблон: при 500+ записях
+        встроенный кэш Python переполнялся, и поиск терминов занимал до секунды на страницу.
+        """
+        sig = tuple((e.source, e.target) for e in self.entries)
+        cache = self.__dict__.get("_cache")
+        if cache is not None and cache[0] == sig:
+            return cache[1:]
+        terms = self._sorted()
+        by_key: dict[str, list[GlossaryEntry]] = {}
+        for e in terms:
+            by_key.setdefault(e.source.lower(), []).append(e)
+        if terms:
+            alts = "|".join(self._term(e) for e in terms)
+            # поиск: на каждой позиции текста (заглядыванием вперёд) — самый длинный термин, который там начинается
+            find_re = re.compile(r"(?=(?<![^\W_])(" + alts + "))", re.IGNORECASE)
+            # подстановка: альтернативы от длинных к коротким — «Кан Джину» не разобьётся на «Кан»;
+            # глагольные окончания не трогаем: «각성했다» — «пробудился», а не «пробуждение했다»
+            anchor_re = re.compile(r"(?<![^\W_])(?:" + alts + r")(?![하했한할해합함됐된될되돼])", re.IGNORECASE)
+        else:
+            find_re = anchor_re = None
+        # термины, которые сами являются началом другого термина (선배 → 선배님): на той же позиции
+        # шаблон найдёт только длинный, короткие проверяются отдельно
+        prefixes: dict[int, list[GlossaryEntry]] = {}
+        for e in terms:
+            low = e.source.lower()
+            shorter = [f for k in range(1, len(low)) for f in by_key.get(low[:k], [])]
+            if shorter:
+                prefixes[id(e)] = shorter
+        self.__dict__["_cache"] = (sig, find_re, anchor_re, by_key, terms, prefixes)
+        return find_re, anchor_re, by_key, terms, prefixes
+
+    def _entries_for(self, matched: str, by_key: dict, terms: list[GlossaryEntry]) -> list[GlossaryEntry]:
+        found = by_key.get(matched.lower())
+        if found is None:
+            # редкие буквы, у которых регистр сравнивается иначе, — сверяем по одному
+            found = [e for e in terms if re.fullmatch(self._term(e), matched, re.IGNORECASE)]
+        return found
 
     def find(self, texts: list[str]) -> list[GlossaryEntry]:
-        """Термины, которые встречаются в этих текстах."""
+        """Термины, которые встречаются в этих текстах (от длинных к коротким)."""
+        find_re, _a, by_key, terms, prefixes = self._compiled()
+        if find_re is None:
+            return []
         joined = "\n".join(texts)
-        return [e for e in self._sorted() if self._pattern(e).search(joined)]
+        hits: set[int] = set()
+        for m in find_re.finditer(joined):
+            for e in self._entries_for(m.group(1), by_key, terms):
+                hits.add(id(e))
+                for f in prefixes.get(id(e), ()):
+                    if id(f) not in hits and re.compile(self._term(f), re.IGNORECASE).match(joined, m.start()):
+                        hits.add(id(f))
+        return [e for e in terms if id(e) in hits]
 
     def apply_anchors(self, text: str) -> str:
         """Заменяет термины на их перевод прямо в исходном тексте."""
-        out = text
-        for e in self._sorted():
-            # глагольные окончания не трогаем: «각성했다» — «пробудился», а не «пробуждение했다»
-            p = re.compile(self._pattern(e).pattern + r"(?![하했한할해합함됐된될되돼])", re.IGNORECASE)
-            out = p.sub(lambda _m, t=e.target: t, out)
-        return out
+        _f, anchor_re, by_key, terms, _p = self._compiled()
+        if anchor_re is None:
+            return text
+
+        def target(m: re.Match) -> str:
+            found = self._entries_for(m.group(0), by_key, terms)
+            return found[0].target if found else m.group(0)
+
+        return anchor_re.sub(target, text)
 
 
 def universal_for(folder: Path, lang: str) -> str:

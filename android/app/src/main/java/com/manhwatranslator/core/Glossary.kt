@@ -54,31 +54,84 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
         .sortedByDescending { it.source.length }
 
     /**
-     * Термин ищется только в начале слова: «인형» (кукла) не совпадёт с «형».
+     * Шаблон одного термина. Термин ищется только в начале слова: «인형» (кукла) не совпадёт с «형».
      * После термина могут идти частицы и окончания (선배님, 선배가, 길드에서).
      */
-    private fun pattern(e: GlossaryEntry): Regex {
+    private fun term(e: GlossaryEntry): String {
         // английские термины — целым словом: «Gate» не должен совпасть с «Gatekeeper»
         val latinEnd = e.source.lastOrNull()?.let { it in 'a'..'z' || it in 'A'..'Z' } == true
         val end = if (latinEnd) "(?![\\p{L}\\p{N}])" else ""
-        return Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(e.source) + end, RegexOption.IGNORE_CASE)
-    }
-
-    fun find(texts: List<String>): List<GlossaryEntry> {
-        val joined = texts.joinToString("\n")
-        return sorted().filter { pattern(it).containsMatchIn(joined) }
+        return Regex.escape(e.source) + end
     }
 
     /** Глагольные окончания: «각성했다» — «пробудился», а не «пробуждение했다». */
     private val verbEnding = "(?![하했한할해합함됐된될되돼])"
+    private val start = "(?<![\\p{L}\\p{N}])"
+
+    /**
+     * Один общий шаблон на весь глоссарий — собирается заново, только когда записи изменились.
+     * Раньше на каждой странице для каждой записи собирался свой шаблон: с сотнями записей
+     * (авто-глоссарий) поиск терминов занимал заметное время на каждом переводе.
+     */
+    private class Compiled(
+        val forEntries: List<GlossaryEntry>,
+        val terms: List<GlossaryEntry>,
+        val find: Regex?,
+        val anchors: Regex?,
+        val byKey: Map<String, List<GlossaryEntry>>,
+        val prefixes: Map<GlossaryEntry, List<GlossaryEntry>>,
+    )
+
+    @Volatile private var compiled: Compiled? = null
+
+    private fun compiled(): Compiled {
+        val list = entries
+        compiled?.let { if (it.forEntries === list) return it }
+        val terms = sorted()
+        val byKey = terms.groupBy { it.source.lowercase() }
+        val alts = terms.joinToString("|") { term(it) }
+        // поиск: на каждой позиции (заглядыванием вперёд) — самый длинный термин, который там начинается;
+        // подстановка: альтернативы от длинных к коротким — «Кан Джину» не разобьётся на «Кан»
+        val find = if (terms.isEmpty()) null else Regex("(?=$start($alts))", RegexOption.IGNORE_CASE)
+        val anchors = if (terms.isEmpty()) null else Regex("$start(?:$alts)$verbEnding", RegexOption.IGNORE_CASE)
+        // термины, которые сами являются началом другого (선배 → 선배님): на той же позиции шаблон
+        // найдёт только длинный, короткие проверяются отдельно
+        val prefixes = HashMap<GlossaryEntry, List<GlossaryEntry>>()
+        for (e in terms) {
+            val low = e.source.lowercase()
+            val shorter = (1 until low.length).flatMap { k -> byKey[low.substring(0, k)].orEmpty() }
+            if (shorter.isNotEmpty()) prefixes[e] = shorter
+        }
+        return Compiled(list, terms, find, anchors, byKey, prefixes).also { compiled = it }
+    }
+
+    private fun entriesFor(matched: String, c: Compiled): List<GlossaryEntry> =
+        c.byKey[matched.lowercase()]
+            // редкие буквы, у которых регистр сравнивается иначе, — сверяем по одному
+            ?: c.terms.filter { Regex(term(it), RegexOption.IGNORE_CASE).matches(matched) }
+
+    /** Термины, которые встречаются в этих текстах (от длинных к коротким). */
+    fun find(texts: List<String>): List<GlossaryEntry> {
+        val c = compiled()
+        val re = c.find ?: return emptyList()
+        val joined = texts.joinToString("\n")
+        val hits = HashSet<GlossaryEntry>()
+        for (m in re.findAll(joined)) {
+            val g = m.groups[1] ?: continue
+            for (e in entriesFor(g.value, c)) {
+                hits.add(e)
+                for (f in c.prefixes[e].orEmpty()) {
+                    if (f !in hits && Regex(term(f), RegexOption.IGNORE_CASE).matchAt(joined, g.range.first) != null) hits.add(f)
+                }
+            }
+        }
+        return c.terms.filter { it in hits }
+    }
 
     fun applyAnchors(text: String): String {
-        var out = text
-        for (e in sorted()) {
-            val p = Regex(pattern(e).pattern + verbEnding, RegexOption.IGNORE_CASE)
-            out = p.replace(out, Regex.escapeReplacement(e.target))
-        }
-        return out
+        val c = compiled()
+        val re = c.anchors ?: return text
+        return re.replace(text) { m -> entriesFor(m.value, c).firstOrNull()?.target ?: m.value }
     }
 
     fun toJson(): String {
