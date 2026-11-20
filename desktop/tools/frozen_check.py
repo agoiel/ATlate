@@ -22,10 +22,27 @@ if not getattr(sys, "frozen", False):
 
 import app  # noqa: E402,F401 — подгружает FriBiDi до Pillow
 import pyphen  # noqa: E402
-from PIL import features  # noqa: E402
+from PIL import Image, ImageDraw, ImageFont  # noqa: E402 — как в Студии (features грузит модуль по имени,
+                                             # и PyInstaller его без ImageFont в сборку не кладёт)
+
+
+def _shaped(word: str, font_name: str) -> bool:
+    """Слово рисуется иначе, чем простой вёрсткой, — значит, буквы соединены и стоят как надо."""
+    def shot(font) -> bytes:
+        im = Image.new("L", (260, 90), 0)
+        ImageDraw.Draw(im).text((10, 10), word, font=font, fill=255)
+        return im.tobytes()
+    try:
+        return shot(ImageFont.truetype(font_name, 40)) != shot(
+            ImageFont.truetype(font_name, 40, layout_engine=ImageFont.Layout.BASIC))
+    except OSError:
+        return False
+
 
 rows = [("собрано PyInstaller", bool(getattr(sys, "frozen", False))),
-        ("FriBiDi подхватился — сложная вёрстка включена", features.check("raqm")),
+        ("FriBiDi подхватился — сложная вёрстка включена", bool(ImageFont.core.HAVE_RAQM)),
+        ("арабский текст сверстан (Segoe UI)", _shaped("تذهب", "segoeui.ttf" if sys.platform == "win32"
+                                                         else "DejaVuSans.ttf")),
         ("словари переносов на месте", "ru" in pyphen.LANGUAGES and "de" in pyphen.LANGUAGES)]
 for name, ok in rows:
     print(f"{'OK  ' if ok else 'FAIL'} {name}")
