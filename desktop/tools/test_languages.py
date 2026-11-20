@@ -490,19 +490,20 @@ def storage() -> None:
             os.environ.pop("APPDATA", None)
         else:
             os.environ["APPDATA"] = old
-    moved = (data == home / "ATlate" and json.loads((data / "config.json").read_text())["translator"] == "deepl"
+    moved = (data == home / "ATlate" and json.loads((data / "config.json").read_text(encoding="utf-8"))["translator"] == "deepl"
              and (data / "titles" / "t.json").exists()
-             and json.loads((data / "glossaries" / "g.json").read_text())["name"] == "свой")
+             and json.loads((data / "glossaries" / "g.json").read_text(encoding="utf-8"))["name"] == "свой")
     check("папка программы закрыта для записи — данные в папке пользователя", moved, str(data))
     check("папка программы доступна — всё рядом с программой", config.data_root(prog) == prog)
     c = config.Config(data / "config.json")
     c["translator"] = "gemini"
     c.save()
     check("настройки сохраняются через временный файл",
-          json.loads((data / "config.json").read_text())["translator"] == "gemini"
+          json.loads((data / "config.json").read_text(encoding="utf-8"))["translator"] == "gemini"
           and not (data / "config.tmp").exists() and not c.save_error)
     bad = config.Config(root / "x.json")
-    bad.path = Path("/proc/atlate-no-access/config.json")
+    (root / "blocker").write_text("", encoding="utf-8")     # обычный файл вместо папки: создать её нельзя ни в одной системе
+    bad.path = root / "blocker" / "config.json"
     bad.save()
     check("сохранить не удалось — программа не падает", bool(bad.save_error))
 
