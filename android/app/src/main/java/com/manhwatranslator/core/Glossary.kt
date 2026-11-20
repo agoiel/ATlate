@@ -5,7 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-data class GlossaryEntry(val source: String, val target: String, val note: String = "")
+/** auto — запись добавил авто-глоссарий (ИИ-переводчик), а не человек. */
+data class GlossaryEntry(val source: String, val target: String, val note: String = "", val auto: Boolean = false)
 
 /**
  * Глоссарий тайтла. Формат JSON совпадает с ПК-версией, файлы можно переносить.
@@ -13,7 +14,41 @@ data class GlossaryEntry(val source: String, val target: String, val note: Strin
  * Обычные переводчики получают текст, где термин уже заменён на перевод («якорь»),
  * ИИ-переводчики получают список терминов с заметками.
  */
-class Glossary(var name: String, var sourceLang: String = "", var entries: List<GlossaryEntry> = emptyList()) {
+class Glossary(var name: String, var sourceLang: String = "", var entries: List<GlossaryEntry> = emptyList(),
+               /** пополнять сам: ИИ-переводчик добавляет новые имена и термины */
+               var auto: Boolean = false) {
+
+    val autoCount: Int get() = entries.count { it.auto }
+
+    /**
+     * Авто-глоссарий: добавить новые термины от ИИ-переводчика (те же правила, что в ПК-версии).
+     * Термин отбрасывается, если его нет в переведённом тексте, если это фраза, а не имя, если он
+     * уже есть в глоссарии (в любом написании — с другим регистром или с частицей на конце)
+     * или если лимит авто-записей исчерпан. Возвращает то, что действительно добавлено.
+     */
+    fun addTerms(terms: List<GlossaryEntry>, texts: List<String>): List<GlossaryEntry> {
+        val page = texts.joinToString("\n").replace(Regex("\\s+"), "").lowercase()
+        val known = entries.map { key(it.source) }.toHashSet()
+        val room = minOf(MAX_NEW_PER_PAGE, MAX_AUTO - autoCount)
+        val added = ArrayList<GlossaryEntry>()
+        for (t in terms) {
+            if (added.size >= room) break
+            val src = t.source.replace(Regex("\\s+"), " ").trim()
+            val tgt = t.target.replace(Regex("\\s+"), " ").trim()
+            val note = t.note.replace(Regex("\\s+"), " ").trim().take(60)
+            if (src.isEmpty() || tgt.isEmpty() || src.length > 40 || tgt.length > 60) continue
+            if (sentence.containsMatchIn(src) || src.count { it.isLetter() } < 2) continue   // фраза или не слово
+            val latin = latinLetter.containsMatchIn(src)
+            if ((latin && src.split(" ").size > 4) || (!latin && src.replace(" ", "").length > 12)) continue
+            if (!latin && tgt.equals(src, ignoreCase = true)) continue                     // модель не перевела
+            if (src.replace(Regex("\\s+"), "").lowercase() !in page) continue             // в тексте такого нет
+            val k = key(src)
+            if (k.isEmpty() || !known.add(k)) continue
+            added.add(GlossaryEntry(src, tgt, note, auto = true))
+        }
+        if (added.isNotEmpty()) entries = entries + added
+        return added
+    }
 
     private fun sorted() = entries.filter { it.source.isNotBlank() && it.target.isNotBlank() }
         .sortedByDescending { it.source.length }
@@ -50,36 +85,63 @@ class Glossary(var name: String, var sourceLang: String = "", var entries: List<
         val arr = JSONArray()
         for (e in entries) {
             if (e.source.isBlank()) continue
-            arr.put(JSONObject().put("source", e.source).put("target", e.target).put("note", e.note))
+            val o = JSONObject().put("source", e.source).put("target", e.target).put("note", e.note)
+            if (e.auto) o.put("auto", true)       // у записей человека пометки нет — файл не раздувается
+            arr.put(o)
         }
-        return JSONObject().put("name", name).put("source_lang", sourceLang).put("entries", arr).toString(2)
+        val root = JSONObject().put("name", name).put("source_lang", sourceLang)
+        if (auto) root.put("auto", true)
+        return root.put("entries", arr).toString(2)
     }
 
-    /** Текстовый вид для редактора: «оригинал = перевод | заметка» на строку. */
+    /** Текстовый вид для редактора: «оригинал = перевод | заметка» на строку; запись ИИ — с пометкой [авто]. */
     fun toText(): String = entries.joinToString("\n") { e ->
-        if (e.note.isBlank()) "${e.source} = ${e.target}" else "${e.source} = ${e.target} | ${e.note}"
+        val line = if (e.note.isBlank()) "${e.source} = ${e.target}" else "${e.source} = ${e.target} | ${e.note}"
+        if (e.auto) "$line $AUTO_MARK" else line
     }
 
     companion object {
+        /** Пометка записи ИИ в текстовом редакторе. Убрали пометку — запись подтверждена человеком. */
+        const val AUTO_MARK = "[авто]"
+        const val MAX_AUTO = 1500
+        const val MAX_NEW_PER_PAGE = 8
+        private val sentence = Regex("[.!?。！？…]")
+        private val latinLetter = Regex("[A-Za-z\\u00C0-\\u024F]")
+        private val hangul = Regex("[\\uAC00-\\uD7AF]")
+        // корейские частицы и окончания, которые модель могла оставить на конце имени
+        private val josa = listOf("에게서", "께서는", "이랑", "에게", "에서", "한테", "께서", "이나", "이야", "은", "는", "이", "가",
+            "을", "를", "의", "에", "와", "과", "도", "만", "랑", "아", "야")
+
+        /** Запись термина для сравнения: без регистра, пробелов и корейских частиц на конце. */
+        fun key(text: String): String {
+            val k = text.replace(Regex("\\s+"), "").lowercase().trim('"', '\'', '«', '»', '“', '”', '(', ')', '[', ']', '「', '」')
+            if (k.isNotEmpty() && hangul.matches(k.last().toString())) {
+                for (j in josa) if (k.endsWith(j) && k.length - j.length >= 2) return k.dropLast(j.length)
+            }
+            return k
+        }
+
         fun fromJson(json: String, fallbackName: String): Glossary {
             val o = JSONObject(json)
             val arr = o.optJSONArray("entries") ?: JSONArray()
             val list = (0 until arr.length()).mapNotNull { i ->
                 val e = arr.optJSONObject(i) ?: return@mapNotNull null
                 val s = e.optString("source")
-                if (s.isBlank()) null else GlossaryEntry(s, e.optString("target"), e.optString("note"))
+                if (s.isBlank()) null else GlossaryEntry(s, e.optString("target"), e.optString("note"), e.optBoolean("auto"))
             }
-            return Glossary(o.optString("name", fallbackName), o.optString("source_lang"), list)
+            return Glossary(o.optString("name", fallbackName), o.optString("source_lang"), list, o.optBoolean("auto"))
         }
 
         fun parseText(text: String): List<GlossaryEntry> = text.lines().mapNotNull { line ->
-            val t = line.trim()
+            var t = line.trim()
             if (t.isEmpty() || t.startsWith("#") || !t.contains("=")) return@mapNotNull null
+            val auto = t.endsWith(AUTO_MARK) || t.endsWith("[auto]")
+            if (auto) t = t.substringBeforeLast('[').trim()
             val src = t.substringBefore("=").trim()
             val rest = t.substringAfter("=")
             val tgt = rest.substringBefore("|").trim()
             val note = if (rest.contains("|")) rest.substringAfter("|").trim() else ""
-            if (src.isEmpty() || tgt.isEmpty()) null else GlossaryEntry(src, tgt, note)
+            if (src.isEmpty() || tgt.isEmpty()) null else GlossaryEntry(src, tgt, note, auto)
         }
     }
 }
@@ -99,7 +161,14 @@ object GlossaryStore {
     }
 
     fun save(ctx: Context, file: String, g: Glossary) {
-        File(dir(ctx), file).writeText(g.toJson())
+        // через временный файл: если приложение закроют посреди записи, глоссарий не испортится
+        val target = File(dir(ctx), file)
+        val tmp = File(dir(ctx), "$file.tmp")
+        tmp.writeText(g.toJson())
+        if (!tmp.renameTo(target)) {
+            target.writeText(g.toJson())
+            tmp.delete()
+        }
     }
 
     fun delete(ctx: Context, file: String) {
@@ -130,10 +199,15 @@ object GlossaryStore {
         prefs.edit().putStringSet("bundled_installed", done).apply()
     }
 
-    /** Встроенный универсальный глоссарий для языка оригинала, если он есть. */
+    /**
+     * Встроенный универсальный глоссарий для языка оригинала, если он есть. Для языков на латинице
+     * без своего — английский: в нём корейские обращения латиницей, их пишут и в других сканлейтах.
+     */
     fun universalFor(ctx: Context, lang: String): String? {
         val name = "universal_${lang.substringBefore('-')}.json"
-        return if (File(dir(ctx), name).exists()) name else null
+        if (File(dir(ctx), name).exists()) return name
+        val en = "universal_en.json"
+        return if (Languages.src(lang).isLatin && Languages.src(lang).code == lang && File(dir(ctx), en).exists()) en else null
     }
 
     /** При смене языка оригинала меняем универсальный глоссарий на подходящий (свои не трогаем). */

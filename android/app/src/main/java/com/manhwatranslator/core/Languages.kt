@@ -11,7 +11,10 @@ data class SourceLang(
     val llm: String,
     val joiner: String,      // чем склеивать строки внутри облака
     val rtl: Boolean,        // облака в одном ряду читаются справа налево (манга)
-)
+) {
+    /** Пишется латиницей: читается той же моделью, что и английский. */
+    val isLatin: Boolean get() = script == "latin"
+}
 
 data class TargetLang(
     val code: String,
@@ -29,7 +32,22 @@ object Languages {
         SourceLang("zh", tr("Китайский упрощённый (маньхуа)"), "chinese", "zh-CN", "ZH", "zh-Hans", "Simplified Chinese", "", false),
         SourceLang("zh-tw", tr("Китайский традиционный"), "chinese", "zh-TW", "ZH", "zh-Hant", "Traditional Chinese", "", false),
         SourceLang("en", tr("Английский (сканлейты)"), "latin", "en", "EN", "en", "English", " ", false),
+        // Языки на латинице: распознаются той же моделью ML Kit, что и английский — ничего докачивать не нужно
+        SourceLang("de", tr("Немецкий"), "latin", "de", "DE", "de", "German", " ", false),
+        SourceLang("es", tr("Испанский"), "latin", "es", "ES", "es", "Spanish", " ", false),
+        SourceLang("pt", tr("Португальский"), "latin", "pt", "PT", "pt", "Portuguese", " ", false),
+        SourceLang("id", tr("Индонезийский"), "latin", "id", "ID", "id", "Indonesian", " ", false),
+        // DeepL филиппинский не знает (пустой код — переводчик этот язык не поддерживает)
+        SourceLang("fil", tr("Филиппинский"), "latin", "tl", "", "fil", "Filipino (Tagalog)", " ", false),
+        // Любой другой текст на латинице: язык определяет сам переводчик
+        SourceLang(LATIN, tr("Латиница (язык определит переводчик)"), "latin", AUTO, AUTO, AUTO,
+            "the original language (detect it from the text)", " ", false),
     )
+
+    /** Код «пусть переводчик определит язык сам». */
+    const val AUTO = "auto"
+    /** Язык «латиница — язык определит переводчик». */
+    const val LATIN = "latin"
 
     /** Языки перевода. Пустой код — этот переводчик язык не поддерживает. */
     val targets get() = listOf(
@@ -74,9 +92,22 @@ object Languages {
             h > 0 && h >= k -> src("ko")
             k > 0 -> src("ja")
             c > 0 -> if (selected.code == "ja" || selected.code.startsWith("zh")) selected else src("zh")
-            l >= 2 -> src("en")
+            // латиница: выбранный язык, если он сам на латинице; иначе язык определит переводчик —
+            // по буквам немецкий от испанского не отличить
+            l >= 2 -> if (selected.isLatin) selected else src(LATIN)
             else -> selected
         }
+    }
+
+    /** Название языка по коду — нашему или ISO (его возвращают переводчики, когда определяют язык сами). */
+    fun nameOf(code: String): String {
+        val low = code.trim().lowercase()
+        val base = low.replace('_', '-').substringBefore('-').let { if (it == "tl") "fil" else it }
+        for (k in listOf(low, base)) {
+            sources.firstOrNull { it.code == k }?.let { return it.name.substringBefore(" (") }
+            targets.firstOrNull { it.code == k }?.let { return it.name.substringBefore(" (") }
+        }
+        return code
     }
     fun tgt(code: String): TargetLang = targets.firstOrNull { it.code == code } ?: targets[0]
 }

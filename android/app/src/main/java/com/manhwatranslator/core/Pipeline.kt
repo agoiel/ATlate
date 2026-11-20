@@ -18,6 +18,9 @@ class Pipeline(private val ctx: Context) {
     private var loadedStamp = 0L
     // автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
     private var autoOk = false
+    // итоги последнего перевода: сколько терминов добавил авто-глоссарий, какой язык определил переводчик
+    private var glossaryAdded = 0
+    private var lastDetected = ""
     private var autoSize = 0L
     private var autoNote = ""
 
@@ -166,6 +169,8 @@ class Pipeline(private val ctx: Context) {
         }
 
         var error = ""
+        glossaryAdded = 0
+        lastDetected = ""
         if (todo.isNotEmpty()) {
             try {
                 // облака на разных языках переводятся отдельными запросами
@@ -181,7 +186,8 @@ class Pipeline(private val ctx: Context) {
         }
         timings.mark(tr("перевод"))
         return PageResult(bubbles, error, hits, t1 - t0, System.currentTimeMillis() - t1, lines.size, stats,
-            debug = debug(hits, error), detectedLang = detected)
+            debug = debug(hits, error), detectedLang = detected, sourceDetected = lastDetected,
+            glossaryAdded = glossaryAdded)
     }
 
     /** Итог сравнения «по очереди» и «параллельно» на одной и той же картинке. */
@@ -251,13 +257,29 @@ class Pipeline(private val ctx: Context) {
         val found = glossary?.find(texts) ?: emptyList()
         val anchored = if (glossary != null && !tr.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
         val n = s.contextSize
+        // авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
+        val collect = glossary != null && glossary.auto && tr.usesLlm && !s.glossary.startsWith("universal_")
         val req = TranslateRequest(
             texts = texts, src = src, tgt = tgt,
             history = if (n > 0) history.toList().takeLast(n) else emptyList(),
             glossary = found, anchored = anchored,
             screen = s.contentMode == "screen",
+            collectTerms = collect,
         )
         val out = tr.translate(req)
+        if (req.detected.isNotBlank()) lastDetected = req.detected
+        if (collect && req.terms.isNotEmpty()) {
+            // файл перечитываем: его могли изменить в редакторе, пока шёл перевод
+            val fresh = GlossaryStore.load(ctx, s.glossary) ?: glossary
+            val added = fresh!!.addTerms(req.terms, texts)
+            if (added.isNotEmpty()) {
+                try {
+                    GlossaryStore.save(ctx, s.glossary, fresh)
+                    glossaryAdded += added.size
+                } catch (_: Exception) {
+                }
+            }
+        }
         bubbles.forEachIndexed { i, b ->
             val t = out.getOrNull(i).orEmpty()
             b.translation = t

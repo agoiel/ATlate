@@ -67,6 +67,7 @@ class OverlayService : Service() {
     private var menu: ButtonMenu? = null
     private var debugPanel: DebugPanel? = null
     private var busy = false
+    private var lastSourceShown = ""        // какой язык, определённый переводчиком, уже показан
 
     // ---- режим Live
     private var liveOn = false
@@ -480,7 +481,13 @@ class OverlayService : Service() {
             // автоопределение переключило язык — говорим об этом один раз, в момент смены
             res.detectedLang.isNotEmpty() ->
                 toast(trf("Язык оригинала: %s", Languages.src(res.detectedLang).name.substringBefore(" (").lowercase()))
+            // язык определил сам переводчик — тоже только когда он сменился
+            res.sourceDetected.isNotEmpty() && !res.sourceDetected.equals(lastSourceShown, ignoreCase = true) -> {
+                lastSourceShown = res.sourceDetected
+                toast(trf("Язык определил переводчик: %s", Languages.nameOf(res.sourceDetected).lowercase()))
+            }
             fromLive -> {}   // в Live не мешаем чтению сообщениями
+            res.glossaryAdded > 0 -> toast(trf("В глоссарий добавлено: %s", res.glossaryAdded))
             res.bubbles.isEmpty() -> toast(tr("Текст не найден в выделенной области") + diag)
             res.bubbles.none { it.translation.isNotBlank() } -> toast(tr("Нечего переводить") + diag)
         }

@@ -25,6 +25,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.Enhance
+import com.manhwatranslator.core.Glossary
 import com.manhwatranslator.core.GlossaryStore
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.tr
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
     private lateinit var srcPicker: PickerView
     private lateinit var tgtPicker: PickerView
     private lateinit var glossPicker: PickerView
+    private lateinit var autoGloss: SwitchRow
+    private lateinit var autoGlossHint: android.widget.TextView
     private lateinit var titlePicker: PickerView
     private lateinit var keysBox: LinearLayout
     private lateinit var translatorDropdown: Dropdown
@@ -303,6 +306,7 @@ class MainActivity : Activity() {
     private fun selectTranslator(key: String) {
         s.translator = key
         translatorDropdown.select(key)
+        refreshAutoGlossary()       // пополнение глоссария работает только с ИИ-переводчиками
         keysBox.removeAllViews()
         fun field(label: String, value: String, hint: String, secret: Boolean = false, save: (String) -> Unit) {
             keysBox.addView(Field(this, label, value, hint, secret) { save(it.trim()) }, lp().margins(this, top = 12))
@@ -400,7 +404,60 @@ class MainActivity : Activity() {
         row.addView(edit, lp(0, weight = 1f))
         row.addView(create, lp(0, weight = 1f).margins(this, start = 10))
         card.addView(row, lp().margins(this, top = 10))
+        val autoNew = PillButton(this, tr("Авто-глоссарий"), R.drawable.ic_bolt, PillStyle.TONAL, 44)
+        autoNew.onClick { createAutoGlossary() }
+        card.addView(autoNew, lp().margins(this, top = 10))
+        autoGloss = SwitchRow(this, tr("Пополнять глоссарий сам"),
+            tr("ИИ-переводчик добавляет новые имена и термины, повторы пропускаются"), false) { setGlossaryAuto(it) }
+        card.addView(autoGloss, lp().margins(this, top = 6))
+        autoGlossHint = ui.caption("")
+        card.addView(autoGlossHint, lp().margins(this, top = 2))
         return card
+    }
+
+    // ---------------------------------------------------------------- авто-глоссарий
+    private fun currentGlossary() = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(this, it) }
+
+    /** Переключатель «Пополнять сам» — по текущему глоссарию; подсказка — почему он недоступен. */
+    private fun refreshAutoGlossary() {
+        if (!::autoGloss.isInitialized) return
+        val g = currentGlossary()
+        val universal = s.glossary.startsWith("universal_")
+        autoGloss.checked = g != null && g.auto && !universal
+        autoGloss.isEnabled = g != null && !universal
+        autoGloss.alpha = if (autoGloss.isEnabled) 1f else 0.5f
+        val llm = Translators.create(s).usesLlm
+        val hint = when {
+            g == null -> tr("Выберите или создайте глоссарий — или нажмите «Авто-глоссарий».")
+            universal -> tr("Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий».")
+            g.auto && !llm -> tr("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). С выбранным переводчиком глоссарий только используется.")
+            g.auto -> trf("Добавлено автоматически: %s. Такие записи помечены [авто] в редакторе — проверьте их.", g.autoCount)
+            else -> ""
+        }
+        autoGlossHint.text = hint
+        autoGlossHint.visibility = if (hint.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun setGlossaryAuto(on: Boolean) {
+        val g = currentGlossary()
+        if (g == null || s.glossary.startsWith("universal_")) return refreshAutoGlossary()
+        g.auto = on
+        GlossaryStore.save(this, s.glossary, g)
+        refreshAutoGlossary()
+    }
+
+    /** Новый пустой глоссарий, который пополняется сам; сразу выбирается для текущего тайтла. */
+    private fun createAutoGlossary() {
+        val title = TitleStore.load(this, s.activeTitle)
+        askName(tr("Новый авто-глоссарий"), title?.name ?: "") { name ->
+            val file = GlossaryStore.fileNameFor(this, name)
+            GlossaryStore.save(this, file, Glossary(name, s.sourceLang, emptyList(), auto = true))
+            s.glossary = file
+            title?.let { it.glossary = file; TitleStore.save(this, it) }
+            refreshGlossary()
+            toast(if (Translators.create(s).usesLlm) tr("Авто-глоссарий создан: новые имена и термины будут добавляться при переводе.")
+                  else tr("Авто-глоссарий создан. Чтобы он пополнялся, выберите ИИ-переводчик (Gemini, Claude или OpenAI-совместимый)."))
+        }
     }
 
     private fun refreshGlossary() {
@@ -414,7 +471,10 @@ class MainActivity : Activity() {
         }
         val g = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(this, it) }
         if (g == null && s.glossary.isNotBlank()) s.glossary = ""
-        glossPicker.setValue(g?.let { trf("%s · %s зап.", it.name.ifBlank { s.glossary }, it.entries.size) } ?: tr("Без глоссария"))
+        glossPicker.setValue(g?.let {
+            trf("%s · %s зап.", it.name.ifBlank { s.glossary }, it.entries.size) + if (it.auto) tr(" · авто") else ""
+        } ?: tr("Без глоссария"))
+        refreshAutoGlossary()
     }
 
     private fun pickGlossary() {

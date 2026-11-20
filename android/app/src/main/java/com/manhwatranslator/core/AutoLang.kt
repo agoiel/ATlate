@@ -34,8 +34,9 @@ object AutoLang {
     /** Меньше букв — судить не о чем («!?», одно короткое слово). */
     private const val MIN_LETTERS = 4
 
-    /** Коды языков в том порядке, в каком они проверяются. */
-    val codes = listOf("ko", "ja", "zh", "zh-tw", "en")
+    /** Что пробуется — по одному языку на письменность: все языки на латинице читает одна модель. */
+    val codes = listOf("ko", "ja", "zh", "zh-tw", Languages.LATIN)
+    private val latinCodes = setOf("en", "de", "es", "pt", "id", "fil", Languages.LATIN)
 
     private fun isChinese(code: String) = code == "zh" || code == "zh-tw"
     private fun count(rx: Regex, text: String) = rx.findAll(text).count()
@@ -64,7 +65,7 @@ object AutoLang {
         // с иероглифами (ロ и 口, カ и 力), и «японский» находился бы в китайском тексте
         if (code == "ja" && (hira < 2 || hira < 0.15f * own)) return 0f
         if (isChinese(code) && hira >= 2) return 0f
-        if (code == "en") total = maxOf(total, count(latin, text))
+        if (code in latinCodes) total = maxOf(total, count(latin, text))
         return own.toFloat() * own / maxOf(1, total)
     }
 
@@ -86,12 +87,14 @@ object AutoLang {
      */
     fun choose(texts: Map<String, String>, current: String): String? {
         val scores = texts.mapValues { (code, text) -> score(text, code) }
-        val en = scores["en"] ?: 0f
-        val best = scores.filterKeys { it != "en" }.maxByOrNull { it.value }
+        val latinKey = scores.keys.firstOrNull { it in latinCodes }
+        val en = latinKey?.let { scores[it] } ?: 0f
+        val best = scores.filterKeys { it !in latinCodes }.maxByOrNull { it.value }
         if (best != null && best.value >= MIN_LETTERS && best.value >= 0.3f * en) {
             return if (isChinese(best.key)) chineseVariant(texts[best.key].orEmpty(), current) else best.key
         }
-        return if (en >= MIN_LETTERS) "en" else null
+        // латиница: какой именно это язык, по буквам не понять — его определит переводчик
+        return if (latinKey != null && en >= MIN_LETTERS) latinKey else null
     }
 
     /** Оценки по языкам одной строкой — для режима разработчика. */
