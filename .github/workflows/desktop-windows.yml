@@ -27,8 +27,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install -q PySide6-Essentials numpy Pillow requests pynput
+        run: python -m pip install -q PySide6-Essentials numpy Pillow requests pynput pyphen
       - name: Hotkeys with English and Russian keyboard layouts
         run: python tools/test_hotkeys_win.py
       - name: Languages, translator requests, glossary
         run: python tools/test_languages.py ../out/languages
+      - name: Studio text in Thai and Arabic (fonts, hyphenation, shaping)
+        run: python tools/test_typeset_langs.py ../out/typeset
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-checks
+          path: out

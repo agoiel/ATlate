@@ -86,3 +86,57 @@ def load(path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         return ImageFont.truetype(path or default_font(), size)
     except OSError:
         return ImageFont.load_default(size)
+
+
+# ---------------------------------------------------------------- буквы, которых нет в шрифте
+
+# Запасные шрифты (по названию семейства): если в выбранном шрифте нет нужных букв — тайских,
+# арабских и т.п., — текст рисуется первым из них, где буквы есть. Иначе вместо букв были бы квадраты.
+FALLBACK_FAMILIES = ["Segoe UI", "Leelawadee UI", "Leelawadee", "Tahoma", "Arial", "Noto Sans",
+                     "Noto Sans Thai", "Noto Naskh Arabic", "Noto Sans Arabic", "DejaVu Sans", "Arial Unicode MS"]
+_PUA = "\ue000"          # знак из «частной» области — его нет почти ни в одном шрифте: так выглядит «нет буквы»
+
+
+def _render(path: str, ch: str) -> bytes:
+    from PIL import Image, ImageDraw
+    im = Image.new("L", (48, 48))
+    ImageDraw.Draw(im).text((8, 8), ch, font=load(path, 28), fill=255)
+    return im.tobytes()
+
+
+@lru_cache(maxsize=8192)
+def has_glyph(path: str, ch: str) -> bool:
+    """Есть ли буква в шрифте: отсутствующая рисуется так же, как заведомо отсутствующий знак."""
+    if ch.isspace():
+        return True
+    try:
+        return _render(path, ch) != _render(path, _PUA)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+@lru_cache(maxsize=512)
+def _covering(path: str, chars: str) -> str:
+    def missing(p: str) -> int:
+        return sum(1 for c in chars if not has_glyph(p, c))
+    if missing(path) == 0:
+        return path
+    names = list_fonts()
+    best, best_missing = path, missing(path)
+    for family in FALLBACK_FAMILIES:
+        found = [p for name, p in names if name.split(" Bold")[0].split(" Regular")[0] == family]
+        # жирное начертание, если есть: перевод в облаках обычно жирный
+        found.sort(key=lambda p: 0 if "bold" in name_of(p).lower() else 1)
+        for p in found[:1]:
+            m = missing(p)
+            if m == 0:
+                return p
+            if m < best_missing:
+                best, best_missing = p, m
+    return best
+
+
+def font_for_text(path: str, text: str) -> str:
+    """Шрифт, в котором есть все буквы текста: выбранный или запасной."""
+    chars = "".join(sorted({c for c in text if not c.isspace()}))
+    return _covering(path or default_font(), chars) if chars else path

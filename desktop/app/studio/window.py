@@ -116,10 +116,10 @@ class _RenderJob(QRunnable):
     """Нарисовать открытую страницу. Клин берётся готовый, если блоки не двигали."""
 
     def __init__(self, signals: _Signals, project: Project, page_index: int, token: int,
-                 original: np.ndarray | None, clean: np.ndarray | None, clean_key: tuple):
+                 original: np.ndarray | None, clean: np.ndarray | None, clean_key: tuple, lang: str = ""):
         super().__init__()
         self.project, self.index, self.token, self.original = project, page_index, token, original
-        self.clean, self.clean_key = clean, clean_key
+        self.clean, self.clean_key, self.lang = clean, clean_key, lang
         # Сигналы общие (живут в окне), а задача удаляется, как только отработала. Со своими сигналами
         # её приходилось хранить, и Qt держал в памяти все задачи вместе со страницами, на которые они
         # ссылались: память росла с каждой правкой и каждой открытой страницей.
@@ -127,7 +127,7 @@ class _RenderJob(QRunnable):
 
     def run(self):
         try:
-            r = engine.render(self.project, self.project.pages[self.index], self.original, self.clean)
+            r = engine.render(self.project, self.project.pages[self.index], self.original, self.clean, self.lang)
             # перевод в QImage тоже здесь, а не в окне: на длинной ленте это заметная работа
             images = {"clean": to_qimage(r.clean), "result": to_qimage(np.asarray(r.result))}
         except Exception:  # noqa: BLE001
@@ -137,9 +137,9 @@ class _RenderJob(QRunnable):
 
 
 class _ExportJob(QRunnable):
-    def __init__(self, project: Project, level: str):
+    def __init__(self, project: Project, level: str, lang: str = ""):
         super().__init__()
-        self.project, self.level = project, level
+        self.project, self.level, self.lang = project, level, lang
         self.signals = _Signals()
 
     def run(self):
@@ -151,7 +151,7 @@ class _ExportJob(QRunnable):
             for i, page in enumerate(pages):
                 self.signals.progress.emit(i, len(pages), page.file)
                 try:
-                    engine.export_page(self.project, page)
+                    engine.export_page(self.project, page, lang=self.lang)
                 except Exception:  # noqa: BLE001
                     failed += 1
         finally:
@@ -1287,7 +1287,7 @@ class StudioWindow(QWidget):
         cc = self._clean_cache
         clean = cc[2] if cc is not None and cc[0] == self.index and cc[1] == key else None
         self.pool.start(_RenderJob(self.render_signals, self.project, self.index, self._render_token,
-                                   self._original, clean, key))
+                                   self._original, clean, key, self.cfg["target_lang"]))
 
     def _render_finished(self) -> None:
         self._render_running = False
@@ -1444,7 +1444,7 @@ class StudioWindow(QWidget):
             QMessageBox.information(self, "Студия", "Сначала переведите главу или хотя бы одну страницу.")
             return
         self._save()
-        job = _ExportJob(self.project, self.cfg.get("studio_load", sysload.DEFAULT_LOAD))
+        job = _ExportJob(self.project, self.cfg.get("studio_load", sysload.DEFAULT_LOAD), self.cfg["target_lang"])
         job.signals.progress.connect(self._on_progress)
         job.signals.finished.connect(self._on_exported)
         job.setAutoDelete(False)

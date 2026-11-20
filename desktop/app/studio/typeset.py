@@ -241,8 +241,38 @@ class Layout:
     overflow: bool = False                  # не поместилось даже самым мелким шрифтом
 
 
-def _split_long(word: str, font, width: float) -> list[str]:
-    """Разбить слишком длинное слово переносами."""
+_HYPHENATORS: dict[str, object] = {}
+# языки, где при переносе дефис не ставится
+NO_HYPHEN_SIGN = {"th"}
+
+
+def _hyphenator(lang: str):
+    """Словарь переносов для языка перевода (Pyphen) или None, если его нет."""
+    if not lang:
+        return None
+    if lang not in _HYPHENATORS:
+        try:
+            import pyphen
+            code = pyphen.language_fallback(lang.replace("-", "_"))
+            _HYPHENATORS[lang] = pyphen.Pyphen(lang=code) if code else None
+        except Exception:  # noqa: BLE001 — нет библиотеки или словаря
+            _HYPHENATORS[lang] = None
+    return _HYPHENATORS[lang]
+
+
+def _split_long(word: str, font, width: float, lang: str = "") -> list[str]:
+    """Разбить слишком длинное слово переносом.
+
+    По словарю переносов языка (пе-ре-вод, гиль-дии): самая длинная часть, которая влезает.
+    Раньше слово резалось по любой букве («пер-евод»). Нет словаря или ни один слог не влез —
+    по буквам, как раньше. В тайском (там нет пробелов) — по слогам и без дефиса.
+    """
+    hy = _hyphenator(lang)
+    mark = "" if lang in NO_HYPHEN_SIGN else "-"
+    if hy is not None:
+        for left, right in hy.iterate(word):         # от длинной левой части к короткой
+            if font.getlength(left + mark) <= width:
+                return [left + mark, right]
     parts, cur = [], ""
     for ch in word:
         if cur and font.getlength(cur + ch + "-") > width:
@@ -254,7 +284,8 @@ def _split_long(word: str, font, width: float) -> list[str]:
     return parts
 
 
-def _try(words: list[str], shape: Shape, font, size: int, spacing: float, hyphenate: bool) -> Layout | None:
+def _try(words: list[str], shape: Shape, font, size: int, spacing: float, hyphenate: bool,
+         lang: str = "") -> Layout | None:
     lh = size * spacing
     space = font.getlength(" ")
     max_lines = int((shape.bottom - shape.top) / lh)
@@ -278,7 +309,7 @@ def _try(words: list[str], shape: Shape, font, size: int, spacing: float, hyphen
                     line.append(queue.pop(0))
                     line_w = add
                 elif not line and hyphenate and len(wd) > 3:
-                    parts = _split_long(wd, font, width)
+                    parts = _split_long(wd, font, width, lang)
                     queue[0:1] = parts
                     if font.getlength(parts[0]) > width:
                         break
@@ -295,14 +326,14 @@ def _try(words: list[str], shape: Shape, font, size: int, spacing: float, hyphen
 
 
 def layout(text: str, shape: Shape, font_path: str, style: Style, fixed: int = 0,
-           max_size: int | None = None) -> Layout:
+           max_size: int | None = None, lang: str = "") -> Layout:
     words = text.split()
     if not words:
         return Layout(style.min_size, [])
     sizes = [fixed] if fixed else list(range(max(style.min_size, max_size or style.max_size), style.min_size - 1, -1))
     for hyph in (False, True):
         for size in sizes:
-            res = _try(words, shape, fonts.load(font_path, size), size, style.line_spacing, hyph)
+            res = _try(words, shape, fonts.load(font_path, size), size, style.line_spacing, hyph, lang)
             if res:
                 return res
     # не помещается: самый мелкий шрифт, строки по ширине области, без учёта формы
@@ -367,8 +398,12 @@ def _size_for_height(font_path: str, line_h: float) -> int:
     return int(round(line_h * 100 / full))
 
 
-def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[Image.Image, dict[str, Layout]]:
-    """Вписать перевод во все включённые блоки. Возвращает картинку и раскладку каждого блока."""
+def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style,
+                 lang: str = "") -> tuple[Image.Image, dict[str, Layout]]:
+    """Вписать перевод во все включённые блоки. Возвращает картинку и раскладку каждого блока.
+
+    lang — язык перевода: по нему выбирается словарь переносов.
+    """
     img = Image.fromarray(clean[..., :3].copy())
     draw = ImageDraw.Draw(img)
     info: dict[str, Layout] = {}
@@ -378,7 +413,8 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
             continue
         if style.caps:
             text = text.upper()
-        font_path = b.font or style.font or fonts.default_font()
+        # если в шрифте нет нужных букв (тайские, арабские…), — запасной шрифт, а не квадраты
+        font_path = fonts.font_for_text(b.font or style.font or fonts.default_font(), text)
         deg = float(b.angle) if style.tilt else 0.0
         line_h = b.source_line_h()
         frame = None
@@ -392,7 +428,7 @@ def typeset_page(clean: np.ndarray, blocks: list[Block], style: Style) -> tuple[
         # перевод обычно длиннее оригинала, поэтому разрешаем быть заметно крупнее строки оригинала,
         # но не бесконечно — короткое «Что?!» в огромном облаке не должно стать гигантским
         cap = int(_size_for_height(font_path, line_h) * 1.2)
-        lay = layout(text, shape, font_path, style, b.size, max(style.min_size, min(style.max_size, cap)))
+        lay = layout(text, shape, font_path, style, b.size, max(style.min_size, min(style.max_size, cap)), lang)
         info[b.id] = lay
         fill, stroke = _colors(clean, b, shape)
         font = fonts.load(font_path, lay.size)

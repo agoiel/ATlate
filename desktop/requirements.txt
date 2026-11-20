@@ -3,6 +3,7 @@ numpy>=1.24
 Pillow>=10.0
 requests>=2.31
 pynput>=1.7.6
+pyphen>=0.14                 # словари переносов для тайпа в Студии
 
 # Windows OCR (встроенный в Windows 10/11)
 winrt-runtime; sys_platform == "win32"
