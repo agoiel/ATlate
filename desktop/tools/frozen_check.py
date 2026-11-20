@@ -16,6 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(encoding="utf-8")    # собранный exe пишет в консоль в кодировке системы
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
