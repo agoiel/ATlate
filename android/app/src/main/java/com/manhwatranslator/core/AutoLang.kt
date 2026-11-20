@@ -93,8 +93,9 @@ object AutoLang {
         if (best != null && best.value >= MIN_LETTERS && best.value >= 0.3f * en) {
             return if (isChinese(best.key)) chineseVariant(texts[best.key].orEmpty(), current) else best.key
         }
-        // латиница: какой именно это язык, по буквам не понять — его определит переводчик
-        return if (latinKey != null && en >= MIN_LETTERS) latinKey else null
+        // латиница: какой именно это язык, по буквам не понять — его определит переводчик.
+        // Но если язык на латинице уже выбран (английский, испанский…) — он и остаётся
+        return if (latinKey != null && en >= MIN_LETTERS) (if (current in latinCodes) current else latinKey) else null
     }
 
     /** Оценки по языкам одной строкой — для режима разработчика. */

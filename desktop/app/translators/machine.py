@@ -42,7 +42,7 @@ class GoogleFreeTranslator(Translator):
     title = tr("Google (без ключа)")
     URL = "https://translate.googleapis.com/translate_a/single"
 
-    def _one(self, text: str, sl: str, tl: str) -> str:
+    def _one(self, req: TranslateRequest, text: str, sl: str, tl: str) -> str:
         try:
             r = self._get(self.URL, params={"client": "gtx", "sl": sl, "tl": tl, "dt": "t", "q": text})
         except TranslateError as e:
@@ -55,13 +55,13 @@ class GoogleFreeTranslator(Translator):
         try:
             data = r.json()
             if sl == AUTO and len(data) > 2 and isinstance(data[2], str):
-                self.detected = data[2]         # Google сообщает, какой язык он определил
+                req.detected = data[2]         # Google сообщает, какой язык он определил
             return "".join(seg[0] for seg in data[0] if seg and seg[0])
         except (ValueError, TypeError, IndexError) as e:
             raise TranslateError(tr("Google: неожиданный ответ сервера.")) from e
 
     def translate(self, req: TranslateRequest) -> list[str]:
-        self.detected = ""
+        req.detected = ""
         texts = [t.replace("\n", " ") for t in (req.anchored or req.texts)]
         sl, tl = languages.src(req.src)["google"], languages.tgt(req.tgt)["google"]
         # делим на порции, чтобы адрес запроса не был слишком длинным
@@ -76,14 +76,14 @@ class GoogleFreeTranslator(Translator):
             size += n
         out = [""] * len(texts)
         for chunk in chunks:
-            parts = [p.strip() for p in self._one("\n".join(texts[i] for i in chunk), sl, tl).split("\n")]
+            parts = [p.strip() for p in self._one(req, "\n".join(texts[i] for i in chunk), sl, tl).split("\n")]
             if len(parts) == len(chunk):
                 for i, p in zip(chunk, parts):
                     out[i] = p
             else:
                 # Google склеил строки — переводим эту порцию по одной
                 for i in chunk:
-                    out[i] = self._one(texts[i], sl, tl).strip()
+                    out[i] = self._one(req, texts[i], sl, tl).strip()
         return out
 
 
@@ -98,7 +98,7 @@ class DeepLTranslator(Translator):
         if not key:
             raise TranslateError(tr("DeepL: укажите API-ключ в настройках."))
         host = "api-free.deepl.com" if key.endswith(":fx") else "api.deepl.com"
-        self.detected = ""
+        req.detected = ""
         sl = _source(languages.src(req.src)["deepl"], "DeepL", req.src)
         body = {
             "text": req.anchored or req.texts,
@@ -113,7 +113,7 @@ class DeepLTranslator(Translator):
                        headers={"Authorization": f"DeepL-Auth-Key {key}"})
         items = r.json().get("translations", [])
         if sl == AUTO and items:
-            self.detected = items[0].get("detected_source_language", "")
+            req.detected = items[0].get("detected_source_language", "")
         return [t["text"] for t in items]
 
 
@@ -132,7 +132,7 @@ class MicrosoftTranslator(Translator):
         region = self.settings.get("region", "").strip()
         if region and region != "global":
             headers["Ocp-Apim-Subscription-Region"] = region
-        self.detected = ""
+        req.detected = ""
         sl = _source(languages.src(req.src)["microsoft"], "Microsoft", req.src)
         params = {"api-version": "3.0",
                   "to": _require(languages.tgt(req.tgt)["microsoft"], "Microsoft", req.tgt)}
@@ -142,7 +142,7 @@ class MicrosoftTranslator(Translator):
                        json=[{"Text": t} for t in (req.anchored or req.texts)])
         items = r.json()
         if sl == AUTO and items:
-            self.detected = (items[0].get("detectedLanguage") or {}).get("language", "")
+            req.detected = (items[0].get("detectedLanguage") or {}).get("language", "")
         return [item["translations"][0]["text"] for item in items]
 
 
@@ -184,7 +184,7 @@ class YandexTranslator(Translator):
         self.ucid = uuid.uuid4().hex
 
     def translate(self, req: TranslateRequest) -> list[str]:
-        self.detected = ""
+        req.detected = ""
         texts = req.anchored or req.texts
         sl = _simple(languages.src(req.src)["google"])
         tl = _simple(languages.tgt(req.tgt)["google"])
@@ -200,7 +200,7 @@ class YandexTranslator(Translator):
                            headers={"Authorization": f"Api-Key {key}"}, json=body)
             items = r.json().get("translations", [])
             if sl == AUTO and items:
-                self.detected = items[0].get("detectedLanguageCode", "")
+                req.detected = items[0].get("detectedLanguageCode", "")
             return [t.get("text", "") for t in items]
         # только язык перевода — тогда Яндекс определяет язык оригинала сам
         pair = tl if sl == AUTO else f"{sl}-{tl}"
@@ -211,7 +211,7 @@ class YandexTranslator(Translator):
             js = r.json()
             out = js["text"]
             if sl == AUTO and isinstance(js.get("lang"), str):
-                self.detected = js["lang"].split("-")[0]
+                req.detected = js["lang"].split("-")[0]
         except (ValueError, KeyError) as e:
             raise TranslateError(tr("Яндекс: неожиданный ответ. Бесплатный способ мог перестать работать — "
                                     "укажите ключ Yandex Cloud или выберите другой переводчик.")) from e
@@ -231,7 +231,7 @@ class DuckDuckGoTranslator(Translator):
         m = re.search(r"vqd=[\"']?([\d-]+)", page)
         if not m:
             raise TranslateError(tr("DuckDuckGo: не удалось начать сессию перевода. Попробуйте позже."))
-        self.detected = ""
+        req.detected = ""
         sl = _source(languages.src(req.src)["microsoft"], "DuckDuckGo", req.src)
         params = {"vqd": m.group(1), "query": "translate",
                   "to": languages.tgt(req.tgt)["microsoft"] or languages.tgt(req.tgt)["google"]}
@@ -244,7 +244,7 @@ class DuckDuckGoTranslator(Translator):
             try:
                 js = r.json()
                 if sl == AUTO and js.get("detected_language"):
-                    self.detected = str(js["detected_language"])
+                    req.detected = str(js["detected_language"])
                 return js["translated"]
             except (ValueError, KeyError) as e:
                 raise TranslateError(tr("DuckDuckGo: неожиданный ответ сервера.")) from e
@@ -261,7 +261,7 @@ class LingvaTranslator(Translator):
 
     def translate(self, req: TranslateRequest) -> list[str]:
         base = (self.settings.get("base_url") or "https://lingva.ml").strip().rstrip("/")
-        self.detected = ""
+        req.detected = ""
         g_src, g_tgt = languages.src(req.src)["google"], languages.tgt(req.tgt)["google"]
         sl, tl = self.CODES.get(g_src, g_src), self.CODES.get(g_tgt, g_tgt)
 
@@ -274,7 +274,7 @@ class LingvaTranslator(Translator):
             if "error" in data:
                 raise TranslateError(f"Lingva: {data['error']}")
             if sl == AUTO:
-                self.detected = (data.get("info") or {}).get("detectedSource", "") or self.detected
+                req.detected = (data.get("info") or {}).get("detectedSource", "") or req.detected
             return data.get("translation", "")
 
         return _join_translate(req.anchored or req.texts, 1500, one)
@@ -292,7 +292,7 @@ class PapagoTranslator(Translator):
         if not cid or not secret:
             raise TranslateError(tr("Papago: укажите Client ID и Client Secret в настройках."))
         headers = {"X-NCP-APIGW-API-KEY-ID": cid, "X-NCP-APIGW-API-KEY": secret}
-        self.detected = ""
+        req.detected = ""
         sl, tl = languages.src(req.src)["google"], languages.tgt(req.tgt)["google"]
 
         def one(text: str) -> str:
@@ -301,7 +301,7 @@ class PapagoTranslator(Translator):
             try:
                 res = r.json()["message"]["result"]
                 if sl == AUTO and res.get("srcLangType"):
-                    self.detected = res["srcLangType"]
+                    req.detected = res["srcLangType"]
                 return res["translatedText"]
             except (ValueError, KeyError) as e:
                 raise TranslateError(tr("Papago: неожиданный ответ сервера.")) from e

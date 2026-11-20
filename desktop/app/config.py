@@ -167,6 +167,7 @@ class Config(dict):
         self.update(_merge(DEFAULTS, data))
 
     save_error = ""            # почему не удалось сохранить в последний раз (пусто — сохранилось)
+    on_save_error = None       # кому сообщить, что сохранить не удалось (окно показывает это в строке состояния)
 
     def save(self) -> None:
         """Сохранить через временный файл: если программу закроют посреди записи, настройки
@@ -179,6 +180,8 @@ class Config(dict):
             self.save_error = ""
         except OSError as e:
             self.save_error = str(e)
+            if self.on_save_error is not None:
+                self.on_save_error(self.save_error)
 
     def translator_settings(self, name: str) -> dict:
         return self["translators"].get(name, {})

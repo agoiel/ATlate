@@ -427,6 +427,7 @@ EN: dict[str, str] = {
         "Automatic filling works only with AI translators (Gemini, Claude, OpenAI-compatible). With the chosen translator the glossary is only used.",
     "Добавлено автоматически: {0}. Такие записи помечены в редакторе — проверьте их и исправьте, если ИИ ошибся.":
         "Added automatically: {0}. These entries are marked in the editor — check them and fix them if the AI made a mistake.",
+    "Настройки не сохранились: {0}": "Settings were not saved: {0}",
     "Не удалось сохранить глоссарий: {0}": "Couldn’t save the glossary: {0}",
     "Авто-глоссарий создан: новые имена и термины будут добавляться при переводе.":
         "Auto glossary created: new names and terms will be added as you translate.",

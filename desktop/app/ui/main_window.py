@@ -157,9 +157,14 @@ class _TileGrid(QWidget):
 
 # ================================================================ главное окно
 class MainWindow(QWidget):
+    # настройки не сохранились (диск полон, файл занят…) — сообщение из любого потока в окно
+    save_failed = Signal(str)
+
     def __init__(self, cfg: Config):
         super().__init__(None, Qt.WindowType.Window)
         self.cfg = cfg
+        self.save_failed.connect(self._on_save_failed)
+        cfg.on_save_error = self.save_failed.emit
         if cfg.get("ocr_engine") == "easyocr" and not easyocr_available():
             cfg["ocr_engine"] = "windows"       # EasyOCR выбран раньше, но его нет — переводить было бы нечем
             cfg.save()
@@ -1119,6 +1124,10 @@ class MainWindow(QWidget):
         self.mode_switch.select("live" if live else "shot")
         self.btn_zone.setEnabled(self.region is not None)
         self._sync_mini()
+
+    def _on_save_failed(self, err: str) -> None:
+        if hasattr(self, "status"):
+            self._set_status(tr("Настройки не сохранились: {0}", err), True, notify=True)
 
     def _set_status(self, text: str, error: bool = False, notify: bool = False) -> None:
         color = "#FFB4A8" if error else theme.CREAM

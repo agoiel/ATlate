@@ -187,20 +187,27 @@ class Pipeline:
             return out, alt
         raise err
 
-    def _grow_glossary(self, glossary: Glossary, terms: list[dict], texts: list[str]) -> None:
-        """Авто-глоссарий: добавить новые термины от ИИ-переводчика и сохранить файл."""
+    def _grow_glossary(self, glossary: Glossary, terms: list[dict], texts: list[str], tgt: str) -> None:
+        """Авто-глоссарий: добавить новые термины от ИИ-переводчика в тот глоссарий, которым
+        переводили (пока шёл запрос, в настройках могли выбрать другой), и сохранить файл."""
         with _GLOSSARY_LOCK:
-            fresh = self._load_glossary()        # файл мог поменяться, пока шёл перевод
-            if fresh is not None:
-                glossary = fresh
+            try:
+                glossary = Glossary.load(glossary.path)     # файл мог поменяться, пока шёл перевод
+            except (OSError, ValueError, TypeError):
+                return
+            # за время запроса пополнение могли выключить; встроенные и чужие по языку — не трогаем
+            if not glossary.auto or glossary.path.name.startswith("universal_") or not glossary.fits(tgt):
+                return
             added = glossary.add_terms(terms, texts)
             if not added:
                 return
             if not glossary.target_lang:
-                glossary.target_lang = self.cfg["target_lang"]     # термины переведены на этот язык
+                glossary.target_lang = tgt          # термины переведены на этот язык
             try:
                 glossary.save()
-                self._glossary_stamp = glossary.path.stat().st_mtime_ns
+                if glossary.path.name == self._glossary_name:
+                    self._glossary_stamp = glossary.path.stat().st_mtime_ns
+                    self.glossary = glossary
             except OSError:
                 return
         self.glossary_added += len(added)
@@ -239,6 +246,8 @@ class Pipeline:
         names = {c: i18n.lower(languages.src(c)["name"].split(" (")[0]) for c in cands}
         self._auto_note = tr("Язык: ") + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
             + f" → {names.get(best, tr('не определён'))}"
+        if best == "latin" and languages.is_latin(current):
+            best = current      # выбранный язык на латинице точнее, чем «язык определит переводчик»
         if best is None:
             # текста слишком мало; но язык без установленного распознавания оставлять нельзя
             usable = current in cands or (languages.is_latin(current) and "latin" in cands)
@@ -522,18 +531,23 @@ class Pipeline:
         req.collect_terms = bool(glossary and glossary.auto and tor.uses_llm
                                  and not (self._glossary_name or "").startswith("universal_"))
 
+        fallback = False
         try:
             out = tor.translate(req)
         except TranslateError as e:
             out, tor = self._fallback(req, e)
-        if tor.detected:
-            self.last_detected = tor.detected
-        if req.collect_terms and tor.terms:
-            self._grow_glossary(glossary, tor.terms, texts)
+            fallback = True
+        if req.detected:
+            self.last_detected = req.detected
+        if req.collect_terms and req.terms:
+            self._grow_glossary(glossary, req.terms, texts, req.tgt)
         for b, t in zip(bubbles, out):
             b.translation = t
             if t:
-                self.cache[self._cache_key(b.text)] = t
+                # перевод запасного переводчика в кэш не идёт: когда выбранный снова заработает,
+                # эти реплики переведёт он
+                if not fallback:
+                    self.cache[self._cache_key(b.text)] = t
                 self.history.append((b.text, t))
         while len(self.cache) > 3000:
             self.cache.popitem(last=False)

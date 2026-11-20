@@ -28,7 +28,7 @@ from PIL import Image  # noqa: E402
 from app import autolang, config, languages  # noqa: E402
 from app import pipeline as pipeline_module  # noqa: E402
 from app.glossary import Glossary, GlossaryEntry  # noqa: E402
-from app.models import Box, TextLine  # noqa: E402
+from app.models import Box, PageResult, TextLine  # noqa: E402
 from app.ocr.base import OcrBackend  # noqa: E402
 from app.ocr.windows_ocr import find_ocr_tag  # noqa: E402
 from app.translators import TRANSLATORS  # noqa: E402
@@ -82,8 +82,9 @@ def capture(name: str, src: str):
         return FakeResponse(REPLIES[name])
 
     tr._request = fake
-    res = tr.translate(TranslateRequest(["Hola"], src, "ru"))
-    return seen, res, tr.detected
+    req = TranslateRequest(["Hola"], src, "ru")
+    res = tr.translate(req)
+    return seen, res, req.detected
 
 
 def source_param(name: str, seen: dict):
@@ -145,6 +146,26 @@ def ocr_and_detect() -> None:
     got, _ = autolang.choose({"ko": "", "ja": "", "zh": "", "zh-tw": "",
                               "latin": "Selamat pagi, apa kabar hari ini teman"}, "ko")
     check("Авто-язык: текст на латинице — язык определит переводчик", got == "latin", f"→ {got}")
+    for cur in ("en", "es"):
+        got, _ = autolang.choose({"ko": "", "ja": "", "zh": "", "zh-tw": "",
+                                  "latin": "Where are you going, I told you to wait here"}, cur)
+        check(f"Авто-язык: латиница при выбранном {cur} — {cur} остаётся", got == cur, f"→ {got}")
+    # распознаватель только для латиницы (стоит лишь английский пакет OCR): выбранный английский не сбивается
+    from app import pipeline as _pl
+
+    class _OnlyLatin:
+        supports_parallel = False
+
+        def available_languages(self, codes):
+            return ["latin"]
+    cfg_one = config.Config(out / "config_only_latin.json")
+    cfg_one["source_lang"] = "en"
+    pipe_one = _pl.Pipeline(cfg_one)
+    pipe_one._ocr, pipe_one._ocr_name = _OnlyLatin(), cfg_one["ocr_engine"]
+    res_one = PageResult()
+    got = pipe_one._pick_language(None, "en", res_one)
+    check("Авто-язык: стоит только распознавание латиницы — английский остаётся",
+          got == "en" and cfg_one["source_lang"] == "en", f"→ {got}")
     check("названия языков от переводчиков", [languages.name_of(c) for c in ("ES", "pt-BR", "tl", "xx")]
           == ["Испанский", "Португальский", "Филиппинский", "xx"])
 
@@ -178,8 +199,7 @@ class FakeLLM(Translator):
 
     def translate(self, req):
         self.requests.append(req)
-        self.terms = TERMS[self.page] if req.collect_terms else []
-        self.detected = ""
+        req.terms = list(TERMS[self.page]) if req.collect_terms else []
         return [f"<{t[:4]}>" for t in req.texts]
 
 
@@ -295,6 +315,47 @@ def glossary() -> None:
     (gdir / "mine.json").write_text('{"name": "мой", "entries": []}', encoding="utf-8")
     check("свой глоссарий без поля подходит для любого языка",
           Glossary.load(gdir / "mine.json").fits("en") and Glossary.load(gdir / "mine.json").fits("ru"))
+
+    # пока шёл запрос, выбрали другой глоссарий: термины — в тот, которым переводили
+    g = Glossary.load(gdir / "title.json")
+    g.auto = True
+    g.save()
+    cfg["glossary"] = "title.json"
+    uni_before = (gdir / "universal_ko.json").read_bytes()
+
+    class Switcher(FakeLLM):
+        def translate(self, req):
+            cfg["glossary"] = "universal_ko.json"        # пользователь переключил глоссарий
+            req.terms = [{"source": "서연", "target": "Соён", "note": ""}] if req.collect_terms else []
+            return [f"<{t[:4]}>" for t in req.texts]
+    pipe._translator = Switcher({})
+    pipe.cache.clear()
+    ocr.lines = ["서연은 웃었다."]
+    pipe.process(img)
+    grown = [e.source for e in Glossary.load(gdir / "title.json").entries]
+    check("глоссарий сменили посреди запроса: термины ушли в тот, которым переводили",
+          "서연" in grown and (gdir / "universal_ko.json").read_bytes() == uni_before, f"{grown[-2:]}")
+    cfg["glossary"] = "title.json"
+
+    # Студия переводит одним переводчиком в нескольких потоках: итоги у каждого запроса свои
+    import threading
+    import time as _time
+
+    from app.translators.llm import LLMTranslator
+
+    class Slow(LLMTranslator):
+        def _ask(self, req):
+            _time.sleep(0.2)
+            return [t for t in req.texts], "", [{"source": t, "target": t} for t in req.texts]
+    one = Slow({})
+    reqs = [TranslateRequest([f"a{i}", f"b{i}"], "ko", "ru", collect_terms=True) for i in range(4)]
+    ths = [threading.Thread(target=one.translate, args=(r,)) for r in reqs]
+    for t in ths:
+        t.start()
+    for t in ths:
+        t.join()
+    check("одновременные переводы одним переводчиком: термины не путаются",
+          all([x["source"] for x in r.terms] == r.texts for r in reqs), str([len(r.terms) for r in reqs]))
     pipe._translator = llm
 
     # латиница: ИИ просят определить язык, программа показывает, какой
@@ -429,9 +490,10 @@ def services() -> None:
 
         texts = [f"line {i}" for i in range(10)]
         tr = FakeClaude({"api_key": "k"})
-        res = tr.translate(TranslateRequest(texts, "en", "ru", collect_terms=True))
+        req = TranslateRequest(texts, "en", "ru", collect_terms=True)
+        res = tr.translate(req)
         check("ИИ: оборванный ответ — страница переведена по частям, порядок верный",
-              res == [f"<{t}>" for t in texts] and len(tr.terms) == 10, f"запросы по {calls}")
+              res == [f"<{t}>" for t in texts] and len(req.terms) == 10, f"запросы по {calls}")
         calls.clear()
 
         class Short(ClaudeTranslator):
@@ -481,6 +543,7 @@ def services() -> None:
         check("бесплатный переводчик не ответил — перевёл другой бесплатный",
               got == ["[Я] Where are you going?"] and "перевёл Яндекс" in r.fallback and not r.error,
               r.fallback or r.error)
+        check("перевод запасного переводчика не кэшируется за выбранным", not pipe.cache, f"{len(pipe.cache)}")
         cfg["free_fallback"] = False
         pipe.cache.clear()
         r = pipe.process(img)
@@ -532,14 +595,47 @@ def storage() -> None:
     bad = config.Config(root / "x.json")
     (root / "blocker").write_text("", encoding="utf-8")     # обычный файл вместо папки: создать её нельзя ни в одной системе
     bad.path = root / "blocker" / "config.json"
+    told: list[str] = []
+    bad.on_save_error = told.append
     bad.save()
     check("сохранить не удалось — программа не падает", bool(bad.save_error))
+    check("о неудачном сохранении сообщается окну", told == [bad.save_error])
+
+
+def editor_merge() -> None:
+    """Редактор глоссария открыт, а перевод в фоне пополняет тот же файл: при сохранении
+    новые записи не теряются, а удалённые в редакторе не возвращаются."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui.glossary_editor import GlossaryEditor
+    app = QApplication.instance() or QApplication([])
+    path = out / "editor_merge.json"
+    Glossary(name="t", source_lang="ko", auto=True, entries=[
+        GlossaryEntry("민준", "Минджун", "", True), GlossaryEntry("서연", "Соён", "", True)]).save(path)
+    ed = GlossaryEditor(path)
+    ed.accept = lambda: None
+    # пока редактор открыт, авто-глоссарий добавил термин
+    g = Glossary.load(path)
+    g.entries.append(GlossaryEntry("헌터", "охотник", "", True))
+    g.save()
+    # в редакторе удалили «서연» и сохранили
+    for r in range(ed.table.rowCount()):
+        if ed.table.item(r, 0).text() == "서연":
+            ed.table.removeRow(r)
+            break
+    ed._save()
+    app.processEvents()
+    got = [e.source for e in Glossary.load(path).entries]
+    check("редактор: записи, добавленные в фоне, не теряются", "헌터" in got, f"{got}")
+    check("редактор: удалённая запись не возвращается", "서연" not in got and "민준" in got, f"{got}")
 
 
 def main() -> int:
     translators()
     services()
     storage()
+    editor_merge()
     ocr_and_detect()
     glossary()
     glossary_speed()

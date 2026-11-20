@@ -255,13 +255,15 @@ class Pipeline(private val ctx: Context) {
         val texts = bubbles.map { it.text }
         RateLimit.intervalMs = (s.requestIntervalSec.coerceIn(0f, 30f) * 1000).toLong()
         val tr = Translators.create(s)
+        // файл глоссария запоминаем: пока идёт запрос, в настройках могут выбрать другой
+        val glossFile = s.glossary
         // глоссарий на другой язык не применяется: например, встроенный русский при переводе на английский
-        val glossary = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }?.takeIf { it.fits(s.targetLang) }
+        val glossary = glossFile.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }?.takeIf { it.fits(s.targetLang) }
         val found = glossary?.find(texts) ?: emptyList()
         val anchored = if (glossary != null && !tr.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
         val n = s.contextSize
         // авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
-        val collect = glossary != null && glossary.auto && tr.usesLlm && !s.glossary.startsWith("universal_")
+        val collect = glossary != null && glossary.auto && tr.usesLlm && !glossFile.startsWith("universal_")
         val req = TranslateRequest(
             texts = texts, src = src, tgt = tgt,
             history = if (n > 0) history.toList().takeLast(n) else emptyList(),
@@ -269,20 +271,23 @@ class Pipeline(private val ctx: Context) {
             screen = s.contentMode == "screen",
             collectTerms = collect,
         )
+        var usedFallback = false
         val out = try {
             tr.translate(req)
         } catch (e: TranslateException) {
+            usedFallback = true
             fallback(req, s, tr, e)
         }
         if (req.detected.isNotBlank()) lastDetected = req.detected
         if (collect && req.terms.isNotEmpty()) {
-            // файл перечитываем: его могли изменить в редакторе, пока шёл перевод
-            val fresh = GlossaryStore.load(ctx, s.glossary) ?: glossary
-            val added = fresh!!.addTerms(req.terms, texts)
-            if (added.isNotEmpty()) {
-                if (fresh.targetLang.isBlank()) fresh.targetLang = s.targetLang     // термины переведены на этот язык
+            // тот же файл, которым переводили, перечитываем: его могли изменить в редакторе,
+            // а пополнение — выключить, пока шёл перевод
+            val fresh = GlossaryStore.load(ctx, glossFile)?.takeIf { it.auto && it.fits(req.tgt.code) }
+            val added = fresh?.addTerms(req.terms, texts).orEmpty()
+            if (fresh != null && added.isNotEmpty()) {
+                if (fresh.targetLang.isBlank()) fresh.targetLang = req.tgt.code     // термины переведены на этот язык
                 try {
-                    GlossaryStore.save(ctx, s.glossary, fresh)
+                    GlossaryStore.save(ctx, glossFile, fresh)
                     glossaryAdded += added.size
                 } catch (_: Exception) {
                 }
@@ -292,7 +297,8 @@ class Pipeline(private val ctx: Context) {
             val t = out.getOrNull(i).orEmpty()
             b.translation = t
             if (t.isNotBlank()) {
-                cache[key(s, b.text)] = t
+                // перевод запасного переводчика в кэш не идёт: когда выбранный снова заработает, переведёт он
+                if (!usedFallback) cache[key(s, b.text)] = t
                 history.addLast(b.text to t)
                 while (history.size > Title.MAX_HISTORY) history.removeFirst()
             }

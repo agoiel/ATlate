@@ -190,10 +190,12 @@ def prepare_page(pipeline: Pipeline, project: Project, page: Page, retranslate: 
     page.status = "error" if page.error else "done"
 
 
-def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False) -> Rendered:
-    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать."""
+def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False,
+                 lang: str = "") -> Rendered:
+    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать.
+    lang — язык перевода (словарь переносов); по умолчанию — из настроек конвейера."""
     prepare_page(pipeline, project, page, retranslate)
-    return render(project, page)
+    return render(project, page, lang=lang or pipeline.cfg.get("target_lang", ""))
 
 
 def export_page(project: Project, page: Page, rendered: Rendered | None = None, lang: str = "") -> Path:

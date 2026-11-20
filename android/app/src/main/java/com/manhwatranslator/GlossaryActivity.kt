@@ -29,6 +29,8 @@ class GlossaryActivity : Activity() {
     }
 
     private var file: String? = null
+    /** Записи, которые были в файле при открытии (ключи терминов). */
+    private var opened: Set<String> = emptySet()
     private lateinit var settings: Settings
     private lateinit var ui: Ui
     private lateinit var nameField: Field
@@ -43,6 +45,7 @@ class GlossaryActivity : Activity() {
         settings = Settings(this)
         file = intent.getStringExtra(EXTRA_FILE)
         val g = file?.let { GlossaryStore.load(this, it) } ?: Glossary("", settings.sourceLang)
+        opened = g.entries.map { Glossary.key(it.source) }.toHashSet()
         val c = T.c
 
         val page = ui.vertical().apply { setBackgroundColor(c.bg) }
@@ -131,11 +134,20 @@ class GlossaryActivity : Activity() {
             nameField.edit.requestFocus()
             return
         }
-        val entries = Glossary.parseText(bodyField.edit.text.toString())
+        val entries = Glossary.parseText(bodyField.edit.text.toString()).toMutableList()
         val target = file ?: GlossaryStore.fileNameFor(this, name)
         // «пополнять сам», язык оригинала и язык перевода глоссария сохраняются;
         // пометку [авто] у записи можно стереть — тогда она подтверждена
         val old = file?.let { GlossaryStore.load(this, it) }
+        // пока редактор был открыт, авто-глоссарий мог пополниться (перевод шёл в фоне): эти записи
+        // не теряем; удалённые здесь записи были в файле при открытии — они не возвращаются
+        if (old != null) {
+            val have = entries.map { Glossary.key(it.source) }.toHashSet()
+            for (e in old.entries) {
+                val k = Glossary.key(e.source)
+                if (e.auto && k !in opened && have.add(k)) entries.add(e)
+            }
+        }
         GlossaryStore.save(this, target, Glossary(name, old?.sourceLang?.ifBlank { null } ?: settings.sourceLang, entries,
             old?.auto ?: false, old?.targetLang ?: ""))
         settings.glossary = target

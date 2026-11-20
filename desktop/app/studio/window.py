@@ -1165,20 +1165,20 @@ class StudioWindow(QWidget):
         self._changed(True)
 
     # ---------------------------------------------------------------- фоновые задачи блоков
-    def _run_task(self, fn, on_done, label: str) -> None:
+    def _run_task(self, fn, on_done, label: str, block_id: str = "") -> None:
         self._task_seq += 1
-        self._tasks[self._task_seq] = (on_done, label)
+        self._tasks[self._task_seq] = (on_done, label, block_id)
         self.task_pool.start(_TaskJob(self.task_signals, self._task_seq, fn))
 
     def _on_task_done(self, token: int, result) -> None:
-        on_done, _label = self._tasks.pop(token, (None, ""))
+        on_done, _label, _bid = self._tasks.pop(token, (None, "", ""))
         if on_done is not None:
             on_done(result)
 
     def _on_task_failed(self, token: int, tb: str) -> None:
-        _on_done, label = self._tasks.pop(token, (None, ""))
+        _on_done, label, bid = self._tasks.pop(token, (None, "", ""))
         self.last_error = tb
-        self._busy_blocks.clear()
+        self._busy_blocks.discard(bid)      # остальные блоки ещё в работе
         self._status(tr("{0}: ошибка — ", label) + tb.strip().splitlines()[-1])
 
     def _add_block(self, box: Box) -> None:
@@ -1237,7 +1237,7 @@ class StudioWindow(QWidget):
             self._status(err or (tr("Блок добавлен.") if b.source else
                                  tr("Текст в рамке не распознался — впишите оригинал или перевод вручную.")))
 
-        self._run_task(work, done, tr("Новый блок"))
+        self._run_task(work, done, tr("Новый блок"), b.id)
 
     def _delete_block(self, bid: str) -> None:
         page = self._page()
@@ -1269,7 +1269,7 @@ class StudioWindow(QWidget):
             self._status(err or tr("Блок переведён заново."))
 
         # запрос к переводчику — в фоне: окно не замирает, пока ждём ответ
-        self._run_task(lambda: engine.translate(pipeline, [tmp], force=True), done, tr("Перевод блока"))
+        self._run_task(lambda: engine.translate(pipeline, [tmp], force=True), done, tr("Перевод блока"), bid)
 
     # ---------------------------------------------------------------- отрисовка
     def _render_now(self) -> None:

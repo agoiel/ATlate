@@ -116,8 +116,8 @@ def choose(texts: dict[str, str], current: str) -> tuple[str | None, dict[str, f
         return best, scores
     if latin and en >= MIN_LETTERS:
         # латиница: какой именно это язык (английский, испанский…), по буквам не понять —
-        # его определит переводчик
-        return latin, scores
+        # его определит переводчик. Но если язык на латинице уже выбран — он и остаётся
+        return (current if current in LATIN else latin), scores
     return None, scores
 
 

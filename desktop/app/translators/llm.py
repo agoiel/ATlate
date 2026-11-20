@@ -133,7 +133,7 @@ class _Incomplete(Exception):
 
 def _part(req: TranslateRequest, a: int, b: int) -> TranslateRequest:
     return dataclasses.replace(req, texts=req.texts[a:b],
-                               anchored=req.anchored[a:b] if req.anchored else None)
+                               anchored=req.anchored[a:b] if req.anchored else None, detected="", terms=[])
 
 
 class LLMTranslator(Translator):
@@ -149,19 +149,21 @@ class LLMTranslator(Translator):
     MAX_SPLIT = 3           # не больше трёх делений: 8 частей
 
     def translate(self, req: TranslateRequest) -> list[str]:
-        self.detected, self.terms = "", []
-        return self._split(req, 0)
+        req.detected, req.terms = "", []
+        return self._split(req, req, 0)
 
-    def _split(self, req: TranslateRequest, depth: int) -> list[str]:
+    def _split(self, part: TranslateRequest, req: TranslateRequest, depth: int) -> list[str]:
+        """part — что переводим сейчас (вся страница или её часть), req — исходный запрос для итогов."""
         try:
-            out, detected, terms = self._ask(req)
+            out, detected, terms = self._ask(part)
         except _Incomplete as e:
-            if len(req.texts) < 2 or depth >= self.MAX_SPLIT:
+            if len(part.texts) < 2 or depth >= self.MAX_SPLIT:
                 raise TranslateError(f"{self.title}: {e}") from None
-            mid = len(req.texts) // 2
-            return self._split(_part(req, 0, mid), depth + 1) + self._split(_part(req, mid, len(req.texts)), depth + 1)
-        self.detected = detected or self.detected
-        self.terms += terms
+            mid = len(part.texts) // 2
+            return (self._split(_part(part, 0, mid), req, depth + 1)
+                    + self._split(_part(part, mid, len(part.texts)), req, depth + 1))
+        req.detected = detected or req.detected
+        req.terms += terms
         return out
 
     def _ask(self, req: TranslateRequest) -> tuple[list[str], str, list[dict]]:

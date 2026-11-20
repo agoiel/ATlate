@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QHeaderVi
                                QTableWidgetItem, QVBoxLayout)
 
 from ..config import GLOSSARY_DIR
-from ..glossary import Glossary, GlossaryEntry
+from ..glossary import Glossary, GlossaryEntry, _key
 from ..i18n import tr
 
 
@@ -42,6 +42,7 @@ class GlossaryEditor(QDialog):
         super().__init__(parent)
         self.path = Path(path)
         self.glossary = Glossary.load(self.path)
+        self._opened = {_key(e.source) for e in self.glossary.entries}     # что было в файле при открытии
         self.setWindowTitle(tr("Глоссарий — {0}", self.glossary.title))
         self.resize(720, 520)
 
@@ -144,11 +145,28 @@ class GlossaryEditor(QDialog):
             mark = self.table.item(r, 3)
             if vals[0] and vals[1]:
                 entries.append(GlossaryEntry(*vals, auto=bool(mark and mark.text())))
-        self.glossary.name = self.name_edit.text().strip() or self.glossary.name
-        self.glossary.entries = entries
-        try:
-            self.glossary.save(self.path)
-        except OSError as e:
-            QMessageBox.warning(self, tr("Ошибка"), tr("Не удалось сохранить: {0}", e))
-            return
+        from ..pipeline import _GLOSSARY_LOCK
+        with _GLOSSARY_LOCK:
+            # пока редактор был открыт, авто-глоссарий мог пополниться (Live, Студия): эти записи
+            # не теряем; удалённые здесь записи были в файле при открытии — они не возвращаются
+            try:
+                fresh = Glossary.load(self.path)
+            except (OSError, ValueError):
+                fresh = None
+            if fresh is not None:
+                have = {_key(e.source) for e in entries}
+                for e in fresh.entries:
+                    k = _key(e.source)
+                    if e.auto and k not in self._opened and k not in have:
+                        entries.append(e)
+                        have.add(k)
+                self.glossary.auto = fresh.auto      # «пополнять сам» переключают в главном окне
+                self.glossary.target_lang = self.glossary.target_lang or fresh.target_lang
+            self.glossary.name = self.name_edit.text().strip() or self.glossary.name
+            self.glossary.entries = entries
+            try:
+                self.glossary.save(self.path)
+            except OSError as e:
+                QMessageBox.warning(self, tr("Ошибка"), tr("Не удалось сохранить: {0}", e))
+                return
         self.accept()

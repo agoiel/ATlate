@@ -107,7 +107,8 @@ class _WindowsHotkeys:
 
         from PySide6.QtCore import QAbstractNativeEventFilter, QCoreApplication
 
-        self._user32 = ctypes.windll.user32
+        # своя копия user32 с use_last_error: код ошибки читается надёжно (ctypes.get_last_error)
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.RegisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT)
         self._user32.RegisterHotKey.restype = wintypes.BOOL
         self._user32.UnregisterHotKey.argtypes = (wintypes.HWND, ctypes.c_int)
@@ -146,7 +147,7 @@ class _WindowsHotkeys:
             if self._user32.RegisterHotKey(None, hid, mods | MOD_NOREPEAT, vk):
                 self._ids[hid] = fn
             else:
-                code = ctypes.GetLastError()
+                code = ctypes.get_last_error()
                 errors.append(tr("сочетание {0} уже занято другой программой",
                                  combo) if code == ERROR_HOTKEY_ALREADY_REGISTERED
                               else tr("не удалось зарегистрировать {0} (ошибка Windows {1})", combo, code))
