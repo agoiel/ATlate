@@ -44,6 +44,7 @@ class TranslateRequest:
     glossary: list[GlossaryEntry] = field(default_factory=list)     # термины, найденные на странице
     anchored: list[str] | None = None     # тексты с подставленными якорями (для обычных переводчиков)
     screen: bool = False                  # обычный текст с экрана, а не облака манхвы
+    collect_terms: bool = False           # ИИ-переводчик заодно называет новые имена и термины (авто-глоссарий)
 
 
 class Translator:
@@ -54,6 +55,9 @@ class Translator:
     def __init__(self, settings: dict):
         self.settings = settings or {}
         self.http = requests.Session()
+        # Итоги последнего перевода, кроме самих переводов:
+        self.detected = ""                # язык оригинала, если переводчик определял его сам (код ISO)
+        self.terms: list[dict] = []       # новые имена и термины от ИИ-переводчика (для авто-глоссария)
 
     def translate(self, req: TranslateRequest) -> list[str]:
         raise NotImplementedError

@@ -60,7 +60,30 @@ SOURCE_LANGUAGES: dict[str, dict] = {
         "joiner": " ",
         "direction": "ltr",
     },
+    # Языки на латинице. Распознаются той же латинской моделью, что и английский: в Windows подойдёт
+    # пакет распознавания самого языка, а если его нет — любой установленный пакет латиницы (обычно английский).
+    "de": {"name": "Немецкий", "windows": ["de"], "easyocr": ["de", "en"], "google": "de", "deepl": "DE",
+           "microsoft": "de", "llm": "German", "joiner": " ", "direction": "ltr"},
+    "es": {"name": "Испанский", "windows": ["es"], "easyocr": ["es", "en"], "google": "es", "deepl": "ES",
+           "microsoft": "es", "llm": "Spanish", "joiner": " ", "direction": "ltr"},
+    "pt": {"name": "Португальский", "windows": ["pt"], "easyocr": ["pt", "en"], "google": "pt", "deepl": "PT",
+           "microsoft": "pt", "llm": "Portuguese", "joiner": " ", "direction": "ltr"},
+    "id": {"name": "Индонезийский", "windows": ["id"], "easyocr": ["id", "en"], "google": "id", "deepl": "ID",
+           "microsoft": "id", "llm": "Indonesian", "joiner": " ", "direction": "ltr"},
+    # DeepL филиппинский не знает (пустой код — переводчик этот язык не поддерживает)
+    "fil": {"name": "Филиппинский", "windows": ["fil", "tl"], "easyocr": ["tl", "en"], "google": "tl", "deepl": "",
+            "microsoft": "fil", "llm": "Filipino (Tagalog)", "joiner": " ", "direction": "ltr"},
+    # Любой другой текст на латинице: язык определяет сам переводчик (auto — «определи сам»)
+    "latin": {"name": "Латиница (язык определит переводчик)", "windows": ["en"], "easyocr": ["en"],
+              "google": "auto", "deepl": "auto", "microsoft": "auto",
+              "llm": "the original language (detect it from the text)", "joiner": " ", "direction": "ltr"},
 }
+
+# Языки, которые пишутся латиницей (их читает одна и та же модель распознавания)
+LATIN = {"en", "de", "es", "pt", "id", "fil", "latin"}
+# Что пробует автоопределение языка: по одному языку на письменность (латиница — одна на всех)
+PROBE = ["ko", "ja", "zh", "zh-tw", "latin"]
+AUTO = "auto"       # код «пусть переводчик определит язык сам»
 
 # Языки перевода
 # Языки перевода. Пустой код — этот переводчик язык не поддерживает.
@@ -95,7 +118,11 @@ _LATIN = _re.compile(r"[A-Za-z\u00C0-\u024F]")
 
 
 def detect(text: str, selected: str) -> str:
-    """Язык облака по символам. Только латиница — английский, даже если выбран корейский."""
+    """Язык облака по символам.
+
+    Латиница: если выбран язык на латинице — он; иначе (вставка на латинице в корейской манхве и т.п.)
+    язык определит переводчик. По буквам немецкий от испанского не отличить.
+    """
     h, k = len(_HANGUL.findall(text)), len(_KANA.findall(text))
     c, latin = len(_HAN.findall(text)), len(_LATIN.findall(text))
     if h and h >= k:
@@ -105,8 +132,28 @@ def detect(text: str, selected: str) -> str:
     if c:
         return selected if selected in ("ja", "zh", "zh-tw") else "zh"
     if latin >= 2:
-        return "en"
+        return selected if selected in LATIN else "latin"
     return selected
+
+
+def is_latin(code: str) -> bool:
+    return code in LATIN
+
+
+def name_of(code: str) -> str:
+    """Название языка по коду — нашему или ISO (его возвращают переводчики, когда определяют язык сами)."""
+    code = (code or "").strip()
+    low = code.lower()
+    for table in (SOURCE_LANGUAGES, TARGET_LANGUAGES):
+        if low in table:
+            return table[low]["name"].split(" (")[0]
+    base = low.replace("_", "-").split("-")[0]
+    if base == "tl":
+        base = "fil"
+    for table in (SOURCE_LANGUAGES, TARGET_LANGUAGES):
+        if base in table:
+            return table[base]["name"].split(" (")[0]
+    return code
 
 
 def src(code: str) -> dict:

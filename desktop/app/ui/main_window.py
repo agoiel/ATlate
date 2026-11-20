@@ -563,13 +563,91 @@ class MainWindow(QWidget):
         edit.clicked.connect(self.edit_glossary)
         new_g = pill("Новый", "tonal", "plus")
         new_g.clicked.connect(self.new_glossary)
+        auto_g = pill("Авто-глоссарий", "tonal", "bolt",
+                      "Новый глоссарий, который ИИ-переводчик пополняет сам: имена и термины из переводов")
+        auto_g.clicked.connect(self.new_auto_glossary)
         folder = pill("Папка", "tonal", "folder", "Открыть папку с глоссариями")
         folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(GLOSSARY_DIR))))
-        for b in (edit, new_g, folder):
+        for b in (edit, new_g, auto_g, folder):
             grow.addWidget(b)
         card.add(ghost)
+        self.auto_gloss = SwitchRow("Пополнять глоссарий сам",
+                                    "ИИ-переводчик добавляет новые имена и термины, повторы пропускаются", False)
+        self.auto_gloss.toggled.connect(self._set_glossary_auto)
+        card.add(self.auto_gloss)
+        self.auto_gloss_hint = caption("")
+        card.add(self.auto_gloss_hint)
         self._fill_titles()
         return card
+
+    # ---------------------------------------------------------------- авто-глоссарий
+    def _current_glossary(self) -> Glossary | None:
+        name = self.cfg.get("glossary") or ""
+        if not name:
+            return None
+        try:
+            return Glossary.load(GLOSSARY_DIR / name)
+        except (OSError, ValueError):
+            return None
+
+    def _refresh_auto_glossary(self) -> None:
+        """Переключатель «Пополнять сам» — по текущему глоссарию; подсказка — почему он недоступен."""
+        if not hasattr(self, "auto_gloss"):
+            return
+        name = self.cfg.get("glossary") or ""
+        g = self._current_glossary()
+        universal = name.startswith("universal_")
+        self.auto_gloss.switch.blockSignals(True)
+        self.auto_gloss.switch.setChecked(bool(g and g.auto and not universal))
+        self.auto_gloss.switch.blockSignals(False)
+        self.auto_gloss.setEnabled(g is not None and not universal)
+        from ..translators import TRANSLATORS
+        llm = getattr(TRANSLATORS.get(self.cfg["translator"]), "uses_llm", False)
+        if g is None:
+            hint = "Выберите или создайте глоссарий — или нажмите «Авто-глоссарий»."
+        elif universal:
+            hint = "Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий»."
+        elif g.auto and not llm:
+            hint = ("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). "
+                    "С выбранным переводчиком глоссарий только используется.")
+        elif g.auto:
+            hint = (f"Добавлено автоматически: {g.auto_count}. Такие записи помечены в редакторе — "
+                    "проверьте их и исправьте, если ИИ ошибся.")
+        else:
+            hint = ""
+        self.auto_gloss_hint.setText(hint)
+        self.auto_gloss_hint.setVisible(bool(hint))
+
+    def _set_glossary_auto(self, on: bool) -> None:
+        g = self._current_glossary()
+        if g is None or (self.cfg.get("glossary") or "").startswith("universal_"):
+            self._refresh_auto_glossary()
+            return
+        g.auto = on
+        try:
+            g.save()
+        except OSError as e:
+            self._set_status(f"Не удалось сохранить глоссарий: {e}", True)
+        self.pipeline.reload()
+        self._refresh_auto_glossary()
+
+    def new_auto_glossary(self) -> None:
+        """Новый пустой глоссарий, который пополняется сам; сразу выбирается для текущего тайтла."""
+        t = titles.load(self.cfg.get("active_title", ""))
+        path = new_glossary_file(self, self.cfg["source_lang"], default=t.name if t else "", auto=True)
+        if not path:
+            return
+        self.cfg["glossary"] = path.name
+        if t:
+            t.glossary = path.name
+            titles.save(t)
+        self._save_and_reload()
+        self._fill_titles()
+        from ..translators import TRANSLATORS
+        llm = getattr(TRANSLATORS.get(self.cfg["translator"]), "uses_llm", False)
+        self._set_status("Авто-глоссарий создан: новые имена и термины будут добавляться при переводе."
+                         if llm else "Авто-глоссарий создан. Чтобы он пополнялся, выберите ИИ-переводчик "
+                                     "(Gemini, Claude или OpenAI-совместимый).", notify=True)
 
     def _fill_titles(self) -> None:
         self._filling = True
@@ -590,11 +668,13 @@ class MainWindow(QWidget):
         for p in list_glossaries(GLOSSARY_DIR):
             try:
                 g = Glossary.load(p)
-                self.gloss_combo.addItem(f"{g.name or p.stem} · {len(g.entries)} зап.", p.name)
+                mark = " · авто" if g.auto else ""
+                self.gloss_combo.addItem(f"{g.name or p.stem} · {len(g.entries)} зап.{mark}", p.name)
             except (OSError, ValueError):
                 continue
         self.gloss_combo.setCurrentIndex(max(0, self.gloss_combo.findData(self.cfg.get("glossary", ""))))
         self._filling = False
+        self._refresh_auto_glossary()
 
     def _on_title_combo(self, _i: int) -> None:
         if getattr(self, "_filling", False):
@@ -618,6 +698,7 @@ class MainWindow(QWidget):
             t.glossary = self.cfg["glossary"]
             titles.save(t)
         self._save_and_reload()
+        self._refresh_auto_glossary()
 
     def _title_menu(self, anchor: QWidget) -> None:
         t = titles.load(self.cfg.get("active_title", ""))
@@ -899,6 +980,7 @@ class MainWindow(QWidget):
     def _set_translator(self, name: str) -> None:
         self._set("translator", name)
         self._render_keys()
+        self._refresh_auto_glossary()       # пополнение работает только с ИИ-переводчиками
 
     def _set_source(self, lang: str) -> None:
         if lang == "auto":
@@ -1281,6 +1363,11 @@ class MainWindow(QWidget):
         parts = [f"Переведено облаков: {n}"]
         if result.detected_lang:
             parts.append("язык: " + languages.src(result.detected_lang)["name"].split(" (")[0].lower())
+        if result.source_detected:
+            parts.append("язык определил переводчик: " + languages.name_of(result.source_detected).lower())
+        if result.glossary_added:
+            parts.append(f"в глоссарий добавлено: {result.glossary_added}")
+            self._fill_titles()         # число записей в списке глоссариев
         # технические подробности — только в режиме разработчика
         if self.cfg.get("dev_mode") and result.debug is not None:
             parts.append(result.debug.summary())

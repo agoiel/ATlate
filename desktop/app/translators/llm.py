@@ -27,7 +27,7 @@ Rules:
 - Always use the glossary translations for names and terms; inflect them according to {tgt} grammar.
 - Sound effects: translate briefly and expressively (e.g. "Бах!", "Шорх").
 - Do not add notes, explanations or quotes. Do not merge or split bubbles.
-- Answer ONLY with JSON: {{"translations": ["...", "..."]}} — exactly {n} strings in the same order."""
+{extra}- Answer ONLY with JSON: {answer} — exactly {n} translations in the same order."""
 
 
 SCREEN_PROMPT = """You translate text captured from a computer screen (apps, articles, chats, games, menus)
@@ -39,14 +39,30 @@ Rules:
 - Keep short UI labels short. Keep numbers, names, usernames, links and code as they are.
 - Always use the glossary translations for names and terms.
 - Do not add notes or explanations. Do not merge or split fragments.
-- Answer ONLY with JSON: {{"translations": ["...", "..."]}} — exactly {n} strings in the same order."""
+{extra}- Answer ONLY with JSON: {answer} — exactly {n} translations in the same order."""
+
+# Авто-глоссарий: модель заодно называет новые имена и термины. Отдельного запроса нет —
+# это часть того же ответа, поэтому пополнение глоссария почти ничего не стоит.
+TERMS_RULE = """- Glossary building: in "terms" list proper names (characters, places, organizations, skills, items, titles, ranks) and recurring special terms that appear in these lines but are NOT in the glossary above. For each give "source" — exactly as written in the original lines, in base form without grammatical particles or case endings; "target" — the {tgt} translation you used; "note" — for people: gender and who they are, up to 5 words; otherwise what it is (place, skill, item…). Never include common words, interjections, sound effects, ordinary phrases or whole sentences. If there are none, return an empty list.
+"""
+DETECT_RULE = """- The original language is not specified: detect it yourself and put its ISO 639-1 code into "source_language".
+"""
 
 
 def build_messages(req: TranslateRequest) -> tuple[str, str]:
     src_name = languages.src(req.src)["llm"]
     tgt_name = languages.tgt(req.tgt)["llm"]
     prompt = SCREEN_PROMPT if req.screen else SYSTEM_PROMPT
-    system = prompt.format(src=src_name, tgt=tgt_name, n=len(req.texts))
+    detect = languages.src(req.src)["google"] == languages.AUTO
+    extra, answer = "", ['"translations": ["...", "..."]']
+    if detect:
+        extra += DETECT_RULE
+        answer.append('"source_language": "xx"')
+    if req.collect_terms:
+        extra += TERMS_RULE.format(tgt=tgt_name)
+        answer.append('"terms": [{"source": "...", "target": "...", "note": "..."}]')
+    system = prompt.format(src=src_name, tgt=tgt_name, n=len(req.texts), extra=extra,
+                           answer="{" + ", ".join(answer) + "}")
 
     parts: list[str] = []
     if req.glossary:
@@ -65,8 +81,24 @@ def build_messages(req: TranslateRequest) -> tuple[str, str]:
     return system, "\n".join(parts)
 
 
+def parse_reply(raw: str, n: int) -> tuple[list[str], str, list[dict]]:
+    """Ответ модели → (переводы, язык оригинала, если модель определяла его сама, новые термины)."""
+    data = _load_json(raw)
+    detected, terms = "", []
+    if isinstance(data, dict):
+        detected = str(data.get("source_language") or "").strip()[:8]
+        raw_terms = data.get("terms")
+        if isinstance(raw_terms, list):
+            terms = [t for t in raw_terms if isinstance(t, dict)]
+    return _translations(data, n), detected, terms
+
+
 def parse_translations(raw: str, n: int) -> list[str]:
     """Достаёт список переводов из ответа модели, даже если вокруг JSON есть мусор."""
+    return _translations(_load_json(raw), n)
+
+
+def _load_json(raw: str):
     text = raw.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
     data = None
@@ -79,6 +111,10 @@ def parse_translations(raw: str, n: int) -> list[str]:
                 data = json.loads(m.group(0))
             except json.JSONDecodeError:
                 data = None
+    return data
+
+
+def _translations(data, n: int) -> list[str]:
     if isinstance(data, dict):
         data = data.get("translations") or next((v for v in data.values() if isinstance(v, list)), None)
     if not isinstance(data, list):
@@ -99,6 +135,7 @@ class GeminiTranslator(Translator):
         if not key:
             raise TranslateError("Gemini: укажите API-ключ в настройках (aistudio.google.com).")
         model = self.settings.get("model", "gemini-2.5-flash-lite").strip()
+        self.detected, self.terms = "", []
         system, user = build_messages(req)
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -113,7 +150,8 @@ class GeminiTranslator(Translator):
         except (KeyError, IndexError) as e:
             reason = data.get("promptFeedback", {}).get("blockReason", "")
             raise TranslateError(f"Gemini: пустой ответ {reason}".strip()) from e
-        return parse_translations(raw, len(req.texts))
+        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
+        return out
 
 
 class OpenAICompatTranslator(Translator):
@@ -130,6 +168,7 @@ class OpenAICompatTranslator(Translator):
         key = self.settings.get("api_key", "").strip()
         if key:
             headers["Authorization"] = f"Bearer {key}"
+        self.detected, self.terms = "", []
         system, user = build_messages(req)
         body = {
             "model": model,
@@ -142,7 +181,8 @@ class OpenAICompatTranslator(Translator):
             raw = r.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, ValueError) as e:
             raise TranslateError("Сервер вернул неожиданный ответ.") from e
-        return parse_translations(raw, len(req.texts))
+        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
+        return out
 
 
 class ClaudeTranslator(Translator):
@@ -157,6 +197,7 @@ class ClaudeTranslator(Translator):
         if not key:
             raise TranslateError("Claude: укажите API-ключ в настройках (platform.claude.com).")
         model = (self.settings.get("model") or "claude-haiku-5-5").strip()
+        self.detected, self.terms = "", []
         system, user = build_messages(req)
         r = self._post("https://api.anthropic.com/v1/messages",
                        headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
@@ -166,4 +207,5 @@ class ClaudeTranslator(Translator):
             raw = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
         except (KeyError, ValueError) as e:
             raise TranslateError("Claude: неожиданный ответ сервера.") from e
-        return parse_translations(raw, len(req.texts))
+        out, self.detected, self.terms = parse_reply(raw, len(req.texts))
+        return out

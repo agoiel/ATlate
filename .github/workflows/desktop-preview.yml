@@ -51,6 +51,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tools/test_resources.py ../preview/linux/resources
+      - name: Languages on Latin script, language detection by translators, auto glossary
+        working-directory: desktop
+        run: python tools/test_languages.py ../preview/linux/languages
       - uses: actions/upload-artifact@v4
         with:
           name: shots-linux

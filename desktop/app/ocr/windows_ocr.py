@@ -21,7 +21,13 @@ from .base import OcrBackend, OcrError, OcrLanguageMissing
 # Имена компонентов Windows с OCR для каждого языка
 OCR_CAPABILITY = {
     "ko": "ko-KR", "ja": "ja-JP", "zh": "zh-CN", "zh-tw": "zh-TW", "en": "en-US",
+    "de": "de-DE", "es": "es-ES", "pt": "pt-BR",
+    # для остальных языков на латинице хватает английского пакета
 }
+
+# Пакеты распознавания Windows, которые читают латиницу (по началу тега языка)
+LATIN_TAGS = ("en", "de", "es", "pt", "fr", "it", "nl", "pl", "cs", "sk", "sv", "da", "nb", "no", "fi",
+              "hu", "ro", "tr", "hr", "sl", "id", "ms", "ca", "fil", "tl", "vi")
 
 
 def capability_name(lang: str) -> str:
@@ -35,7 +41,11 @@ def available_ocr_tags() -> list[str]:
 
 
 def find_ocr_tag(lang: str, available: list[str]) -> str | None:
-    for want in (t.lower() for t in languages.src(lang)["windows"]):
+    """Пакет распознавания для языка: свой, а для языков на латинице — любой пакет латиницы."""
+    wants = [t.lower() for t in languages.src(lang)["windows"]]
+    if languages.is_latin(lang):
+        wants += ["en"] + [t for t in LATIN_TAGS if t != "en"]
+    for want in wants:
         for av in available:
             if av.lower() == want or av.lower().startswith(want + "-"):
                 return av

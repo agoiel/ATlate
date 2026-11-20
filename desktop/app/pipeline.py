@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
@@ -24,6 +25,9 @@ from .glossary import Glossary
 from .models import DebugInfo, PageResult, PassInfo
 from .ocr import OcrBackend, OcrError, OcrLanguageMissing, create_ocr, enhance
 from .translators import RateLimit, TranslateError, TranslateRequest, Translator, create_translator
+
+
+_GLOSSARY_LOCK = threading.Lock()   # глоссарий могут пополнять и главное окно, и Студия
 
 
 def _norm(text: str) -> str:
@@ -67,6 +71,9 @@ class Pipeline:
         self.history: deque[tuple[str, str]] = deque(maxlen=titles.MAX_HISTORY)
         self._title_id: str | None = None
         self._pool: ThreadPoolExecutor | None = None
+        self._glossary_stamp = 0
+        self.glossary_added = 0         # сколько терминов авто-глоссарий добавил за последний перевод
+        self.last_detected = ""         # язык, который определил сам переводчик (для текста на латинице)
         # автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
         self._auto_ok = False
         self._auto_note = ""
@@ -126,17 +133,40 @@ class Pipeline:
         return self._translator
 
     def _load_glossary(self) -> Glossary | None:
+        """Глоссарий из настроек. Перечитывается, если файл изменился (правка в редакторе,
+        пополнение из Студии или из главного окна)."""
         name = self.cfg.get("glossary") or ""
-        if name != self._glossary_name:
+        path = GLOSSARY_DIR / name
+        try:
+            stamp = path.stat().st_mtime_ns if name else 0
+        except OSError:
+            stamp = 0
+        if name != self._glossary_name or stamp != self._glossary_stamp:
             self._glossary_name = name
+            self._glossary_stamp = stamp
             self.glossary = None
-            path = GLOSSARY_DIR / name
-            if name and path.exists():
+            if name and stamp:
                 try:
                     self.glossary = Glossary.load(path)
                 except (OSError, ValueError):
                     self.glossary = None
         return self.glossary
+
+    def _grow_glossary(self, glossary: Glossary, terms: list[dict], texts: list[str]) -> None:
+        """Авто-глоссарий: добавить новые термины от ИИ-переводчика и сохранить файл."""
+        with _GLOSSARY_LOCK:
+            fresh = self._load_glossary()        # файл мог поменяться, пока шёл перевод
+            if fresh is not None:
+                glossary = fresh
+            added = glossary.add_terms(terms, texts)
+            if not added:
+                return
+            try:
+                glossary.save()
+                self._glossary_stamp = glossary.path.stat().st_mtime_ns
+            except OSError:
+                return
+        self.glossary_added += len(added)
 
     # ------------------------------------------------------------ автоопределение языка
     def reset_auto(self) -> None:
@@ -149,7 +179,8 @@ class Pipeline:
         Если уверенно сказать нельзя (текста мало), остаётся текущий язык.
         """
         ocr = self.ocr
-        cands = ocr.available_languages(list(languages.SOURCE_LANGUAGES))
+        # по одному языку на письменность: все языки на латинице читает одна и та же модель
+        cands = ocr.available_languages(list(languages.PROBE))
         if not cands:
             return current
         if len(cands) == 1:
@@ -173,7 +204,8 @@ class Pipeline:
             + f" → {names.get(best, 'не определён')}"
         if best is None:
             # текста слишком мало; но язык без установленного распознавания оставлять нельзя
-            best = current if current in cands else cands[0]
+            usable = current in cands or (languages.is_latin(current) and "latin" in cands)
+            best = current if usable else cands[0]
         if best != current:
             self.cfg["source_lang"] = best
             result.detected_lang = best
@@ -345,6 +377,7 @@ class Pipeline:
                 todo.append(b)
 
         if todo:
+            self.glossary_added, self.last_detected = 0, ""
             try:
                 # облака на разных языках переводятся отдельными запросами
                 groups: dict[str, list] = {}
@@ -355,6 +388,8 @@ class Pipeline:
             except TranslateError as e:
                 result.error = str(e)
             self._persist_title()
+            result.glossary_added = self.glossary_added
+            result.source_detected = self.last_detected
         result.timings["translate"] = time.perf_counter() - t2
         watch.mark("перевод")
         result.debug = debug()
@@ -442,8 +477,15 @@ class Pipeline:
             req.glossary = glossary.find(texts)
             if not tr.uses_llm and req.glossary:
                 req.anchored = [glossary.apply_anchors(t) for t in texts]
+        # авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
+        req.collect_terms = bool(glossary and glossary.auto and tr.uses_llm
+                                 and not (self._glossary_name or "").startswith("universal_"))
 
         out = tr.translate(req)
+        if tr.detected:
+            self.last_detected = tr.detected
+        if req.collect_terms and tr.terms:
+            self._grow_glossary(glossary, tr.terms, texts)
         for b, t in zip(bubbles, out):
             b.translation = t
             if t:
