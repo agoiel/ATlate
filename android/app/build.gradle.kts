@@ -15,6 +15,11 @@ android {
         targetSdk = 35
         versionCode = 9
         versionName = "0.6.6"
+        // только процессоры телефонов: офлайн-переводчик (ML Kit) везёт свой код под каждый процессор,
+        // а x86 нужен лишь эмуляторам и почти не встречается в телефонах
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // BuildConfig.VERSION_NAME — номер версии в окне настроек берётся из сборки
