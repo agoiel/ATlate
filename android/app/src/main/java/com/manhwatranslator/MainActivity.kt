@@ -38,6 +38,7 @@ import com.manhwatranslator.core.Settings
 import com.manhwatranslator.core.TitleStore
 import com.manhwatranslator.core.Translators
 import com.manhwatranslator.core.Updates
+import com.manhwatranslator.core.OfflineModels
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -303,6 +304,8 @@ class MainActivity : Activity() {
         // в режиме «Авто» показываем и язык, который сейчас найден
         srcPicker.setValue(if (s.autoLang) trf("Авто · %s", I18n.lower(name)) else name)
         tgtPicker.setValue(Languages.tgt(s.targetLang).name)
+        // у офлайн-переводчика список нужных языков зависит от выбранных
+        if (::keysBox.isInitialized && s.translator == "offline") selectTranslator("offline")
     }
 
     private fun pickSource() {
@@ -357,7 +360,8 @@ class MainActivity : Activity() {
             s.requestIntervalSec, 0.5f, 0f, 10f, { String.format(tr("%.1f с"), it) }) { s.requestIntervalSec = it },
             lp().margins(this, top = 12))
         card.addView(SwitchRow(this, tr("Запасные бесплатные переводчики"),
-            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным"), s.freeFallback) { s.freeFallback = it },
+            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным; нет интернета — офлайн, если языки скачаны"),
+            s.freeFallback) { s.freeFallback = it },
             lp().margins(this, top = 8))
         selectTranslator(s.translator)
         return card
@@ -436,7 +440,67 @@ class MainActivity : Activity() {
                 field(tr("API-ключ"), s.openaiKey, "sk-…", secret = true) { s.openaiKey = it }
                 field(tr("Модель"), s.openaiModel, "gpt-4o-mini") { s.openaiModel = it }
             }
+            "offline" -> buildOffline(::note)
         }
+    }
+
+    /** Офлайн-переводчик: какие языки скачаны, кнопка «Скачать языки», удаление. */
+    private fun buildOffline(note: (String) -> Unit) {
+        note(tr("Переводит прямо на телефоне, без интернета: в поездке, в метро, без VPN и лимитов. Качество — как у простого машинного перевода. Языки нужно один раз скачать, около 30 МБ каждый."))
+        val status = ui.caption("")
+        keysBox.addView(status, lp().margins(this, top = 10))
+        val dl = PillButton(this, tr("Скачать языки"), R.drawable.ic_download, PillStyle.TONAL, 44)
+        keysBox.addView(dl, lp().margins(this, top = 10))
+        val del = ui.text(tr("Удалить скачанные языки"), 14f, T.c.primary, Fonts.medium).apply {
+            isClickable = true
+            background = pressable(null, dpF(10f))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+        keysBox.addView(del, lp(LinearLayout.LayoutParams.WRAP_CONTENT).margins(this, top = 4))
+
+        val src = Languages.src(s.sourceLang)
+        val tgt = Languages.tgt(s.targetLang)
+        // нужные языки: оригинал и перевод (для «Латиницы» язык оригинала станет известен только при переводе)
+        val need = LinkedHashMap<String, String>()
+        OfflineModels.code(src.code)?.let { need[it] = I18n.lower(src.name.substringBefore(" (")) }
+        OfflineModels.code(tgt.code)?.let { need[it] = I18n.lower(tgt.name) }
+        fun refresh() {
+            OfflineModels.downloaded { have ->
+                if (isDestroyed) return@downloaded
+                val missing = need.filterKeys { it !in have }
+                status.text = when {
+                    OfflineModels.code(tgt.code) == null ->
+                        trf("Офлайн-переводчик не переводит на язык «%s» — выберите другой язык перевода.", tgt.name)
+                    src.code != Languages.LATIN && OfflineModels.code(src.code) == null ->
+                        trf("Офлайн-переводчик не переводит с языка «%s».", src.name)
+                    missing.isEmpty() && src.code == Languages.LATIN ->
+                        tr("Язык перевода скачан. Для «Латиницы» скачайте и язык оригинала: выберите его в списке «С языка».")
+                    missing.isEmpty() -> trf("Готово к работе без интернета: %s.", need.values.joinToString(", "))
+                    else -> trf("Нужно скачать: %s.", missing.values.joinToString(", "))
+                }
+                dl.visibility = if (missing.isEmpty()) View.GONE else View.VISIBLE
+                dl.isEnabled = true
+                del.visibility = if (have.any { it != "en" }) View.VISIBLE else View.GONE
+            }
+        }
+        dl.onClick {
+            val missing = need.keys.toList()
+            dl.isEnabled = false
+            status.text = tr("Скачиваю языки… Это займёт минуту-другую.")
+            OfflineModels.download(missing) { err ->
+                if (isDestroyed) return@download
+                if (err != null) toast(trf("Не удалось скачать языки: %s", err))
+                refresh()
+            }
+        }
+        del.setOnClickListener {
+            AlertDialog.Builder(this).setTitle(tr("Удалить скачанные языки?"))
+                .setMessage(tr("Перевод без интернета перестанет работать, пока языки не будут скачаны снова."))
+                .setPositiveButton(tr("Удалить")) { _, _ -> OfflineModels.deleteAll { if (!isDestroyed) refresh() } }
+                .setNegativeButton(tr("Отмена"), null)
+                .show()
+        }
+        refresh()
     }
 
     // ---------------------------------------------------------------- тайтл и глоссарий

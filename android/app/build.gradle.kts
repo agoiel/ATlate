@@ -67,4 +67,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
+    // перевод без интернета на телефоне (модели языков скачиваются по кнопке, ~30 МБ каждая)
+    implementation("com.google.mlkit:translate:17.0.3")
+    // какой язык у текста на латинице — для офлайн-перевода «Латиницы» (модель в сервисах Google Play)
+    implementation("com.google.android.gms:play-services-mlkit-language-id:17.0.0")
 }
