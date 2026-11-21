@@ -633,7 +633,7 @@ class MainWindow(QWidget):
 
     # ---------------------------------------------------------------- тайтл и глоссарий
     def _build_title(self) -> Card:
-        card = Card(tr("Тайтл"), tr("Контекст и глоссарий сохраняются для каждой манхвы"), "book")
+        card = Card(tr("Тайтл"), tr("Контекст, глоссарий, область и языки — свои у каждой манхвы"), "book")
         self.title_combo = Select()
         self.title_combo.currentIndexChanged.connect(self._on_title_combo)
         card.add(self._labeled(tr("Активный тайтл"), self.title_combo))
@@ -779,14 +779,49 @@ class MainWindow(QWidget):
         if getattr(self, "_filling", False):
             return
         tid = self.title_combo.currentData() or ""
+        self._switch_title(tid)
+
+    def _switch_title(self, tid: str) -> None:
+        """Сменить тайтл: уходящий запоминает свою область, режим и языки, выбранный — восстанавливает свои."""
+        old = self.cfg.get("active_title", "")
+        if old and old != tid:
+            titles.remember(old, self.cfg)
         self.cfg["active_title"] = tid
         self.pipeline.reset_auto()      # у другого тайтла язык может быть другим
         t = titles.load(tid)
+        changed = False
         if t:
             self.cfg["glossary"] = t.glossary
+            changed = self._apply_profile(t.profile)
         self._save_and_reload()
-        self._fill_titles()
+        if changed:
+            # области, режим и языки показаны в разных карточках — проще собрать окно заново
+            QTimer.singleShot(0, self._rebuild)
+        else:
+            self._fill_titles()
         self._refresh_status()
+
+    def _apply_profile(self, profile: dict) -> bool:
+        """Восстановить область, режим и языки тайтла. Возвращает, поменялось ли что-нибудь."""
+        diff = {k: v for k, v in (profile or {}).items() if self.cfg.get(k) != v}
+        if not diff:
+            return False
+        live = self.live_on
+        if live:
+            self.set_live(False)
+        for k, v in diff.items():
+            self.cfg[k] = v
+        if "last_region" in diff:
+            self.region = Region.from_dict(self.cfg.get("last_region"))
+            self.overlay.clear()
+            self.shown_result = None
+            if self.region:
+                self.overlay.place(self.region)
+            self._last_thumb = None
+        if live and self.cfg.get("translate_mode") == "live" and self.region:
+            self.set_live(True)
+        self._sync_mini()
+        return True
 
     def _on_gloss_combo(self, _i: int) -> None:
         if getattr(self, "_filling", False):
@@ -816,6 +851,9 @@ class MainWindow(QWidget):
         name, ok = QInputDialog.getText(self, tr("Новый тайтл"), tr("Название тайтла:"))
         if not ok or not name.strip():
             return
+        old = self.cfg.get("active_title", "")
+        if old:
+            titles.remember(old, self.cfg)      # прежний тайтл запоминает свою область, режим и языки
         t = titles.create(name, universal_for(GLOSSARY_DIR, self.cfg["source_lang"]))
         self.cfg["active_title"] = t.id
         self.cfg["glossary"] = t.glossary

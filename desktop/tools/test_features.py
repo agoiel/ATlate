@@ -242,10 +242,59 @@ def test_history() -> None:
         history.PATH = real
 
 
+# ---------------------------------------------------------------- профили тайтлов
+def test_profiles() -> None:
+    from app import titles
+    from app.ui.main_window import MainWindow
+
+    real_dir = titles.TITLES_DIR
+    titles.TITLES_DIR = Path(tempfile.mkdtemp()) / "titles"
+    try:
+        cfg = new_cfg()
+        cfg.update({"source_lang": "ko", "target_lang": "ru", "translate_mode": "shot", "content_mode": "manhwa",
+                    "last_region": {"screen": "", "x": 10, "y": 20, "w": 300, "h": 400}})
+        win = MainWindow(cfg)
+        a = titles.create("Соло")
+        b = titles.create("Ван Пис")
+        win._switch_title(a.id)
+        settle()
+        # на тайтле A поменяли область, режим и язык оригинала
+        cfg["last_region"] = {"screen": "", "x": 50, "y": 60, "w": 500, "h": 700}
+        cfg["translate_mode"] = "live"
+        cfg["source_lang"] = "ja"
+        win._switch_title(b.id)
+        settle()
+        check("тайтл A запомнил свою область, режим и язык",
+              titles.load(a.id).profile.get("source_lang") == "ja"
+              and titles.load(a.id).profile.get("last_region", {}).get("w") == 500)
+        check("у нового тайтла B своего профиля ещё нет — настройки не меняются",
+              cfg["source_lang"] == "ja" and cfg["translate_mode"] == "live")
+        # на тайтле B — другие
+        cfg["last_region"] = {"screen": "", "x": 0, "y": 0, "w": 200, "h": 900}
+        cfg["translate_mode"] = "shot"
+        cfg["source_lang"] = "zh"
+        win._switch_title(a.id)
+        settle()
+        check("вернулись к A — его область, режим и язык восстановлены",
+              cfg["source_lang"] == "ja" and cfg["translate_mode"] == "live" and win.region is not None
+              and win.region.w == 500, f"{cfg['source_lang']} {cfg['translate_mode']} {win.region and win.region.w}")
+        win._switch_title(b.id)
+        settle()
+        check("и к B — его", cfg["source_lang"] == "zh" and cfg["translate_mode"] == "shot" and win.region.w == 200)
+        t = titles.load(b.id)
+        t.history.append(("원문", "перевод"))
+        titles.save(t)
+        check("профиль не теряется при сохранении истории тайтла", titles.load(b.id).profile.get("source_lang") == "zh")
+        win.close()
+    finally:
+        titles.TITLES_DIR = real_dir
+
+
 def main() -> int:
     test_updates()
     test_copy()
     test_history()
+    test_profiles()
     failed = [r for r in rows if not r[0]]
     print(f"failed: {len(failed)}")
     return 1 if failed else 0

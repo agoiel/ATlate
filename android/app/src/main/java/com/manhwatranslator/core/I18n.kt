@@ -336,7 +336,7 @@ object I18n {
         "Как в системе" to "System default",
         "Язык телефона" to "Phone language",
         "Тайтл" to "Title",
-        "Контекст и глоссарий сохраняются для каждой манхвы" to "Context and glossary are saved for each series",
+        "Контекст, глоссарий, область и языки — свои у каждой манхвы" to "Context, glossary, area and languages are kept for each series",
         "АКТИВНЫЙ ТАЙТЛ" to "ACTIVE TITLE",
         "Управление" to "Manage",
         "ГЛОССАРИЙ" to "GLOSSARY",

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 import uuid
@@ -28,19 +29,44 @@ class Title:
     history: deque = field(default_factory=lambda: deque(maxlen=MAX_HISTORY))
     cache: OrderedDict = field(default_factory=OrderedDict)
     updated: float = field(default_factory=time.time)
+    # своя область, режим и языки тайтла (см. PROFILE_KEYS); пусто — ещё не запоминались
+    profile: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "name": self.name, "glossary": self.glossary, "updated": self.updated,
-                "history": [list(p) for p in self.history], "cache": dict(self.cache)}
+        d = {"id": self.id, "name": self.name, "glossary": self.glossary, "updated": self.updated,
+             "history": [list(p) for p in self.history], "cache": dict(self.cache)}
+        if self.profile:
+            d["profile"] = self.profile
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Title":
         t = cls(d["id"], d.get("name", ""), d.get("glossary", ""), updated=d.get("updated", 0))
+        prof = d.get("profile")
+        if isinstance(prof, dict):
+            t.profile = {k: v for k, v in prof.items() if k in PROFILE_KEYS}
         for p in d.get("history", []):
             if isinstance(p, list) and len(p) == 2:
                 t.history.append((str(p[0]), str(p[1])))
         t.cache.update({str(k): str(v) for k, v in d.get("cache", {}).items()})
         return t
+
+
+# Что тайтл помнит сам: у каждой манхвы своя область чтения, режим и языки. Запоминается, когда
+# переключаются на другой тайтл, и восстанавливается, когда возвращаются к этому.
+PROFILE_KEYS = ("last_region", "translate_mode", "source_lang", "auto_lang", "target_lang", "content_mode")
+
+
+def snapshot(cfg: dict) -> dict:
+    return {k: copy.deepcopy(cfg.get(k)) for k in PROFILE_KEYS if k in cfg}
+
+
+def remember(title_id: str, cfg: dict) -> None:
+    """Запомнить у тайтла текущие область, режим и языки (перед переключением на другой)."""
+    t = load(title_id)
+    if t is not None:
+        t.profile = snapshot(cfg)
+        save(t)
 
 
 def path(title_id: str) -> Path:

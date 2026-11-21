@@ -402,7 +402,7 @@ EN: dict[str, str] = {
         "Works with OpenAI, OpenRouter, DeepSeek and free local models: Ollama (http://localhost:11434/v1) or LM Studio (http://localhost:1234/v1).",
     "Адрес сервера": "Server address",
     "API-ключ": "API key",
-    "Контекст и глоссарий сохраняются для каждой манхвы": "Context and glossary are saved for each series",
+    "Контекст, глоссарий, область и языки — свои у каждой манхвы": "Context, glossary, area and languages are kept for each series",
     "Тайтл": "Title",
     "Активный тайтл": "Active title",
     "Управление": "Manage",

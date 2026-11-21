@@ -19,15 +19,19 @@ class Title(
     val cache: LinkedHashMap<String, String> = LinkedHashMap(),
     var updated: Long = System.currentTimeMillis(),
 ) {
+    /** Своя область, режим и языки тайтла (см. TitleProfile); null — ещё не запоминались. */
+    var profile: JSONObject? = null
+
     fun toJson(): String {
         val h = JSONArray()
         for ((o, t) in history) h.put(JSONArray().put(o).put(t))
         val c = JSONObject()
         for ((k, v) in cache) c.put(k, v)
-        return JSONObject()
+        val o = JSONObject()
             .put("id", id).put("name", name).put("glossary", glossary).put("updated", updated)
             .put("history", h).put("cache", c)
-            .toString()
+        profile?.let { o.put("profile", it) }
+        return o.toString()
     }
 
     companion object {
@@ -44,6 +48,7 @@ class Title(
             }
             val c = o.optJSONObject("cache") ?: JSONObject()
             for (k in c.keys()) t.cache[k] = c.optString(k)
+            t.profile = o.optJSONObject("profile")
             return t
         }
     }
@@ -101,5 +106,38 @@ object TitleStore {
         t.history.clear()
         t.cache.clear()
         save(ctx, t)
+    }
+}
+
+/**
+ * Что тайтл помнит сам: у каждой манхвы своя область чтения, режим и языки. Запоминается, когда
+ * переключаются на другой тайтл, и восстанавливается, когда возвращаются к этому.
+ */
+object TitleProfile {
+    fun snapshot(s: Settings): JSONObject = JSONObject()
+        .put("region", s.region?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "")
+        .put("mode", s.translateMode).put("src", s.sourceLang).put("auto", s.autoLang)
+        .put("tgt", s.targetLang).put("content", s.contentMode)
+
+    /** Запомнить у тайтла текущие область, режим и языки (перед переключением на другой). */
+    fun remember(ctx: Context, id: String, s: Settings) {
+        val t = TitleStore.load(ctx, id) ?: return
+        t.profile = snapshot(s)
+        TitleStore.save(ctx, t)
+    }
+
+    /** Восстановить; возвращает, поменялось ли что-нибудь. */
+    fun apply(p: JSONObject, s: Settings): Boolean {
+        val before = snapshot(s).toString()
+        if (p.has("region")) {
+            val v = p.optString("region").split(",").mapNotNull { it.trim().toIntOrNull() }
+            s.region = if (v.size == 4) android.graphics.Rect(v[0], v[1], v[2], v[3]) else null
+        }
+        if (p.has("mode")) s.translateMode = p.optString("mode", s.translateMode)
+        if (p.has("src")) s.sourceLang = p.optString("src", s.sourceLang)
+        if (p.has("auto")) s.autoLang = p.optBoolean("auto", s.autoLang)
+        if (p.has("tgt")) s.targetLang = p.optString("tgt", s.targetLang)
+        if (p.has("content")) s.contentMode = p.optString("content", s.contentMode)
+        return snapshot(s).toString() != before
     }
 }

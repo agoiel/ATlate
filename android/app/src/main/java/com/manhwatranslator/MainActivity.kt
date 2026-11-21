@@ -37,6 +37,7 @@ import com.manhwatranslator.core.PageResult
 import com.manhwatranslator.core.Pipeline
 import com.manhwatranslator.core.Settings
 import com.manhwatranslator.core.TitleStore
+import com.manhwatranslator.core.TitleProfile
 import com.manhwatranslator.core.Translators
 import com.manhwatranslator.core.Updates
 import com.manhwatranslator.core.OfflineModels
@@ -507,7 +508,7 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- тайтл и глоссарий
     private fun buildGlossary(): View {
         val card = ui.card()
-        card.addView(ui.cardHeader(tr("Тайтл"), R.drawable.ic_book, tr("Контекст и глоссарий сохраняются для каждой манхвы")))
+        card.addView(ui.cardHeader(tr("Тайтл"), R.drawable.ic_book, tr("Контекст, глоссарий, область и языки — свои у каждой манхвы")))
         titlePicker = PickerView(this, tr("АКТИВНЫЙ ТАЙТЛ")) { pickTitle() }
         card.addView(titlePicker, lp().margins(this, top = 14))
         val trow = ui.horizontal()
@@ -624,18 +625,28 @@ class MainActivity : Activity() {
         val cur = titles.indexOfFirst { it.id == s.activeTitle } + 1
         AlertDialog.Builder(this).setTitle(tr("Тайтл"))
             .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->
+                d.dismiss()     // сначала закрыть: смена тайтла может пересобрать экран
                 selectTitle(if (which == 0) "" else titles[which - 1].id)
-                d.dismiss()
             }
             .setPositiveButton(tr("Новый")) { _, _ -> createTitle() }
             .show()
     }
 
+    /** Сменить тайтл: уходящий запоминает свою область, режим и языки, выбранный — восстанавливает свои. */
     private fun selectTitle(id: String) {
+        val old = s.activeTitle
+        if (old.isNotBlank() && old != id) TitleProfile.remember(this, old, s)
         s.activeTitle = id
-        TitleStore.load(this, id)?.let { s.glossary = it.glossary }
+        val t = TitleStore.load(this, id)
+        t?.let { s.glossary = it.glossary }
+        val changed = t?.profile?.let { TitleProfile.apply(it, s) } ?: false
         notifyContextChanged()
-        refreshGlossary()
+        if (changed) {
+            // область, режим и языки показаны в разных местах экрана — проще собрать его заново
+            recreate()
+        } else {
+            refreshGlossary()
+        }
     }
 
     private fun askName(title: String, initial: String, onOk: (String) -> Unit) {
