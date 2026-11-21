@@ -13,8 +13,8 @@ android {
         applicationId = "com.manhwatranslator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.6.6"
+        versionCode = 10
+        versionName = "0.6.7"
         // только процессоры телефонов: офлайн-переводчик (ML Kit) везёт свой код под каждый процессор,
         // а x86 нужен лишь эмуляторам и почти не встречается в телефонах
         ndk {
