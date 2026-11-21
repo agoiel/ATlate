@@ -36,6 +36,9 @@ jobs:
         run: |
           mkdir -p out
           cp app/build/outputs/apk/release/*.apk out/ATlate.apk
+          # размер приложения и самые крупные части (нативные библиотеки) — чтобы рост был виден сразу
+          ls -l out/ATlate.apk
+          unzip -l out/ATlate.apk | sort -k1 -n -r | head -12
 
       - uses: actions/upload-artifact@v4
         with:

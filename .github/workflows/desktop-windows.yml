@@ -34,9 +34,23 @@ jobs:
       - name: Hotkeys with English and Russian keyboard layouts
         run: python tools/test_hotkeys_win.py
       - name: Languages, translator requests, glossary
-        run: python tools/test_languages.py ../out/languages
+        run: |
+          python -X faulthandler tools/test_languages.py ../out/languages
+          $code = $LASTEXITCODE
+          Write-Host "python exit code: $code"
+          exit $code
       - name: Interface language (English everywhere, follows the system language)
-        run: python tools/test_i18n.py ../out/i18n
+        run: |
+          python -X faulthandler tools/test_i18n.py ../out/i18n
+          $code = $LASTEXITCODE
+          Write-Host "python exit code: $code"
+          exit $code
+      - name: Update check, copying, translation history, title profiles
+        run: |
+          python -X faulthandler tools/test_features.py ../out/features
+          $code = $LASTEXITCODE
+          Write-Host "python exit code: $code"
+          exit $code
       - name: Studio text in Thai and Arabic (fonts, hyphenation, shaping)
         run: python tools/test_typeset_langs.py ../out/typeset
       - name: Files bundled into the exe are found (FriBiDi, hyphenation dictionaries)

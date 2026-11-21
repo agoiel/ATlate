@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
+os.environ.setdefault("ATLATE_NO_UPDATE_CHECK", "1")   # проверки не ходят в сеть за обновлениями
 
 from PIL import Image  # noqa: E402
 
@@ -609,7 +610,8 @@ def editor_merge() -> None:
     from PySide6.QtWidgets import QApplication
 
     from app.ui.glossary_editor import GlossaryEditor
-    app = QApplication.instance() or QApplication([])
+    global _APP
+    _APP = app = QApplication.instance() or QApplication([])     # живёт до конца проверки
     path = out / "editor_merge.json"
     Glossary(name="t", source_lang="ko", auto=True, entries=[
         GlossaryEntry("민준", "Минджун", "", True), GlossaryEntry("서연", "Соён", "", True)]).save(path)
@@ -629,6 +631,8 @@ def editor_merge() -> None:
     got = [e.source for e in Glossary.load(path).entries]
     check("редактор: записи, добавленные в фоне, не теряются", "헌터" in got, f"{got}")
     check("редактор: удалённая запись не возвращается", "서연" not in got and "민준" in got, f"{got}")
+    ed.deleteLater()
+    app.processEvents()
 
 
 def main() -> int:
@@ -646,5 +650,25 @@ def main() -> int:
     return 1 if failed else 0
 
 
+def _close_qt() -> None:
+    """Закрыть и удалить все окна Qt, пока Python жив. Иначе на Windows Qt разбирает их при выходе
+    из процесса и зовёт обработчики Python, которых уже нет (падение после «failed: 0»)."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete.value))
+    app.processEvents()
+
+
+_APP = None
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    _close_qt()
+    sys.stdout.flush()
+    os._exit(code)

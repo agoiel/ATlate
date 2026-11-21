@@ -159,12 +159,20 @@ class _TileGrid(QWidget):
 class MainWindow(QWidget):
     # настройки не сохранились (диск полон, файл занят…) — сообщение из любого потока в окно
     save_failed = Signal(str)
+    # проверка обновлений закончилась (из фонового потока): (версия, ссылка) или None
+    update_checked = Signal(object)
 
     def __init__(self, cfg: Config):
         super().__init__(None, Qt.WindowType.Window)
         self.cfg = cfg
         self.save_failed.connect(self._on_save_failed)
         cfg.on_save_error = self.save_failed.emit
+        self.update_checked.connect(self._on_update_checked)
+        self.shown_result: PageResult | None = None     # последний перевод с экрана (его копирует «Копировать перевод»)
+        # вышедшая новая версия (номер, ссылка) — запомнена с прошлой проверки, плашка видна и после перезапуска
+        from .. import updates
+        found = cfg.get("update_found")
+        self._update = updates.offer(cfg, tuple(found)) if cfg.get("update_check", True) and found else None
         if cfg.get("ocr_engine") == "easyocr" and not easyocr_available():
             cfg["ocr_engine"] = "windows"       # EasyOCR выбран раньше, но его нет — переводить было бы нечем
             cfg.save()
@@ -229,6 +237,7 @@ class MainWindow(QWidget):
             self.overlay.place(self.region)
         self._refresh_status()
         QTimer.singleShot(500, self.check_ocr_language)
+        QTimer.singleShot(4000, self.check_updates)
 
     # ================================================================ интерфейс
     def _build(self) -> None:
@@ -246,6 +255,8 @@ class MainWindow(QWidget):
         bl = QVBoxLayout(body)
         bl.setContentsMargins(16, 14, 16, 0)
         bl.setSpacing(14)
+        if self._update is not None:
+            bl.addWidget(self._build_update_banner())
         bl.addWidget(self._build_tiles())
         bl.addWidget(self._build_studio_banner())
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
@@ -374,6 +385,71 @@ class MainWindow(QWidget):
         btn.clicked.connect(self.open_studio)
         lay.addWidget(btn)
         return box
+
+    # ---------------------------------------------------------------- обновления
+    def _build_update_banner(self) -> QWidget:
+        """Плашка «вышла новая версия» — только когда она действительно вышла."""
+        version, url = self._update
+        box = QFrame()
+        box.setObjectName("updateBanner")
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(16, 10, 12, 10)
+        lay.setSpacing(12)
+        ic = QLabel()
+        ic.setObjectName("badge")
+        ic.setFixedSize(36, 36)
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ic.setPixmap(theme.pixmap("download", theme.palette().primary, 20))
+        lay.addWidget(ic)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        col.addWidget(label(tr("Вышла версия {0}", version), "cardTitle"))
+        col.addWidget(caption(tr("Сейчас у вас {0}. Что нового — на странице релиза.", __version__)))
+        lay.addLayout(col, 1)
+        later = pill(tr("Позже"), "link")
+        later.setToolTip(tr("Не напоминать об этой версии"))
+        later.clicked.connect(self._skip_update)
+        lay.addWidget(later)
+        get = pill(tr("Скачать"), "primary", "download")
+        get.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+        lay.addWidget(get)
+        return box
+
+    def check_updates(self, force: bool = False) -> None:
+        """Раз в день спросить у GitHub, не вышла ли новая версия (в фоне, окно не ждёт)."""
+        from .. import updates
+        if not force and not updates.due(self.cfg):
+            return
+        threading.Thread(target=lambda: self.update_checked.emit(updates.fetch()), daemon=True,
+                         name="update-check").start()
+
+    def _on_update_checked(self, found) -> None:
+        from .. import updates
+        if found is None:                     # не удалось — попробуем при следующем запуске
+            return
+        self.cfg["update_checked_at"] = time.time()
+        self.cfg["update_found"] = list(found)
+        self.cfg.save()
+        offer = updates.offer(self.cfg, found)
+        if offer != self._update:
+            self._update = offer
+            self._rebuild()
+
+    def _skip_update(self) -> None:
+        if self._update is not None:
+            self.cfg["update_skip"] = self._update[0]
+            self.cfg.save()
+        self._update = None
+        self._rebuild()
+
+    def _set_update_check(self, on: bool) -> None:
+        self.cfg["update_check"] = on
+        self.cfg.save()
+        if on:
+            self.check_updates(force=True)
+        elif self._update is not None:
+            self._update = None
+            self._rebuild()
 
     def open_studio(self) -> None:
         from ..studio.window import StudioWindow
@@ -557,7 +633,7 @@ class MainWindow(QWidget):
 
     # ---------------------------------------------------------------- тайтл и глоссарий
     def _build_title(self) -> Card:
-        card = Card(tr("Тайтл"), tr("Контекст и глоссарий сохраняются для каждой манхвы"), "book")
+        card = Card(tr("Тайтл"), tr("Контекст, глоссарий, область и языки — свои у каждой манхвы"), "book")
         self.title_combo = Select()
         self.title_combo.currentIndexChanged.connect(self._on_title_combo)
         card.add(self._labeled(tr("Активный тайтл"), self.title_combo))
@@ -703,14 +779,49 @@ class MainWindow(QWidget):
         if getattr(self, "_filling", False):
             return
         tid = self.title_combo.currentData() or ""
+        self._switch_title(tid)
+
+    def _switch_title(self, tid: str) -> None:
+        """Сменить тайтл: уходящий запоминает свою область, режим и языки, выбранный — восстанавливает свои."""
+        old = self.cfg.get("active_title", "")
+        if old and old != tid:
+            titles.remember(old, self.cfg)
         self.cfg["active_title"] = tid
         self.pipeline.reset_auto()      # у другого тайтла язык может быть другим
         t = titles.load(tid)
+        changed = False
         if t:
             self.cfg["glossary"] = t.glossary
+            changed = self._apply_profile(t.profile)
         self._save_and_reload()
-        self._fill_titles()
+        if changed:
+            # области, режим и языки показаны в разных карточках — проще собрать окно заново
+            QTimer.singleShot(0, self._rebuild)
+        else:
+            self._fill_titles()
         self._refresh_status()
+
+    def _apply_profile(self, profile: dict) -> bool:
+        """Восстановить область, режим и языки тайтла. Возвращает, поменялось ли что-нибудь."""
+        diff = {k: v for k, v in (profile or {}).items() if self.cfg.get(k) != v}
+        if not diff:
+            return False
+        live = self.live_on
+        if live:
+            self.set_live(False)
+        for k, v in diff.items():
+            self.cfg[k] = v
+        if "last_region" in diff:
+            self.region = Region.from_dict(self.cfg.get("last_region"))
+            self.overlay.clear()
+            self.shown_result = None
+            if self.region:
+                self.overlay.place(self.region)
+            self._last_thumb = None
+        if live and self.cfg.get("translate_mode") == "live" and self.region:
+            self.set_live(True)
+        self._sync_mini()
+        return True
 
     def _on_gloss_combo(self, _i: int) -> None:
         if getattr(self, "_filling", False):
@@ -740,6 +851,9 @@ class MainWindow(QWidget):
         name, ok = QInputDialog.getText(self, tr("Новый тайтл"), tr("Название тайтла:"))
         if not ok or not name.strip():
             return
+        old = self.cfg.get("active_title", "")
+        if old:
+            titles.remember(old, self.cfg)      # прежний тайтл запоминает свою область, режим и языки
         t = titles.create(name, universal_for(GLOSSARY_DIR, self.cfg["source_lang"]))
         self.cfg["active_title"] = t.id
         self.cfg["glossary"] = t.glossary
@@ -857,6 +971,10 @@ class MainWindow(QWidget):
             sw = SwitchRow(title, sub, bool(c.get(key, False)))
             sw.toggled.connect(lambda v, k=key: self._set(k, v))
             card.add(sw)
+        upd = SwitchRow(tr("Проверять обновления"), tr("Раз в день узнавать на GitHub, не вышла ли новая версия"),
+                        bool(c.get("update_check", True)))
+        upd.toggled.connect(self._set_update_check)
+        card.add(upd)
         return card
 
     # ---------------------------------------------------------------- горячие клавиши
@@ -869,7 +987,7 @@ class MainWindow(QWidget):
         grid.setVerticalSpacing(8)
         for i, (key, title) in enumerate((("select", tr("Выделить область")), ("translate", tr("Перевести")),
                                           ("toggle", tr("Показать или скрыть перевод")), ("auto", tr("Live вкл/выкл")),
-                                          ("mini", tr("Компактный режим")))):
+                                          ("mini", tr("Компактный режим")), ("copy", tr("Копировать перевод")))):
             f = Field(title, hk.get(key, ""), "<alt>+q")
             f.edited.connect(lambda v, k=key: self._set_hotkey(k, v))
             grid.addWidget(f, i // 2, i % 2)
@@ -928,6 +1046,10 @@ class MainWindow(QWidget):
         clear_btn = pill(tr("Очистить"), "tonal", "refresh")
         clear_btn.clicked.connect(self._clear_dev_log)
         fl.addWidget(clear_btn)
+        hist_btn = pill(tr("История переводов"), "tonal", "list",
+                        tr("Оригинал и перевод каждой реплики, пока включён режим разработчика"))
+        hist_btn.clicked.connect(self.show_history)
+        fl.addWidget(hist_btn)
         el.addWidget(buttons)
         extra.setVisible(bool(c.get("dev_mode")))
         card.add(extra)
@@ -1120,7 +1242,8 @@ class MainWindow(QWidget):
             set_pill(self.btn_main, tr("Перевести"), "hero", "play")
             self.btn_main.setToolTip(tr("Горячая клавиша: {0}", hk.get('translate', '')))
             self.hint.setText(tr("{0} — выделить область · {1} — перевести · {2} — показать или скрыть перевод · {3} — "
-                                 "Live", hk.get('select', ''), hk.get('translate', ''), hk.get('toggle', ''), hk.get('auto', '')))
+                                 "Live", hk.get('select', ''), hk.get('translate', ''), hk.get('toggle', ''), hk.get('auto', ''))
+                              + (tr(" · {0} — копировать перевод", hk["copy"]) if hk.get("copy") else ""))
         self.mode_switch.select("live" if live else "shot")
         self.btn_zone.setEnabled(self.region is not None)
         self._sync_mini()
@@ -1154,6 +1277,7 @@ class MainWindow(QWidget):
             "has_region": self.region is not None,
             "overlay_visible": self.overlay.isVisible() and not self.overlay.user_hidden,
             "zone_visible": self.overlay.show_frame,
+            "can_copy": bool(self.shown_result is not None and self.shown_result.translations()),
         }
 
     def _sync_mini(self) -> None:
@@ -1202,6 +1326,8 @@ class MainWindow(QWidget):
             self.show_zone(hold=True)
         elif key == "zone_hide":
             self._hide_zone()
+        elif key == "copy":
+            self.copy_translation()
         elif key == "full":
             self.exit_mini()
         elif key == "quit":
@@ -1261,6 +1387,8 @@ class MainWindow(QWidget):
                 self.exit_mini()
             else:
                 self.enter_mini()
+        elif action == "copy":
+            self.copy_translation()
 
     def _main_action(self) -> None:
         if self.cfg.get("translate_mode") == "live":
@@ -1367,11 +1495,13 @@ class MainWindow(QWidget):
         self._set_busy(False)
         if result.detected_lang:
             self._on_language_detected(result.detected_lang)
+        self._remember(result)
         if token == "file":
             self._report(result)
             self._show_file_result(result)
             return
         mode = self.cfg["display_mode"]
+        self.shown_result = result
         if mode in ("overlay", "both") and self.region:
             self.overlay.set_result(result, k)
         if mode in ("list", "both"):
@@ -1497,6 +1627,16 @@ class MainWindow(QWidget):
         self.list_window.show()
         self.list_window.raise_()
 
+    def copy_translation(self) -> None:
+        """Скопировать перевод страницы, которая сейчас показана: облака по порядку, через пустую строку."""
+        res = self.shown_result
+        text = res.copy_text() if res is not None else ""
+        if not text:
+            self._set_status(tr("Копировать нечего — сначала переведите страницу."), notify=True)
+            return
+        QApplication.clipboard().setText(text)
+        self._set_status(tr("Перевод скопирован: облаков {0}.", len(res.translations())), notify=True)
+
     def toggle_overlay(self) -> None:
         if self.overlay.isVisible():
             self.overlay.user_hidden = True
@@ -1517,9 +1657,22 @@ class MainWindow(QWidget):
             titles.clear_context(tid)
         self.pipeline.reset_session()
         self.overlay.clear()
+        self.shown_result = None
         self.list_window.set_result(None)
         self._fill_titles()
         self._set_status(tr("Контекст и кэш очищены."))
+
+    def show_history(self) -> None:
+        from .history_window import HistoryDialog
+        HistoryDialog(self).exec()
+
+    def _remember(self, result: PageResult) -> None:
+        """Режим разработчика: записать перевод в историю."""
+        if not self.cfg.get("dev_mode"):
+            return
+        from .. import history
+        t = titles.load(self.cfg.get("active_title", ""))
+        history.add(result, self.cfg, t.name if t else "")
 
     def show_help(self) -> None:
         HelpDialog(self, self.cfg["hotkeys"]).exec()
@@ -1671,9 +1824,20 @@ class ResultDialog(QDialog):
         il.addWidget(text)
         scroll.setWidget(inner)
         lay.addWidget(scroll, 1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        if result.translations():
+            copy = pill(tr("Копировать перевод"), "outline", "copy")
+
+            def do_copy() -> None:
+                QApplication.clipboard().setText(result.copy_text())
+                copy.setText(tr("Скопировано"))
+            copy.clicked.connect(do_copy)
+            row.addWidget(copy)
         ok = pill(tr("Готово"), "primary")
         ok.clicked.connect(self.accept)
-        lay.addWidget(ok, 0, Qt.AlignmentFlag.AlignRight)
+        row.addWidget(ok)
+        lay.addLayout(row)
 
 
 def _render_translated(image: Image.Image, result: PageResult, cfg) -> QPixmap:
@@ -1705,6 +1869,8 @@ class HelpDialog(QDialog):
             tr("Режим Live: листайте главу, перевод появится сам, когда страница остановится. {0} — "
                "пауза.", hk.get('auto', '')),
             tr("Создайте тайтл для каждой манхвы: переводчик будет помнить имена и прошлые реплики даже после перезапуска."),
+            tr("Скопировать перевод страницы — {0} или значок в компактной панели. В окне со списком отдельная "
+               "реплика копируется щелчком.", hk.get('copy') or "—"),
             tr("Если текст не находится на тёмном или пёстром фоне — в «Тонкой настройке» выберите режим "
                "распознавания «Тщательный» или «Максимальный»."),
         ]

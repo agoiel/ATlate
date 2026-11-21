@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ["ATLATE_UI_LANG"] = "en"                 # до импорта программы: язык выбирается при загрузке
+os.environ.setdefault("ATLATE_NO_UPDATE_CHECK", "1")   # проверки не ходят в сеть за обновлениями
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 out = Path(sys.argv[1] if len(sys.argv) > 1 else "out")
@@ -170,7 +171,8 @@ def windows() -> None:
     from app.ui.main_window import MainWindow
 
     check("программа загрузилась с английским интерфейсом", i18n.english)
-    app = QApplication.instance() or QApplication(sys.argv)
+    global _APP
+    _APP = app = QApplication.instance() or QApplication(sys.argv)     # живёт до конца проверки
     tmp = Path(tempfile.mkdtemp())
     cfg = Config(tmp / "config.json")
     cfg["dev_mode"] = True
@@ -190,6 +192,9 @@ def windows() -> None:
     win.show()
     verify("главное окно", win)
     win.grab().save(str(out / "main_en.png"))
+    win._update = ("9.9.9", "https://github.com/agoiel/ATlate/releases/latest")
+    win._rebuild()
+    verify("главное окно с плашкой обновления", win)
     win.show_list = getattr(win, "show_list", None)
     verify("окно со списком", win.list_window)
 
@@ -210,11 +215,26 @@ def windows() -> None:
     verify("редактор глоссария", ed)
     ed.close()
 
+    from app import history
+    from app.models import Box, Bubble, PageResult
+    from app.ui.history_window import HistoryDialog
+    hp = tmp / "history.jsonl"
+    history.add(PageResult(bubbles=[Bubble(Box(0, 0, 1, 1), [], text="민준", translation="Minjun")]), cfg, "t", hp)
+    hd = HistoryDialog(win, hp)
+    hd.show()
+    verify("история переводов", hd)
+    hd.close()
+
+    from app.models import Box, Bubble, PageResult
+    win.shown_result = PageResult(bubbles=[Bubble(Box(0, 0, 10, 10), [], text="a", translation="b")])
     win.enter_mini()
     for _ in range(5):
         app.processEvents()
     if win.mini is not None:
         verify("компактная панель", win.mini)
+        hints = [it.hint for it in win.mini._items("translate") if it.hint]
+        check("компактная панель: подсказка значка на английском", hints and not any(CYR.search(h) for h in hints),
+              str(hints))
         menu = getattr(win.mini, "_menu_items", None)
         if callable(menu):
             texts = [t for t in (getattr(i, "text", "") for i in menu()) if isinstance(t, str)]
@@ -232,5 +252,25 @@ def main() -> int:
     return 1 if failed else 0
 
 
+def _close_qt() -> None:
+    """Закрыть и удалить все окна Qt, пока Python жив. Иначе на Windows Qt разбирает их при выходе
+    из процесса и зовёт обработчики Python, которых уже нет (падение после «failed: 0»)."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete.value))
+    app.processEvents()
+
+
+_APP = None
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    _close_qt()
+    sys.stdout.flush()
+    os._exit(code)

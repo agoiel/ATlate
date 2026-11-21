@@ -24,6 +24,8 @@ import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.Languages
 import com.manhwatranslator.core.PageResult
+import com.manhwatranslator.core.TitleStore
+import com.manhwatranslator.core.History
 import com.manhwatranslator.core.Timings
 import com.manhwatranslator.core.tr
 import com.manhwatranslator.core.trf
@@ -68,6 +70,7 @@ class OverlayService : Service() {
     private var debugPanel: DebugPanel? = null
     private var busy = false
     private var lastSourceShown = ""        // какой язык, определённый переводчиком, уже показан
+    private var shownResult: PageResult? = null   // перевод, который сейчас на экране (для «Копировать перевод»)
 
     // ---- режим Live
     private var liveOn = false
@@ -315,6 +318,10 @@ class OverlayService : Service() {
         items.add(tr("Выделить новую зону") to { startSelection() })
         if (settings.region != null) items.add(tr("Показать зону") to { showZone() })
         if (translationView?.hasContent == true) items.add(tr("Убрать перевод") to { translationView?.clear(); updateButton() })
+        val copy = shownResult?.copyText().orEmpty()
+        if (translationView?.hasContent == true && copy.isNotEmpty()) items.add(tr("Копировать перевод") to {
+            copyToClipboard(this, copy, trf("Перевод скопирован: облаков %s", shownResult?.translations()?.size ?: 0))
+        })
         items.add((if (live) tr("Режим: Live → Скриншот") else tr("Режим: Скриншот → Live")) to { switchMode() })
         if (settings.devMode && settings.region != null) items.add(tr("Сравнить: по очереди и параллельно") to { compareModes() })
         items.add(tr("Остановить переводчик") to { stopEverything() })
@@ -460,6 +467,11 @@ class OverlayService : Service() {
         val dev = settings.devMode
         val boxes = if (dev && settings.debugBoxes) res.debug?.passes.orEmpty() else emptyList()
         translationView?.show(res.bubbles, region, settings.maxFontSp, boxes)
+        shownResult = res
+        if (dev) {
+            val title = TitleStore.load(this, settings.activeTitle)?.name ?: ""
+            Thread { History.add(this, res, settings, title) }.start()       // файл — не в главном потоке
+        }
         if (dev) {
             val report = res.debug?.report() ?: res.error
             showDebugPanel(report, region)

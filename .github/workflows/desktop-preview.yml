@@ -59,6 +59,11 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python tools/test_i18n.py ../preview/linux/i18n
+      - name: Update check, copying, translation history, title profiles
+        working-directory: desktop
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/test_features.py ../preview/linux/features
       - uses: actions/upload-artifact@v4
         with:
           name: shots-linux

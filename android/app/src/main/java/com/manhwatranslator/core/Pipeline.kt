@@ -254,16 +254,16 @@ class Pipeline(private val ctx: Context) {
     private fun translateBubbles(bubbles: List<Bubble>, s: Settings, src: SourceLang, tgt: TargetLang) {
         val texts = bubbles.map { it.text }
         RateLimit.intervalMs = (s.requestIntervalSec.coerceIn(0f, 30f) * 1000).toLong()
-        val tr = Translators.create(s)
+        val tor = Translators.create(s)
         // файл глоссария запоминаем: пока идёт запрос, в настройках могут выбрать другой
         val glossFile = s.glossary
         // глоссарий на другой язык не применяется: например, встроенный русский при переводе на английский
         val glossary = glossFile.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }?.takeIf { it.fits(s.targetLang) }
         val found = glossary?.find(texts) ?: emptyList()
-        val anchored = if (glossary != null && !tr.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
+        val anchored = if (glossary != null && !tor.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
         val n = s.contextSize
         // авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
-        val collect = glossary != null && glossary.auto && tr.usesLlm && !glossFile.startsWith("universal_")
+        val collect = glossary != null && glossary.auto && tor.usesLlm && !glossFile.startsWith("universal_")
         val req = TranslateRequest(
             texts = texts, src = src, tgt = tgt,
             history = if (n > 0) history.toList().takeLast(n) else emptyList(),
@@ -273,10 +273,17 @@ class Pipeline(private val ctx: Context) {
         )
         var usedFallback = false
         val out = try {
-            tr.translate(req)
+            if (tor !is OfflineTranslator && s.freeFallback && !OfflineModels.online(ctx) && OfflineModels.ready(src, tgt)) {
+                // нет интернета: сразу офлайн, не дожидаясь повторов запроса
+                usedFallback = true
+                fallbackNote = tr("Нет интернета — перевёл офлайн-переводчик")
+                OfflineTranslator().translate(req)
+            } else {
+                tor.translate(req)
+            }
         } catch (e: TranslateException) {
             usedFallback = true
-            fallback(req, s, tr, e)
+            fallback(req, s, tor, e)
         }
         if (req.detected.isNotBlank()) lastDetected = req.detected
         if (collect && req.terms.isNotEmpty()) {
@@ -311,6 +318,16 @@ class Pipeline(private val ctx: Context) {
      * с ключом не подменяются; Яндекс используется только бесплатным способом.
      */
     private fun fallback(req: TranslateRequest, s: Settings, failed: Translator, err: TranslateException): List<String> {
+        // связь пропала посреди запроса: переводим на телефоне, если языки скачаны (любой переводчик
+        // без интернета всё равно не ответит)
+        if (s.freeFallback && err.code == Http.NO_CONNECTION && failed !is OfflineTranslator && OfflineModels.ready(req.src, req.tgt)) {
+            try {
+                val out = OfflineTranslator().translate(req)
+                fallbackNote = tr("Нет интернета — перевёл офлайн-переводчик")
+                return out
+            } catch (_: TranslateException) {
+            }
+        }
         val cur = s.translator.ifBlank { "google_free" }
         val paidYandex = cur == "yandex" && s.yandexKey.isNotBlank()
         if (!s.freeFallback || cur !in FREE_TRANSLATORS || paidYandex) throw err

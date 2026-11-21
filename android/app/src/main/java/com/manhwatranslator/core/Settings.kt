@@ -72,6 +72,15 @@ class Settings(ctx: Context) {
             p.edit().putString("region", r?.let { "${it.left},${it.top},${it.right},${it.bottom}" }).apply()
         }
 
+    /** Раз в день узнавать на GitHub, не вышла ли новая версия */
+    var updateCheck by bool("update_check", true)
+    var updateCheckedAt by long("update_checked_at", 0L)
+    /** Последняя найденная версия и ссылка на неё (плашка показывается и после перезапуска) */
+    var updateLatest by str("update_latest", "")
+    var updateUrl by str("update_url", "")
+    /** Версия, о которой попросили не напоминать («Позже») */
+    var updateSkip by str("update_skip", "")
+
     var buttonX by int("button_x", 24)
     var buttonY by int("button_y", 400)
 
@@ -87,6 +96,13 @@ class Settings(ctx: Context) {
         override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>) = p.getInt(key, def)
         override fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Int) {
             p.edit().putInt(key, value).apply()
+        }
+    }
+
+    private fun long(key: String, def: Long) = object : kotlin.properties.ReadWriteProperty<Any?, Long> {
+        override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>) = p.getLong(key, def)
+        override fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Long) {
+            p.edit().putLong(key, value).apply()
         }
     }
 

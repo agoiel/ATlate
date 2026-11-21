@@ -13,8 +13,13 @@ android {
         applicationId = "com.manhwatranslator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.6.5"
+        versionCode = 9
+        versionName = "0.6.6"
+        // только процессоры телефонов: офлайн-переводчик (ML Kit) везёт свой код под каждый процессор,
+        // а x86 нужен лишь эмуляторам и почти не встречается в телефонах
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // BuildConfig.VERSION_NAME — номер версии в окне настроек берётся из сборки
@@ -39,6 +44,14 @@ android {
         getByName("release") {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("shared")
+        }
+    }
+
+    // нативный код офлайн-переводчика хранится в APK сжатым: файл для скачивания почти вдвое меньше
+    // (при установке Android распакует его сам)
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
@@ -67,4 +80,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-japanese:16.0.1")
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-chinese:16.0.1")
+    // перевод без интернета на телефоне (модели языков скачиваются по кнопке, ~30 МБ каждая)
+    implementation("com.google.mlkit:translate:17.0.3")
+    // какой язык у текста на латинице — для офлайн-перевода «Латиницы» (модель в сервисах Google Play)
+    implementation("com.google.android.gms:play-services-mlkit-language-id:17.0.0")
 }

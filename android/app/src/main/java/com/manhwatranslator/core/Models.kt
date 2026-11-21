@@ -73,7 +73,13 @@ class PageResult(
     val glossaryAdded: Int = 0,
     /** Выбранный бесплатный переводчик не ответил и перевёл другой — что показать (пусто — не было) */
     val fallback: String = "",
-)
+) {
+    /** Переводы облаков по порядку чтения (пустые пропускаются). */
+    fun translations(): List<String> = bubbles.mapNotNull { b -> b.translation.trim().ifEmpty { null } }
+
+    /** Перевод страницы для буфера обмена: облака по порядку, между ними пустая строка. */
+    fun copyText(): String = translations().joinToString("\n\n")
+}
 
 /** Пиксели картинки для анализа фона (ARGB, построчно). */
 class PixelImage(val width: Int, val height: Int, val pixels: IntArray) {

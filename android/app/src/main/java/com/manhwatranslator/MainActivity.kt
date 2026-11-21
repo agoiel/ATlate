@@ -26,6 +26,7 @@ import android.widget.Toast
 import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.Enhance
 import com.manhwatranslator.core.Glossary
+import com.manhwatranslator.core.History
 import com.manhwatranslator.core.GlossaryStore
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.tr
@@ -36,7 +37,10 @@ import com.manhwatranslator.core.PageResult
 import com.manhwatranslator.core.Pipeline
 import com.manhwatranslator.core.Settings
 import com.manhwatranslator.core.TitleStore
+import com.manhwatranslator.core.TitleProfile
 import com.manhwatranslator.core.Translators
+import com.manhwatranslator.core.Updates
+import com.manhwatranslator.core.OfflineModels
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -59,6 +63,8 @@ class MainActivity : Activity() {
     private lateinit var modeHint: TextView
     private lateinit var srcPicker: PickerView
     private lateinit var tgtPicker: PickerView
+    /** Место для плашки «вышла новая версия» (пустое, пока её нет). */
+    private lateinit var updateSlot: LinearLayout
     private lateinit var glossPicker: PickerView
     private lateinit var autoGloss: SwitchRow
     private lateinit var autoGlossHint: android.widget.TextView
@@ -87,6 +93,8 @@ class MainActivity : Activity() {
         root.addView(buildHero())
         root.addView(buildTiles(), lp().margins(this, 16, -34, 16, 0))
         val content = ui.vertical()
+        updateSlot = ui.vertical().apply { visibility = View.GONE }
+        content.addView(updateSlot)
         content.addView(buildLanguages(), lp().margins(this, top = 16))
         content.addView(buildTranslator(), lp().margins(this, top = 14))
         content.addView(buildGlossary(), lp().margins(this, top = 14))
@@ -111,6 +119,57 @@ class MainActivity : Activity() {
             root.setPadding(0, 0, 0, bottom + dp(24))
         }
         handleShare(intent)
+        showUpdate()
+        checkUpdates()
+    }
+
+    // ---------------------------------------------------------------- обновления
+    /** Раз в день спросить у GitHub, не вышла ли новая версия (в фоне). */
+    private fun checkUpdates(force: Boolean = false) {
+        if (!force && !Updates.due(s)) return
+        thread(isDaemon = true, name = "update-check") {
+            val r = Updates.fetch() ?: return@thread      // не удалось — попробуем при следующем запуске
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                s.updateCheckedAt = System.currentTimeMillis()
+                s.updateLatest = r.version
+                s.updateUrl = r.url
+                showUpdate()
+            }
+        }
+    }
+
+    /** Плашка «вышла новая версия» — только когда она действительно вышла. */
+    private fun showUpdate() {
+        updateSlot.removeAllViews()
+        val r = if (s.updateCheck) Updates.offer(s, BuildConfig.VERSION_NAME) else null
+        if (r == null) {
+            updateSlot.visibility = View.GONE
+            return
+        }
+        val card = ui.card()
+        card.addView(ui.cardHeader(trf("Вышла версия %s", r.version), R.drawable.ic_download,
+            trf("Сейчас у вас %s. Скачайте ATlate.apk и откройте его — приложение обновится, настройки сохранятся.",
+                BuildConfig.VERSION_NAME)))
+        val row = ui.horizontal()
+        val later = PillButton(this, tr("Позже"), null, PillStyle.OUTLINE, 44)
+        later.onClick {
+            s.updateSkip = r.version
+            showUpdate()
+        }
+        val get = PillButton(this, tr("Скачать"), R.drawable.ic_download, PillStyle.PRIMARY, 44)
+        get.onClick {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.url)))
+            } catch (_: Exception) {
+                toast(r.url)
+            }
+        }
+        row.addView(later, lp(0, weight = 1f))
+        row.addView(get, lp(0, weight = 1f).margins(this, start = 10))
+        card.addView(row, lp().margins(this, top = 12))
+        updateSlot.addView(card, lp().margins(this, top = 16))
+        updateSlot.visibility = View.VISIBLE
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -247,6 +306,8 @@ class MainActivity : Activity() {
         // в режиме «Авто» показываем и язык, который сейчас найден
         srcPicker.setValue(if (s.autoLang) trf("Авто · %s", I18n.lower(name)) else name)
         tgtPicker.setValue(Languages.tgt(s.targetLang).name)
+        // у офлайн-переводчика список нужных языков зависит от выбранных
+        if (::keysBox.isInitialized && s.translator == "offline") selectTranslator("offline")
     }
 
     private fun pickSource() {
@@ -301,7 +362,8 @@ class MainActivity : Activity() {
             s.requestIntervalSec, 0.5f, 0f, 10f, { String.format(tr("%.1f с"), it) }) { s.requestIntervalSec = it },
             lp().margins(this, top = 12))
         card.addView(SwitchRow(this, tr("Запасные бесплатные переводчики"),
-            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным"), s.freeFallback) { s.freeFallback = it },
+            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным; нет интернета — офлайн, если языки скачаны"),
+            s.freeFallback) { s.freeFallback = it },
             lp().margins(this, top = 8))
         selectTranslator(s.translator)
         return card
@@ -380,13 +442,73 @@ class MainActivity : Activity() {
                 field(tr("API-ключ"), s.openaiKey, "sk-…", secret = true) { s.openaiKey = it }
                 field(tr("Модель"), s.openaiModel, "gpt-4o-mini") { s.openaiModel = it }
             }
+            "offline" -> buildOffline(::note)
         }
+    }
+
+    /** Офлайн-переводчик: какие языки скачаны, кнопка «Скачать языки», удаление. */
+    private fun buildOffline(note: (String) -> Unit) {
+        note(tr("Переводит прямо на телефоне, без интернета: в поездке, в метро, без VPN и лимитов. Качество — как у простого машинного перевода. Языки нужно один раз скачать, около 30 МБ каждый."))
+        val status = ui.caption("")
+        keysBox.addView(status, lp().margins(this, top = 10))
+        val dl = PillButton(this, tr("Скачать языки"), R.drawable.ic_download, PillStyle.TONAL, 44)
+        keysBox.addView(dl, lp().margins(this, top = 10))
+        val del = ui.text(tr("Удалить скачанные языки"), 14f, T.c.primary, Fonts.medium).apply {
+            isClickable = true
+            background = pressable(null, dpF(10f))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+        keysBox.addView(del, lp(LinearLayout.LayoutParams.WRAP_CONTENT).margins(this, top = 4))
+
+        val src = Languages.src(s.sourceLang)
+        val tgt = Languages.tgt(s.targetLang)
+        // нужные языки: оригинал и перевод (для «Латиницы» язык оригинала станет известен только при переводе)
+        val need = LinkedHashMap<String, String>()
+        OfflineModels.code(src.code)?.let { need[it] = I18n.lower(src.name.substringBefore(" (")) }
+        OfflineModels.code(tgt.code)?.let { need[it] = I18n.lower(tgt.name) }
+        fun refresh() {
+            OfflineModels.downloaded { have ->
+                if (isDestroyed) return@downloaded
+                val missing = need.filterKeys { it !in have }
+                status.text = when {
+                    OfflineModels.code(tgt.code) == null ->
+                        trf("Офлайн-переводчик не переводит на язык «%s» — выберите другой язык перевода.", tgt.name)
+                    src.code != Languages.LATIN && OfflineModels.code(src.code) == null ->
+                        trf("Офлайн-переводчик не переводит с языка «%s».", src.name)
+                    missing.isEmpty() && src.code == Languages.LATIN ->
+                        tr("Язык перевода скачан. Для «Латиницы» скачайте и язык оригинала: выберите его в списке «С языка».")
+                    missing.isEmpty() -> trf("Готово к работе без интернета: %s.", need.values.joinToString(", "))
+                    else -> trf("Нужно скачать: %s.", missing.values.joinToString(", "))
+                }
+                dl.visibility = if (missing.isEmpty()) View.GONE else View.VISIBLE
+                dl.isEnabled = true
+                del.visibility = if (have.any { it != "en" }) View.VISIBLE else View.GONE
+            }
+        }
+        dl.onClick {
+            val missing = need.keys.toList()
+            dl.isEnabled = false
+            status.text = tr("Скачиваю языки… Это займёт минуту-другую.")
+            OfflineModels.download(missing) { err ->
+                if (isDestroyed) return@download
+                if (err != null) toast(trf("Не удалось скачать языки: %s", err))
+                refresh()
+            }
+        }
+        del.setOnClickListener {
+            AlertDialog.Builder(this).setTitle(tr("Удалить скачанные языки?"))
+                .setMessage(tr("Перевод без интернета перестанет работать, пока языки не будут скачаны снова."))
+                .setPositiveButton(tr("Удалить")) { _, _ -> OfflineModels.deleteAll { if (!isDestroyed) refresh() } }
+                .setNegativeButton(tr("Отмена"), null)
+                .show()
+        }
+        refresh()
     }
 
     // ---------------------------------------------------------------- тайтл и глоссарий
     private fun buildGlossary(): View {
         val card = ui.card()
-        card.addView(ui.cardHeader(tr("Тайтл"), R.drawable.ic_book, tr("Контекст и глоссарий сохраняются для каждой манхвы")))
+        card.addView(ui.cardHeader(tr("Тайтл"), R.drawable.ic_book, tr("Контекст, глоссарий, область и языки — свои у каждой манхвы")))
         titlePicker = PickerView(this, tr("АКТИВНЫЙ ТАЙТЛ")) { pickTitle() }
         card.addView(titlePicker, lp().margins(this, top = 14))
         val trow = ui.horizontal()
@@ -503,18 +625,28 @@ class MainActivity : Activity() {
         val cur = titles.indexOfFirst { it.id == s.activeTitle } + 1
         AlertDialog.Builder(this).setTitle(tr("Тайтл"))
             .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->
+                d.dismiss()     // сначала закрыть: смена тайтла может пересобрать экран
                 selectTitle(if (which == 0) "" else titles[which - 1].id)
-                d.dismiss()
             }
             .setPositiveButton(tr("Новый")) { _, _ -> createTitle() }
             .show()
     }
 
+    /** Сменить тайтл: уходящий запоминает свою область, режим и языки, выбранный — восстанавливает свои. */
     private fun selectTitle(id: String) {
+        val old = s.activeTitle
+        if (old.isNotBlank() && old != id) TitleProfile.remember(this, old, s)
         s.activeTitle = id
-        TitleStore.load(this, id)?.let { s.glossary = it.glossary }
+        val t = TitleStore.load(this, id)
+        t?.let { s.glossary = it.glossary }
+        val changed = t?.profile?.let { TitleProfile.apply(it, s) } ?: false
         notifyContextChanged()
-        refreshGlossary()
+        if (changed) {
+            // область, режим и языки показаны в разных местах экрана — проще собрать его заново
+            recreate()
+        } else {
+            refreshGlossary()
+        }
     }
 
     private fun askName(title: String, initial: String, onOk: (String) -> Unit) {
@@ -635,6 +767,11 @@ class MainActivity : Activity() {
         }, lp().margins(this, top = 2))
         body.addView(SwitchRow(this, tr("Повторять наклон текста"), tr("Перевод под тем же углом, что и оригинал"),
             s.keepTilt) { s.keepTilt = it }, lp().margins(this, top = 2))
+        body.addView(SwitchRow(this, tr("Проверять обновления"), tr("Раз в день узнавать на GitHub, не вышла ли новая версия"),
+            s.updateCheck) {
+            s.updateCheck = it
+            if (it) checkUpdates(force = true) else showUpdate()
+        }, lp().margins(this, top = 2))
         card.addView(body)
 
         header.setOnClickListener {
@@ -694,6 +831,9 @@ class MainActivity : Activity() {
         }
         row.addView(clearBtn, lp(0, weight = 1f).margins(this, start = 8))
         extra.addView(row, lp().margins(this, top = 12))
+        val histBtn = PillButton(this, tr("История переводов"), R.drawable.ic_book, PillStyle.TONAL, 44)
+        histBtn.onClick { Dialogs.history(this) }
+        extra.addView(histBtn, lp().margins(this, top = 8))
         body.addView(extra)
         card.addView(body)
 
@@ -803,6 +943,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 PageResult(error = trf("Ошибка: %s", e.message))
             }
+            if (s.devMode) History.add(this, res, s, TitleStore.load(this, s.activeTitle)?.name ?: "")
             main.post {
                 progress.dismiss()
                 Dialogs.result(this, res, shot)

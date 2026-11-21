@@ -20,6 +20,7 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.content.res.ColorStateList
 import com.manhwatranslator.core.PageResult
+import com.manhwatranslator.core.History
 
 /** Диалоги в стиле приложения: ожидание, результат перевода, справка. */
 object Dialogs {
@@ -136,9 +137,105 @@ object Dialogs {
         val d = base(ctx, box)
         val ok = PillButton(ctx, tr("Готово"), null, PillStyle.PRIMARY, 48)
         ok.onClick { d.dismiss() }
-        box.addView(ok, lp().margins(ctx, top = 16))
+        val copy = res.copyText()
+        if (copy.isEmpty()) {
+            box.addView(ok, lp().margins(ctx, top = 16))
+        } else {
+            // отдельную реплику можно выделить и скопировать долгим нажатием, всю страницу — кнопкой
+            val row = ui.horizontal()
+            val cp = PillButton(ctx, tr("Копировать"), null, PillStyle.OUTLINE, 48)
+            cp.onClick { copyToClipboard(ctx, copy, trf("Перевод скопирован: облаков %s", res.translations().size)) }
+            row.addView(cp, lp(0, weight = 1f))
+            row.addView(ok, lp(0, weight = 1f).margins(ctx, start = 10))
+            box.addView(row, lp().margins(ctx, top = 16))
+        }
         d.show()
     }
+
+    /** История переводов (режим разработчика): поиск, копирование, «Поделиться» (CSV), очистка. */
+    fun history(ctx: Context) {
+        val ui = Ui(ctx)
+        val c = T.c
+        val all = History.load(ctx)
+        var shown = all
+        val box = ui.vertical().apply { setPadding(ctx.dp(20), ctx.dp(20), ctx.dp(20), ctx.dp(16)) }
+        box.addView(ui.text(tr("История переводов"), 20f, c.text, Fonts.medium))
+        box.addView(ui.caption(tr("Пишется, пока включён режим разработчика. Хранятся последние несколько тысяч реплик.")),
+            lp().margins(ctx, top = 2))
+        val count = ui.caption("")
+        val list = ui.vertical()
+        fun fill(q: String) {
+            shown = History.search(all, q)
+            count.text = trf("Реплик: %s", shown.size) + if (shown.size > SHOW) trf(" · показаны последние %s", SHOW) else ""
+            list.removeAllViews()
+            if (shown.isEmpty()) {
+                list.addView(ui.caption(if (all.isEmpty()) tr("История пуста: включите режим разработчика и переведите что-нибудь.")
+                    else tr("Ничего не найдено.")), lp().margins(ctx, top = 8))
+            }
+            val fmt = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+            var head = ""
+            for (x in shown.take(SHOW)) {
+                val h = listOf(fmt.format(java.util.Date(x.time)), x.title, x.translator).filter { it.isNotBlank() }.joinToString(" · ")
+                if (h != head) {
+                    head = h
+                    list.addView(ui.text(h, 12f, c.text2), lp().margins(ctx, top = 12))
+                }
+                list.addView(ui.text(x.translation, 15f, c.text, Fonts.medium).apply { setTextIsSelectable(true) },
+                    lp().margins(ctx, top = 4))
+                val tag = if (x.src.isNotBlank() || x.tgt.isNotBlank()) "${x.src.uppercase()} → ${x.tgt.uppercase()} · " else ""
+                list.addView(ui.text(tag + x.original, 12.5f, c.text2).apply { setTextIsSelectable(true) })
+            }
+        }
+        box.addView(Field(ctx, "", "", tr("Поиск по оригиналу, переводу или тайтлу")) { fill(it) }, lp().margins(ctx, top = 12))
+        box.addView(count, lp().margins(ctx, top = 6))
+        val maxH = (ctx.resources.displayMetrics.heightPixels * 0.5f).toInt()
+        box.addView(MaxHeightScrollView(ctx, maxH).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list)
+        }, lp().margins(ctx, top = 4))
+
+        val d = base(ctx, box)
+        val row = ui.horizontal()
+        val copy = PillButton(ctx, tr("Копировать"), null, PillStyle.TONAL, 44)
+        copy.onClick {
+            if (shown.isNotEmpty()) copyToClipboard(ctx, History.toText(shown), trf("Скопировано реплик: %s", shown.size))
+        }
+        val share = PillButton(ctx, tr("Поделиться"), null, PillStyle.TONAL, 44)
+        share.onClick {
+            if (shown.isEmpty()) return@onClick
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "ATlate history.csv")
+                putExtra(android.content.Intent.EXTRA_TEXT, History.toCsv(shown))
+            }
+            try {
+                ctx.startActivity(android.content.Intent.createChooser(send, tr("Поделиться историей")))
+            } catch (_: Exception) {
+            }
+        }
+        row.addView(copy, lp(0, weight = 1f))
+        row.addView(share, lp(0, weight = 1f).margins(ctx, start = 8))
+        box.addView(row, lp().margins(ctx, top = 14))
+        val row2 = ui.horizontal()
+        val clear = PillButton(ctx, tr("Очистить"), null, PillStyle.OUTLINE, 44)
+        clear.onClick {
+            android.app.AlertDialog.Builder(ctx).setTitle(tr("Очистить историю?"))
+                .setMessage(tr("Все сохранённые реплики будут удалены."))
+                .setPositiveButton(tr("Удалить")) { _, _ -> History.clear(ctx); d.dismiss() }
+                .setNegativeButton(tr("Отмена"), null)
+                .show()
+        }
+        clear.isEnabled = all.isNotEmpty()
+        val ok = PillButton(ctx, tr("Готово"), null, PillStyle.PRIMARY, 44)
+        ok.onClick { d.dismiss() }
+        row2.addView(clear, lp(0, weight = 1f))
+        row2.addView(ok, lp(0, weight = 1f).margins(ctx, start = 8))
+        box.addView(row2, lp().margins(ctx, top = 8))
+        fill("")
+        d.show()
+    }
+
+    private const val SHOW = 300
 
     fun help(ctx: Context) {
         val ui = Ui(ctx)

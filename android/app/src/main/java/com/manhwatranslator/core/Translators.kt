@@ -687,6 +687,7 @@ object Translators {
         TranslatorInfo("yandex", tr("Яндекс"), tr("Без ключа · хорошо знает русский"), tr("Бесплатно, без ключа")),
         TranslatorInfo("duckduckgo", "DuckDuckGo", tr("Без ключа · переводит через Bing"), tr("Бесплатно, без ключа")),
         TranslatorInfo("lingva", "Lingva", tr("Без ключа · Google через посредника, выручает при VPN"), tr("Бесплатно, без ключа")),
+        TranslatorInfo("offline", tr("Офлайн"), tr("Без интернета · на телефоне, языки скачиваются один раз"), tr("Бесплатно, без ключа")),
         TranslatorInfo("deepl", "DeepL", tr("Ключ · 500 тыс. символов в месяц бесплатно"), tr("С ключом")),
         TranslatorInfo("microsoft", "Microsoft", tr("Ключ · 2 млн символов в месяц бесплатно"), tr("С ключом")),
         TranslatorInfo("papago", "Papago", tr("Ключ Naver Cloud · лучший для корейского"), tr("С ключом")),
@@ -707,6 +708,7 @@ object Translators {
         "gemini" -> GeminiTranslator(s.geminiKey, s.geminiModel)
         "claude" -> ClaudeTranslator(s.claudeKey, s.claudeModel)
         "openai" -> OpenAICompatTranslator(s.openaiUrl, s.openaiKey, s.openaiModel)
+        "offline" -> OfflineTranslator()
         else -> GoogleFreeTranslator()
     }
 }
