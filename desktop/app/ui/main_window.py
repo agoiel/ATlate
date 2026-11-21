@@ -34,6 +34,7 @@ from .glossary_editor import GlossaryEditor, new_glossary_file
 from .list_window import ListWindow
 from .mini import MiniPanel
 from .voice_chat import ModelDownload, VoiceController
+from .words import WordHover
 from .overlay import OverlayWindow, paint_plates
 from .selector import SelectionWindow
 from .widgets import (Card, Columns, Dropdown, Field, FlowLayout, Hero, ResponsiveRow, Segmented, StatusChip,
@@ -180,6 +181,11 @@ class MainWindow(QWidget):
         self.pipeline = Pipeline(cfg)
         self.region: Region | None = Region.from_dict(cfg.get("last_region"))
         self.overlay = OverlayWindow(cfg)
+        self.shown_k = 1.0
+        # «Слова на экране»: мышь на слове оригинала → «Копировать» и «В словарик»
+        self.words = WordHover(self)
+        self.words.added.connect(self._on_word_added)
+        self.words.failed.connect(lambda msg: self._set_status(tr("Слово сохранено без перевода: {0}", msg), True))
         self.list_window = ListWindow()
         self.selector: SelectionWindow | None = None
         self.pool = QThreadPool.globalInstance()
@@ -391,12 +397,12 @@ class MainWindow(QWidget):
     def _build_tiles(self) -> QWidget:
         tiles = [
             Tile(tr("Перевести\nкартинку"), "image", tr("Перевести сохранённый скриншот или страницу")),
-            Tile(tr("Новый\nтайтл"), "refresh", tr("Создать тайтл со своим контекстом и глоссарием")),
+            Tile(tr("Словарик"), "bookmark", tr("Слова, отмеченные на экране: перевод и ваши заметки")),
             Tile(tr("Окно\nсо списком"), "list", tr("Оригинал и перевод каждой реплики списком")),
             Tile(tr("Как\nпользоваться"), "help", tr("Короткая инструкция")),
         ]
         tiles[0].clicked.connect(self.translate_file)
-        tiles[1].clicked.connect(self.create_title)
+        tiles[1].clicked.connect(self.show_vocab)
         tiles[2].clicked.connect(self._show_list)
         tiles[3].clicked.connect(self.show_help)
         return _TileGrid(tiles)
@@ -1011,6 +1017,11 @@ class MainWindow(QWidget):
             sw = SwitchRow(title, sub, bool(c.get(key, False)))
             sw.toggled.connect(lambda v, k=key: self._set(k, v))
             card.add(sw)
+        words = SwitchRow(tr("Слова на экране"), tr("Задержите мышь на слове — появятся «Копировать» и «В словарик»; "
+                                                    "плашка перевода на время прячется, чтобы было видно оригинал"),
+                          bool(c.get("word_hover", True)))
+        words.toggled.connect(lambda v: (self._set("word_hover", v), self.words.sync()))
+        card.add(words)
         upd = SwitchRow(tr("Проверять обновления"), tr("Раз в день узнавать на GitHub, не вышла ли новая версия"),
                         bool(c.get("update_check", True)))
         upd.toggled.connect(self._set_update_check)
@@ -1905,6 +1916,8 @@ class MainWindow(QWidget):
             return
         mode = self.cfg["display_mode"]
         self.shown_result = result
+        self.shown_k = k
+        self.words.sync()
         if mode in ("overlay", "both") and self.region:
             self.overlay.set_result(result, k)
         if mode in ("list", "both"):
@@ -2061,6 +2074,7 @@ class MainWindow(QWidget):
         self.pipeline.reset_session()
         self.overlay.clear()
         self.shown_result = None
+        self.words.sync()
         self.list_window.set_result(None)
         self._fill_titles()
         self._set_status(tr("Контекст и кэш очищены."))
@@ -2068,6 +2082,16 @@ class MainWindow(QWidget):
     def show_history(self) -> None:
         from .history_window import HistoryDialog
         HistoryDialog(self).exec()
+
+    def show_vocab(self) -> None:
+        from .vocab_window import VocabDialog
+        VocabDialog(self, target_lang=self.cfg.get("target_lang", "ru")).exec()
+
+    def _on_word_added(self, entry, existed: bool) -> None:
+        if existed:
+            self._set_status(tr("Уже в словарике: {0} — {1}", entry.word, entry.translation or "?"))
+        else:
+            self._set_status(tr("В словарике: {0} — {1}", entry.word, entry.translation or "?"))
 
     def _remember(self, result: PageResult) -> None:
         """Режим разработчика: записать перевод в историю."""
@@ -2174,6 +2198,7 @@ class MainWindow(QWidget):
         self.cfg.save()
         self.auto_timer.stop()
         self._stop_hotkeys()
+        self.words.shutdown()
         if self._voice_dl is not None:
             self._voice_dl.cancel()
         self.voice.shutdown()
@@ -2279,6 +2304,8 @@ class HelpDialog(QDialog):
                "реплика копируется щелчком.", hk.get('copy') or "—"),
             tr("Если текст не находится на тёмном или пёстром фоне — в «Тонкой настройке» выберите режим "
                "распознавания «Тщательный» или «Максимальный»."),
+            tr("Незнакомое слово? Задержите на нём мышь: плашка спрячется, над словом оригинала появятся "
+               "«Копировать» и «В словарик». Слова с переводом и вашими заметками — в «Словарике»."),
             tr("Для чата в онлайн-игре — вкладка «Голос»: скажите фразу ({0}), и перевод окажется в буфере "
                "обмена — вставьте его в чат (Ctrl+V). Игровые слова и ники добавьте в «Словарь для чата».",
                hk.get("voice") or "—"),

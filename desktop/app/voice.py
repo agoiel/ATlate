@@ -533,37 +533,17 @@ def apply_terms(text: str, found: list[tuple[int, int, GlossaryEntry]]) -> str:
 
 # ================================================================ перевод
 def translate(cfg, text: str, src: str, tgt: str, glossary: Glossary | None = None) -> tuple[str, str]:
-    """Перевести фразу для чата → (перевод, кто перевёл). Бесплатный переводчик не ответил —
-    пробуем другие бесплатные (как при обычном переводе, см. Pipeline._fallback)."""
-    from .pipeline import FREE_TRANSLATORS
-    from .translators import TRANSLATORS, TranslateError, TranslateRequest, create_translator
+    """Перевести фразу для чата → (перевод, кто перевёл). Слова словаря обычным переводчикам
+    подставляются в текст, ИИ — уходят списком; бесплатный не ответил — переводит другой бесплатный."""
+    from . import translators
 
-    req = TranslateRequest(texts=[text], src=src, tgt=tgt, chat=True)
+    req = translators.TranslateRequest(texts=[text], src=src, tgt=tgt, chat=True)
     found = find_terms(glossary, text)
     if found:
         seen: dict[int, GlossaryEntry] = {id(e): e for _a, _b, e in found}
-        req.glossary = list(seen.values())          # ИИ-переводчикам — списком в запросе
-    name = cfg.get("translator", "google_free")
-    tor = create_translator(name, cfg)
-    if found and not tor.uses_llm:
-        req.anchored = [apply_terms(text, found)]   # обычным — подстановкой в текст
-    try:
-        return (tor.translate(req) or [""])[0].strip(), tor.title
-    except TranslateError as err:
-        paid_yandex = name == "yandex" and cfg.translator_settings("yandex").get("api_key")
-        if not cfg.get("free_fallback", True) or name not in FREE_TRANSLATORS or paid_yandex:
-            raise
-        for alt_name in FREE_TRANSLATORS:
-            if alt_name == name:
-                continue
-            alt = TRANSLATORS[alt_name]({} if alt_name == "yandex" else cfg.translator_settings(alt_name))
-            if found:
-                req.anchored = [apply_terms(text, found)]
-            try:
-                return (alt.translate(req) or [""])[0].strip(), alt.title
-            except TranslateError:
-                continue
-        raise err
+        req.glossary = list(seen.values())
+    out, by = translators.translate_with_fallback(cfg, req, [apply_terms(text, found)] if found else None)
+    return (out or [""])[0].strip(), by
 
 
 @dataclass

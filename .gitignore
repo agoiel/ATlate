@@ -14,6 +14,7 @@ desktop/config.json
 desktop/error.log
 desktop/dev_log.txt
 desktop/history.jsonl
+desktop/vocabulary.json
 desktop/libs/
 desktop/out/
 desktop/*.spec

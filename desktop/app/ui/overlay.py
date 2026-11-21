@@ -29,6 +29,11 @@ class OverlayWindow(QWidget):
         self.excluded = False
         self.user_hidden = False
         self.show_frame = False
+        # «Слова на экране»: плашка этого облака на время спрятана (под ней виден оригинал),
+        # слово под мышью обведено
+        self.peek_index: int | None = None
+        self.mark: QRectF | None = None
+        self._shown_for_peek = False
 
     # ------------------------------------------------------------ управление
     def place(self, region: Region) -> None:
@@ -43,6 +48,24 @@ class OverlayWindow(QWidget):
 
     def clear(self) -> None:
         self.result = None
+        self.update()
+
+    def peek(self, index: int | None, rect: QRectF) -> None:
+        """Спрятать плашку облака index и обвести слово rect (координаты окна). Если перевод скрыт
+        или показан списком, окно появляется только ради рамки вокруг слова."""
+        self.peek_index, self.mark = index, QRectF(rect)
+        if not self.isVisible():
+            self._shown_for_peek = True
+            self.show()
+        self.update()
+
+    def unpeek(self) -> None:
+        if self.mark is None and self.peek_index is None:
+            return
+        self.peek_index, self.mark = None, None
+        if self._shown_for_peek:
+            self._shown_for_peek = False
+            self.hide()
         self.update()
 
     def showEvent(self, e):
@@ -73,14 +96,17 @@ class OverlayWindow(QWidget):
             p.fillPath(path, QColor(61, 43, 40))
             p.setPen(QColor(243, 227, 204))
             p.drawText(pill, int(Qt.AlignmentFlag.AlignCenter.value), label)
-        if not self.result:
-            p.end()
-            return
-
-        paint_plates(p, self.result.bubbles, self.k, self.rect(), self.cfg)
-        dbg = self.result.debug
-        if self.cfg.get("dev_mode") and dbg is not None:
-            paint_debug(p, dbg, self.k, self.rect(), bool(self.cfg.get("debug_boxes", True)))
+        if self.result and not self.user_hidden:
+            bubbles = [b for i, b in enumerate(self.result.bubbles) if i != self.peek_index]
+            paint_plates(p, bubbles, self.k, self.rect(), self.cfg)
+            dbg = self.result.debug
+            if self.cfg.get("dev_mode") and dbg is not None:
+                paint_debug(p, dbg, self.k, self.rect(), bool(self.cfg.get("debug_boxes", True)))
+        if self.mark is not None:
+            # слово под мышью («Слова на экране»): мягкая обводка поверх оригинала
+            p.setPen(QPen(QColor(217, 178, 124), 2))
+            p.setBrush(QColor(217, 178, 124, 50))
+            p.drawRoundedRect(self.mark.adjusted(-3, -2, 3, 2), 5, 5)
         p.end()
 
 

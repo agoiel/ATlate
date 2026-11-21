@@ -52,6 +52,12 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host "python exit code: $code"
           exit $code
+      - name: Words on screen and the word list
+        run: |
+          python -X faulthandler tools/test_words.py ../out/words
+          $code = $LASTEXITCODE
+          Write-Host "python exit code: $code"
+          exit $code
       - name: Speech for the voice check (Windows speech synthesis)
         # фразы для «Голоса в чат» говорит сама Windows; если голосов нет — проверка обойдётся без них
         shell: pwsh
