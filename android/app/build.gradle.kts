@@ -47,6 +47,14 @@ android {
         }
     }
 
+    // нативный код офлайн-переводчика хранится в APK сжатым: файл для скачивания почти вдвое меньше
+    // (при установке Android распакует его сам)
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false
