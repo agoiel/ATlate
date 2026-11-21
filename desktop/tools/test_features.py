@@ -151,7 +151,10 @@ def test_copy() -> None:
     for i, g in enumerate(win.mini.groups):
         win.mini._layout(i)
     widest = max(g.width for g in win.mini.groups)
-    check("компактная панель: вытянутая кнопка помещается в окно", widest <= mini_mod.EXT, f"{widest:.0f} из {mini_mod.EXT}")
+    detail = "; ".join(f"{g.key} {g.width:.0f}: " + ", ".join(f"{it.text or it.key} {it.w:.0f}" for it in g.items)
+                       for g in win.mini.groups)
+    check("компактная панель: вытянутая кнопка помещается в окно", widest <= mini_mod.EXT,
+          f"{widest:.0f} из {mini_mod.EXT} · шрифт {win.mini._font.family()} · {detail}")
     copy_item = next(it for it in win.mini.groups[0].items if it.key == "copy")
     check("значок без надписи, с подсказкой", copy_item.text == "" and copy_item.hint == "Копировать перевод")
     win.exit_mini()
