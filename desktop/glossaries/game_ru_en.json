@@ -1,0 +1,237 @@
+{
+  "name": "Игровой сленг (русский → английский)",
+  "source_lang": "ru",
+  "target_lang": "en",
+  "entries": [
+    {
+      "source": "мид",
+      "target": "mid",
+      "note": "центральная линия"
+    },
+    {
+      "source": "топ",
+      "target": "top",
+      "note": "верхняя линия"
+    },
+    {
+      "source": "бот",
+      "target": "bot",
+      "note": "нижняя линия или бот"
+    },
+    {
+      "source": "лес",
+      "target": "jungle",
+      "note": "лес на карте"
+    },
+    {
+      "source": "лесник",
+      "target": "jungler",
+      "note": ""
+    },
+    {
+      "source": "керри",
+      "target": "carry",
+      "note": ""
+    },
+    {
+      "source": "саппорт",
+      "target": "support",
+      "note": ""
+    },
+    {
+      "source": "сапорт",
+      "target": "support",
+      "note": ""
+    },
+    {
+      "source": "сап",
+      "target": "sup",
+      "note": "саппорт"
+    },
+    {
+      "source": "танк",
+      "target": "tank",
+      "note": ""
+    },
+    {
+      "source": "хил",
+      "target": "heal",
+      "note": "лечение"
+    },
+    {
+      "source": "хилер",
+      "target": "healer",
+      "note": ""
+    },
+    {
+      "source": "ульта",
+      "target": "ult",
+      "note": "ультимейт"
+    },
+    {
+      "source": "ульт",
+      "target": "ult",
+      "note": "ультимейт"
+    },
+    {
+      "source": "кд",
+      "target": "cd",
+      "note": "перезарядка"
+    },
+    {
+      "source": "баф",
+      "target": "buff",
+      "note": ""
+    },
+    {
+      "source": "дебаф",
+      "target": "debuff",
+      "note": ""
+    },
+    {
+      "source": "фарм",
+      "target": "farm",
+      "note": ""
+    },
+    {
+      "source": "ганк",
+      "target": "gank",
+      "note": ""
+    },
+    {
+      "source": "пуш",
+      "target": "push",
+      "note": ""
+    },
+    {
+      "source": "рес",
+      "target": "res",
+      "note": "воскрешение"
+    },
+    {
+      "source": "респ",
+      "target": "respawn",
+      "note": ""
+    },
+    {
+      "source": "катка",
+      "target": "match",
+      "note": "одна игра"
+    },
+    {
+      "source": "тиммейт",
+      "target": "teammate",
+      "note": ""
+    },
+    {
+      "source": "пати",
+      "target": "party",
+      "note": ""
+    },
+    {
+      "source": "нуб",
+      "target": "noob",
+      "note": ""
+    },
+    {
+      "source": "гг",
+      "target": "gg",
+      "note": "good game"
+    },
+    {
+      "source": "гг вп",
+      "target": "gg wp",
+      "note": "good game, well played"
+    },
+    {
+      "source": "афк",
+      "target": "afk",
+      "note": "отошёл"
+    },
+    {
+      "source": "изи",
+      "target": "ez",
+      "note": "легко"
+    },
+    {
+      "source": "го",
+      "target": "go",
+      "note": "пошли"
+    },
+    {
+      "source": "лут",
+      "target": "loot",
+      "note": ""
+    },
+    {
+      "source": "дроп",
+      "target": "drop",
+      "note": ""
+    },
+    {
+      "source": "скилл",
+      "target": "skill",
+      "note": ""
+    },
+    {
+      "source": "реген",
+      "target": "regen",
+      "note": ""
+    },
+    {
+      "source": "мана",
+      "target": "mana",
+      "note": ""
+    },
+    {
+      "source": "хп",
+      "target": "hp",
+      "note": ""
+    },
+    {
+      "source": "дпс",
+      "target": "dps",
+      "note": ""
+    },
+    {
+      "source": "нерф",
+      "target": "nerf",
+      "note": ""
+    },
+    {
+      "source": "лаг",
+      "target": "lag",
+      "note": ""
+    },
+    {
+      "source": "пинг",
+      "target": "ping",
+      "note": ""
+    },
+    {
+      "source": "рейд",
+      "target": "raid",
+      "note": ""
+    },
+    {
+      "source": "инвайт",
+      "target": "invite",
+      "note": "приглашение"
+    },
+    {
+      "source": "кик",
+      "target": "kick",
+      "note": ""
+    },
+    {
+      "source": "кемпер",
+      "target": "camper",
+      "note": ""
+    },
+    {
+      "source": "имба",
+      "target": "op",
+      "note": "слишком сильный"
+    }
+  ]
+}

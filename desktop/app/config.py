@@ -143,6 +143,8 @@ DEFAULTS: dict = {
     "voice_model": "base",            # base — быстрая модель распознавания | small — точная
     "voice_mic": "",                  # микрофон по имени (пусто — как в системе)
     "voice_sounds": True,             # звуковые сигналы «слушаю» и «готово»
+    "voice_glossary": "game_ru_en.json",   # словарь для чата: файл в папке glossaries (пусто — без словаря)
+    "ui_page": "screen",              # какая вкладка открыта: screen — экранный переводчик | voice — голос в чат
 
     # --- Горячие клавиши (формат pynput) ---
     "hotkeys": {

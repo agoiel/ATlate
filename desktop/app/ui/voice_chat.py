@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 
 from PySide6.QtCore import QObject, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter
@@ -158,6 +159,7 @@ class VoiceController(QObject):
         self._started = 0.0
         self._toast: VoiceToast | None = None
         self.last: voice.Phrase | None = None
+        self.recent: deque = deque(maxlen=10)     # последние фразы, новые первыми (на вкладке «Голос»)
         self.timer = QTimer(self)
         self.timer.setInterval(40)
         self.timer.timeout.connect(self._tick)
@@ -252,6 +254,7 @@ class VoiceController(QObject):
     def _on_done(self, phrase) -> None:
         self.state = "idle"
         self.last = phrase
+        self.recent.appendleft(phrase)
         QApplication.clipboard().setText(phrase.text)
         self._beep("done")
         self.toast.show_state("done", tr("В буфере — вставьте в чат: Ctrl+V"), phrase.text, seconds=5,
@@ -271,11 +274,11 @@ class VoiceController(QObject):
         if self.recorder is not None:
             self.recorder.stop()
         self.recorder, self.endpoint = None, None
-        if self.state == "listening":
-            self.state = "idle"
         if self._toast is not None:
             self._toast.hide()
-        self.changed.emit()
+        if self.state == "listening":
+            self.state = "idle"
+            self.changed.emit()
 
     def shutdown(self) -> None:
         self.cancel()

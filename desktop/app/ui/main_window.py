@@ -204,7 +204,8 @@ class MainWindow(QWidget):
         self.voice.failed.connect(self._on_voice_failed)
         self._voice_dl: ModelDownload | None = None
         self._voice_pct = 0
-        self.voice_howto = self.voice_model_note = self.voice_dl_btn = self.voice_test_btn = self.voice_result = None
+        self.voice_tor_note = self.voice_model_note = self.voice_dl_btn = self.voice_gloss_combo = None
+        self.voice_gloss_note = self.voice_recent = None
 
         self.setWindowTitle(f"ATlate {__version__}")
         self.setObjectName("root")
@@ -267,12 +268,20 @@ class MainWindow(QWidget):
         bl.setSpacing(14)
         if self._update is not None:
             bl.addWidget(self._build_update_banner())
-        bl.addWidget(self._build_tiles())
-        bl.addWidget(self._build_studio_banner())
+        # две страницы: экранный переводчик и «Голос в чат» — переключаются вкладками в шапке
+        self.screen_page = QWidget()
+        self.screen_page.setObjectName("transparent")
+        sp = QVBoxLayout(self.screen_page)
+        sp.setContentsMargins(0, 0, 0, 0)
+        sp.setSpacing(14)
+        sp.addWidget(self._build_tiles())
+        sp.addWidget(self._build_studio_banner())
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
-                                self._build_tuning(), self._build_hotkeys(), self._build_voice(),
-                                self._build_developer()])
-        bl.addWidget(self.columns)
+                                self._build_tuning(), self._build_hotkeys(), self._build_developer()])
+        sp.addWidget(self.columns)
+        bl.addWidget(self.screen_page)
+        self.voice_page = self._build_voice_page()
+        bl.addWidget(self.voice_page)
         foot = caption(tr("ATlate {0} · распознавание: {1}",
                           __version__, 'Windows OCR' if self.cfg['ocr_engine'] == 'windows' else 'EasyOCR'))
         foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -283,6 +292,7 @@ class MainWindow(QWidget):
         self.scroll.setWidget(content)
         if old is not None:
             old.deleteLater()
+        self._show_page()
 
     # ---------------------------------------------------------------- шапка
     def _build_hero(self) -> QWidget:
@@ -324,9 +334,10 @@ class MainWindow(QWidget):
         self.chip = StatusChip()
         lay.addWidget(self.chip, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.mode_switch = Segmented([("shot", tr("Скриншот")), ("live", "Live")], self.cfg.get("translate_mode", "shot"))
-        self.mode_switch.setMaximumWidth(360)
-        self.mode_switch.changed.connect(self._set_mode)
+        self.mode_switch = Segmented([("shot", tr("Скриншот")), ("live", "Live"), ("voice", tr("Голос"))],
+                                     self._switch_key())
+        self.mode_switch.setMaximumWidth(480)
+        self.mode_switch.changed.connect(self._on_mode_switch)
         lay.addWidget(self.mode_switch)
 
         flow_host = QWidget()
@@ -347,6 +358,24 @@ class MainWindow(QWidget):
         for b in (self.btn_main, self.btn_select, self.btn_zone, self.btn_hide):
             flow.addWidget(b)
         lay.addWidget(flow_host)
+        self.screen_actions = flow_host
+
+        # вкладка «Голос»: сказать фразу, включить клавишу, скопировать прошлый перевод ещё раз
+        voice_host = QWidget()
+        voice_host.setObjectName("transparent")
+        vflow = FlowLayout(10)
+        voice_host.setLayout(vflow)
+        self.btn_say = pill(tr("Сказать фразу"), "hero", "mic", tr("Скажите фразу — перевод окажется в буфере обмена"))
+        self.btn_say.clicked.connect(lambda: self.voice.press(""))
+        self.btn_voice_on = pill("", "heroOutline", "power")
+        self.btn_voice_on.clicked.connect(self._toggle_voice)
+        self.btn_voice_again = pill(tr("Скопировать снова"), "heroOutline", "copy",
+                                    tr("Положить последний перевод в буфер обмена ещё раз"))
+        self.btn_voice_again.clicked.connect(self._copy_voice_again)
+        for b in (self.btn_say, self.btn_voice_on, self.btn_voice_again):
+            vflow.addWidget(b)
+        lay.addWidget(voice_host)
+        self.voice_actions = voice_host
 
         self.hint = QLabel()
         self.hint.setWordWrap(True)
@@ -1007,94 +1036,268 @@ class MainWindow(QWidget):
                             "Работают при любой раскладке: Alt+Q сработает и на русской.")))
         return card
 
-    # ---------------------------------------------------------------- голос в чат
-    def _build_voice(self) -> Card:
+    # ---------------------------------------------------------------- вкладка «Голос»
+    def _switch_key(self) -> str:
+        return "voice" if self.cfg.get("ui_page") == "voice" else self.cfg.get("translate_mode", "shot")
+
+    def _on_mode_switch(self, key: str) -> None:
+        """Вкладки в шапке: «Скриншот» и «Live» — режимы экранного переводчика, «Голос» — своя страница."""
+        if key == "voice":
+            self._set_page("voice")
+            return
+        if self.cfg.get("ui_page") == "voice":
+            self._set_page("screen")
+        self._set_mode(key)
+
+    def _set_page(self, page: str) -> None:
+        if self.cfg.get("ui_page") != page:
+            self.cfg["ui_page"] = page
+            self.cfg.save()
+        self._show_page()
+        self._refresh_status()
+
+    def _show_page(self) -> None:
+        """Показать страницу выбранной вкладки: настройки экранного переводчика или голоса."""
+        voice_on = self.cfg.get("ui_page") == "voice"
+        self.screen_page.setVisible(not voice_on)
+        self.voice_page.setVisible(voice_on)
+        self.screen_actions.setVisible(not voice_on)
+        self.voice_actions.setVisible(voice_on)
+        if voice_on:
+            self._refresh_voice()
+        relayout(self.voice_page if voice_on else self.screen_page)
+
+    def _refresh_voice_hero(self) -> None:
+        """Шапка на вкладке «Голос»: состояние, кнопки и подсказка."""
         c = self.cfg
-        card = Card(tr("Голос в чат"), tr("Скажите фразу — перевод сразу окажется в буфере обмена для чата игры"),
-                    "mic", collapsible=True, collapsed=True)
-        self.voice_howto = self.voice_model_note = self.voice_dl_btn = self.voice_test_btn = None
-        self.voice_result = None
+        key = c["hotkeys"].get("voice", "")
+        on = bool(c.get("voice_enabled"))
         if not voice.available():
+            self.chip.set(False, tr("Распознавания речи нет в этой сборке"))
+        elif not voice.model_ready(c.get("voice_model", "base")):
+            self.chip.set(False, tr("Голос в чат · модель распознавания не скачана"))
+        elif on and key:
+            self.chip.set(True, tr("Голос в чат включён · {0}", pretty(key)))
+        elif on:
+            self.chip.set(True, tr("Голос в чат включён · без клавиши"))
+        else:
+            self.chip.set(False, tr("Голос в чат выключен"))
+        state = self.voice.state
+        set_pill(self.btn_say, tr("Остановить") if state == "listening" else
+                 tr("Распознаю…") if state == "busy" else tr("Сказать фразу"), "hero",
+                 "stop" if state == "listening" else "mic")
+        self.btn_say.setEnabled(state != "busy" and voice.available())
+        set_pill(self.btn_voice_on, tr("Выключить клавишу") if on else tr("Включить клавишу"), "heroOutline", "power")
+        self.btn_voice_on.setToolTip(tr("Клавиша {0} работает поверх игры, даже когда окно свёрнуто", pretty(key))
+                                     if key else tr("Задайте клавишу в карточке «Голос в чат»"))
+        self.btn_voice_on.setEnabled(voice.available())
+        self.btn_voice_again.setEnabled(self.voice.last is not None)
+        if not on:
+            hint = tr("Нажмите «Включить клавишу», чтобы говорить прямо из игры. «Сказать фразу» работает и без неё.")
+        elif key:
+            hint = tr("Удерживайте {0} и говорите — отпустите, когда закончите. Или нажмите {0} один раз: запись "
+                      "остановится сама, когда вы замолчите. Перевод сразу окажется в буфере обмена — вставьте его в "
+                      "чат: Ctrl+V.", pretty(key))
+        else:
+            hint = tr("Задайте клавишу в карточке «Голос в чат» — без неё работает только кнопка «Сказать фразу».")
+        self.hint.setText(hint)
+
+    def _toggle_voice(self) -> None:
+        on = not self.cfg.get("voice_enabled")
+        self.cfg["voice_enabled"] = on
+        self.cfg.save()
+        if on:
+            self.voice.preload()
+        else:
+            self.voice.shutdown()       # освободить память, занятую моделью
+        self._start_hotkeys()
+        self._refresh_voice()
+
+    def _copy_voice_again(self) -> None:
+        if self.voice.last is not None:
+            QApplication.clipboard().setText(self.voice.last.text)
+            self._set_status(tr("Снова в буфере обмена: {0}", self.voice.last.text))
+
+    def _build_voice_page(self) -> QWidget:
+        page = QWidget()
+        page.setObjectName("transparent")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(14)
+        self.voice_tor_note = self.voice_model_note = self.voice_dl_btn = self.voice_gloss_combo = None
+        self.voice_gloss_note = self.voice_recent = None
+        if not voice.available():
+            card = Card(tr("Голос в чат"), tr("Скажите фразу — перевод сразу окажется в буфере обмена для чата игры"),
+                        "mic")
             card.add(caption(tr("В этой сборке нет распознавания речи. Если программа запущена из исходников, "
                                 "установите пакеты: pip install faster-whisper sounddevice")))
-            return card
-        on = SwitchRow(tr("Включить"), tr("Горячая клавиша работает поверх игры, даже когда окно свёрнуто"),
-                       bool(c.get("voice_enabled")))
-        card.add(on)
+            lay.addWidget(card)
+            return page
+        lay.addWidget(Columns([self._build_voice_main(), self._build_voice_speech(), self._build_voice_glossary(),
+                               self._build_voice_recent()]))
+        return page
 
-        extra = QWidget()
-        el = QVBoxLayout(extra)
-        el.setContentsMargins(0, 0, 0, 0)
-        el.setSpacing(10)
-        self.voice_howto = caption("")
-        el.addWidget(self.voice_howto)
-        hk = Field(tr("Клавиша"), c["hotkeys"].get("voice", ""), "<alt>+v")
-        hk.edited.connect(self._set_voice_hotkey)
-        el.addWidget(hk)
+    def _build_voice_main(self) -> Card:
+        c = self.cfg
+        card = Card(tr("Голос в чат"), tr("Скажите фразу — перевод сразу окажется в буфере обмена для чата игры"), "mic")
         langs = [(k, v["name"]) for k, v in languages.voice_languages().items()]
-        mine = self._combo(langs, voice.my_language(c), lambda v: self._set_voice("voice_my_lang", v))
+        mine = self._combo(langs, voice.my_language(c), lambda v: self._set_voice("voice_my_lang", v, refill=True))
         chat = self._combo(langs, voice.chat_language(c), lambda v: self._set_voice("voice_chat_lang", v))
         arrow = QLabel()
         arrow.setPixmap(theme.pixmap("arrow", theme.palette().primary, 20))
-        el.addWidget(ResponsiveRow(self._labeled(tr("Я говорю на"), mine), arrow,
-                                   self._labeled(tr("Перевод в чат на"), chat), anchor=mine.header))
+        card.add(ResponsiveRow(self._labeled(tr("Я говорю на"), mine), arrow,
+                               self._labeled(tr("Перевод в чат на"), chat), anchor=mine.header))
+        hk = Field(tr("Клавиша"), c["hotkeys"].get("voice", ""), "<alt>+v")
+        hk.edited.connect(self._set_voice_hotkey)
+        card.add(hk)
+        self.voice_tor_note = caption("")
+        card.add(self.voice_tor_note)
+        return card
 
-        model = Dropdown(tr("Распознавание речи"), [
+    def _build_voice_speech(self) -> Card:
+        c = self.cfg
+        card = Card(tr("Распознавание речи"), tr("Прямо на компьютере, без интернета"), "tune")
+        model = Dropdown(tr("Модель"), [
             ("base", tr("Быстрое · {0} МБ", voice.MODELS["base"]["mb"]),
              tr("Фраза распознаётся за 1–2 секунды"), ""),
             ("small", tr("Точное · {0} МБ", voice.MODELS["small"]["mb"]),
              tr("Лучше понимает быструю и невнятную речь, но в 2–3 раза дольше"), ""),
         ], c.get("voice_model", "base"))
         model.changed.connect(self._set_voice_model)
-        el.addWidget(model)
+        card.add(model)
         self.voice_model_note = caption("")
-        el.addWidget(self.voice_model_note)
+        card.add(self.voice_model_note)
         self.voice_dl_btn = pill(tr("Скачать модель"), "primary", "download")
         self.voice_dl_btn.clicked.connect(self._voice_download)
-        el.addWidget(self.voice_dl_btn, 0, Qt.AlignmentFlag.AlignLeft)
-
+        row = QHBoxLayout()
+        row.addWidget(self.voice_dl_btn)
+        row.addStretch(1)
+        card.add(row)
         mics = voice.input_devices()
         cur = c.get("voice_mic", "")
         items = [("", tr("Как в системе"))] + [(m, m) for m in mics]
         if cur and cur not in mics:
             items.append((cur, tr("{0} (не подключён)", cur)))
         mic = self._combo(items, cur, lambda v: self._set_voice("voice_mic", v))
-        el.addWidget(self._labeled(tr("Микрофон"), mic))
+        card.add(self._labeled(tr("Микрофон"), mic))
         snd = SwitchRow(tr("Звуковые сигналы"), tr("Короткий звук, когда программа начала слушать и когда перевод "
                                                    "готов: в полноэкранной игре окна не видно"),
                         bool(c.get("voice_sounds", True)))
         snd.toggled.connect(lambda v: self._set_voice("voice_sounds", v))
-        el.addWidget(snd)
-        self.voice_test_btn = pill(tr("Проверить"), "tonal", "mic", tr("Скажите фразу — перевод появится здесь и в буфере обмена"))
-        self.voice_test_btn.clicked.connect(lambda: self.voice.press(""))
-        el.addWidget(self.voice_test_btn, 0, Qt.AlignmentFlag.AlignLeft)
-        self.voice_result = caption("")
-        self.voice_result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.voice_result.setVisible(False)
-        el.addWidget(self.voice_result)
-        el.addWidget(caption(tr("Речь распознаётся прямо на компьютере, без интернета; в интернет уходит только текст — "
-                                "переводчику, выбранному выше. Сама программа в чат ничего не вставляет и клавиш "
-                                "не нажимает.")))
-        extra.setVisible(bool(c.get("voice_enabled")))
-        card.add(extra)
-
-        def toggle(v: bool) -> None:
-            self._set_voice("voice_enabled", v)
-            extra.setVisible(v)
-            relayout(extra)
-            if v:
-                self.voice.preload()
-            else:
-                self.voice.shutdown()       # освободить память, занятую моделью
-            self._start_hotkeys()
-
-        on.toggled.connect(toggle)
-        self._refresh_voice()
+        card.add(snd)
+        card.add(caption(tr("Голос никуда не отправляется: в интернет уходит только распознанный текст — переводчику. "
+                            "Сама программа в чат ничего не вставляет и клавиш не нажимает.")))
         return card
 
-    def _set_voice(self, key: str, value) -> None:
+    def _build_voice_glossary(self) -> Card:
+        card = Card(tr("Словарь для чата"), tr("Игровые слова, герои, ники — как сказать и как написать"), "book")
+        self.voice_gloss_combo = Select()
+        self.voice_gloss_combo.currentIndexChanged.connect(self._on_voice_gloss_combo)
+        card.add(self._labeled(tr("Словарь"), self.voice_gloss_combo))
+        row = FlowLayout(8)
+        host = QWidget()
+        host.setLayout(row)
+        edit = pill(tr("Изменить"), "outline")
+        edit.clicked.connect(self._edit_voice_glossary)
+        new = pill(tr("Новый"), "tonal", "plus", tr("Новый словарь для игры: с вашего языка на язык чата"))
+        new.clicked.connect(self._new_voice_glossary)
+        folder = pill(tr("Папка"), "tonal", "folder", tr("Открыть папку с глоссариями"))
+        folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(GLOSSARY_DIR))))
+        for b in (edit, new, folder):
+            row.addWidget(b)
+        card.add(host)
+        self.voice_gloss_note = caption("")
+        card.add(self.voice_gloss_note)
+        card.add(caption(tr("Слова из словаря распознаются в речи увереннее и попадают в перевод так, как записаны: "
+                            "«го на мид» → «go mid». Склонения находятся сами: «катку», «мидом». Словари — те же "
+                            "глоссарии, что у тайтлов; здесь видны те, что с вашего языка.")))
+        self._fill_voice_glossaries()
+        return card
+
+    def _build_voice_recent(self) -> Card:
+        card = Card(tr("Последние фразы"), tr("Щёлкните перевод, чтобы снова положить его в буфер"), "list")
+        self.voice_recent = QLabel()
+        self.voice_recent.setWordWrap(True)
+        self.voice_recent.setTextFormat(Qt.TextFormat.RichText)
+        self.voice_recent.linkActivated.connect(self._copy_recent)
+        card.add(self.voice_recent)
+        return card
+
+    # ------------------------------------------------------------ словарь для чата
+    def _fill_voice_glossaries(self) -> None:
+        """Словари с моего языка (и выбранный, даже если он к языкам не подходит — чтобы было видно, что выбрано)."""
+        if self.voice_gloss_combo is None:
+            return
+        mine = voice.my_language(self.cfg)
+        cur = self.cfg.get("voice_glossary") or ""
+        self._filling_voice = True
+        self.voice_gloss_combo.clear()
+        self.voice_gloss_combo.addItem(tr("Без словаря"), "")
+        for path in list_glossaries(GLOSSARY_DIR):
+            try:
+                g = Glossary.load(path)
+            except (OSError, ValueError):
+                continue
+            mine_ok = not g.source_lang or languages.whisper_code(g.source_lang) == languages.whisper_code(mine)
+            if mine_ok or path.name == cur:
+                self.voice_gloss_combo.addItem(tr("{0} · слов: {1}", g.title, len(g.entries)), path.name)
+        self.voice_gloss_combo.setCurrentIndex(max(0, self.voice_gloss_combo.findData(cur)))
+        self._filling_voice = False
+
+    def _on_voice_gloss_combo(self, _i: int) -> None:
+        if getattr(self, "_filling_voice", False):
+            return
+        self._set_voice("voice_glossary", self.voice_gloss_combo.currentData() or "")
+
+    def _edit_voice_glossary(self) -> None:
+        name = self.cfg.get("voice_glossary") or ""
+        if not name or not (GLOSSARY_DIR / name).exists():
+            self._new_voice_glossary()
+            return
+        GlossaryEditor(GLOSSARY_DIR / name, self).exec()
+        self._fill_voice_glossaries()
+        self._refresh_voice()
+
+    def _new_voice_glossary(self) -> None:
+        c = self.cfg
+        path = new_glossary_file(self, voice.my_language(c), tr("Игра"), target_lang=voice.chat_language(c))
+        if path:
+            self.cfg["voice_glossary"] = path.name
+            self.cfg.save()
+            GlossaryEditor(path, self).exec()
+            self._fill_voice_glossaries()
+            self._refresh_voice()
+
+    def _voice_glossary_text(self) -> str:
+        c = self.cfg
+        name = c.get("voice_glossary") or ""
+        if not name:
+            return tr("Без словаря игровые слова переводятся как получится.")
+        try:
+            g = Glossary.load(GLOSSARY_DIR / name)
+        except (OSError, ValueError):
+            return tr("Словарь не найден — выберите другой.")
+        mine, chat = voice.my_language(c), voice.chat_language(c)
+        if not voice.glossary_fits(g, mine, chat):
+            return tr("Этот словарь — с языка «{0}» на «{1}», а сейчас выбраны другие языки, поэтому он не используется.",
+                      i18n.lower(languages.name_of(g.source_lang) or "?"),
+                      i18n.lower(languages.name_of(g.target_lang) or "?"))
+        return tr("Используется: слов {0}.", len(g.entries))
+
+    def _copy_recent(self, href: str) -> None:
+        try:
+            phrase = list(self.voice.recent)[int(href)]
+        except (ValueError, IndexError):
+            return
+        QApplication.clipboard().setText(phrase.text)
+        self._set_status(tr("Снова в буфере обмена: {0}", phrase.text))
+
+    # ------------------------------------------------------------ настройки
+    def _set_voice(self, key: str, value, refill: bool = False) -> None:
         self.cfg[key] = value
         self.cfg.save()
+        if refill:
+            self._fill_voice_glossaries()
         self._refresh_voice()
 
     def _set_voice_hotkey(self, value: str) -> None:
@@ -1111,20 +1314,20 @@ class MainWindow(QWidget):
         self.voice.preload()
 
     def _refresh_voice(self) -> None:
-        """Подсказки и кнопки карточки «Голос в чат» по текущему состоянию."""
-        if self.voice_howto is None:
+        """Карточки вкладки «Голос» и шапка — по текущему состоянию."""
+        if self.cfg.get("ui_page") == "voice" and hasattr(self, "chip"):
+            self._refresh_voice_hero()
+        if self.voice_model_note is None:
             return
         c = self.cfg
-        key = c["hotkeys"].get("voice", "")
-        if key:
-            self.voice_howto.setText(tr("Удерживайте {0} и говорите — отпустите, когда закончите. Или нажмите {0} один "
-                                        "раз: запись остановится сама, когда вы замолчите. Перевод сразу окажется в "
-                                        "буфере обмена — вставьте его в чат: Ctrl+V.", pretty(key)))
-        else:
-            self.voice_howto.setText(tr("Задайте клавишу ниже — без неё функция работает только кнопкой «Проверить»."))
-        if languages.whisper_code(voice.my_language(c)) == languages.whisper_code(voice.chat_language(c)):
-            self.voice_howto.setText(self.voice_howto.text() + " " + tr("Сейчас языки совпадают — фраза будет "
-                                                                        "копироваться без перевода."))
+        mine, chat = voice.my_language(c), voice.chat_language(c)
+        from ..translators import TRANSLATORS
+        tor = TRANSLATORS.get(c.get("translator", ""))
+        note = tr("Переводит: {0}. Переводчик выбирается на вкладке «Скриншот» или «Live».",
+                  tor.title if tor is not None else c.get("translator", ""))
+        if languages.whisper_code(mine) == languages.whisper_code(chat):
+            note += " " + tr("Сейчас языки совпадают — фраза будет копироваться без перевода.")
+        self.voice_tor_note.setText(note)
         name = c.get("voice_model", "base")
         mb = voice.MODELS.get(name, voice.MODELS["base"])["mb"]
         dl = self._voice_dl if self._voice_dl is not None and self._voice_dl.running else None
@@ -1139,11 +1342,20 @@ class MainWindow(QWidget):
             self.voice_model_note.setText(tr("Модель распознавания скачивается один раз: {0} МБ.", mb))
             set_pill(self.voice_dl_btn, tr("Скачать модель"), "primary", "download")
             self.voice_dl_btn.setVisible(True)
-        state = self.voice.state
-        set_pill(self.voice_test_btn, tr("Остановить") if state == "listening" else
-                 tr("Распознаю…") if state == "busy" else tr("Проверить"), "tonal",
-                 "stop" if state == "listening" else "mic")
-        self.voice_test_btn.setEnabled(state != "busy")
+        self.voice_gloss_note.setText(self._voice_glossary_text())
+        recent = list(self.voice.recent)
+        if recent:
+            pal = theme.palette()
+            rows = []
+            for i, ph in enumerate(recent):
+                said = f"<br><span style='color:{pal.text2}'>{html.escape(ph.heard)}</span>" if ph.translated else ""
+                link = (f"<a href='{i}' style='color:{pal.primary}; text-decoration:none; font-weight:600'>"
+                        f"{html.escape(ph.text)}</a>")
+                rows.append(f"<p style='margin:0 0 8px 0'>{link}{said}</p>")
+            self.voice_recent.setText("".join(rows))
+        else:
+            self.voice_recent.setText(tr("Пока пусто: нажмите «Сказать фразу» или клавишу голоса."))
+        relayout(self.voice_recent)
 
     def _voice_download(self) -> None:
         if self._voice_dl is not None and self._voice_dl.running:
@@ -1170,20 +1382,12 @@ class MainWindow(QWidget):
 
     def _on_voice_done(self, phrase) -> None:
         if phrase.translated:
-            text = tr("Распознано: {0}\nВ буфере: {1}", phrase.heard, phrase.text)
+            self._set_status(tr("Перевод в буфере обмена: {0}", phrase.text))
         else:
-            text = tr("Сказано на языке чата — скопировано без перевода: {0}", phrase.text)
-        if self.voice_result is not None:
-            self.voice_result.setText(text)
-            self.voice_result.setVisible(True)
-            relayout(self.voice_result)
-        self._set_status(tr("Перевод в буфере обмена: {0}", phrase.text))
+            self._set_status(tr("Сказано на языке чата — скопировано без перевода: {0}", phrase.text))
+        self._refresh_voice()
 
     def _on_voice_failed(self, message: str) -> None:
-        if self.voice_result is not None:
-            self.voice_result.setText(message)
-            self.voice_result.setVisible(True)
-            relayout(self.voice_result)
         self._set_status(message, True)
 
     # ---------------------------------------------------------------- для разработчиков
@@ -1415,6 +1619,11 @@ class MainWindow(QWidget):
 
     # ================================================================ состояние
     def _refresh_status(self) -> None:
+        if self.cfg.get("ui_page") == "voice":
+            self._refresh_voice_hero()
+            self.mode_switch.select("voice")
+            self._sync_mini()
+            return
         live = self.cfg.get("translate_mode", "shot") == "live"
         hk = self.cfg["hotkeys"]
         if self.region:
@@ -2070,6 +2279,9 @@ class HelpDialog(QDialog):
                "реплика копируется щелчком.", hk.get('copy') or "—"),
             tr("Если текст не находится на тёмном или пёстром фоне — в «Тонкой настройке» выберите режим "
                "распознавания «Тщательный» или «Максимальный»."),
+            tr("Для чата в онлайн-игре — вкладка «Голос»: скажите фразу ({0}), и перевод окажется в буфере "
+               "обмена — вставьте его в чат (Ctrl+V). Игровые слова и ники добавьте в «Словарь для чата».",
+               hk.get("voice") or "—"),
         ]
         for i, s in enumerate(steps, 1):
             row = QHBoxLayout()

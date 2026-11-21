@@ -68,6 +68,8 @@ def _key(text: str) -> str:
 # Встроенные глоссарии переводят на русский. В старых копиях (уже скопированных в папку данных)
 # поля target_lang ещё нет — для них язык перевода берётся отсюда.
 BUNDLED_RU = {"universal_ko.json", "universal_en.json", "example_ko.json"}
+# Встроенные глоссарии, у которых название переводится вместе с интерфейсом
+BUNDLED = BUNDLED_RU | {"game_ru_en.json"}
 
 
 @dataclass
@@ -82,7 +84,7 @@ class Glossary:
     @property
     def title(self) -> str:
         """Название для показа: у встроенных глоссариев — на языке интерфейса."""
-        if self.path is not None and self.path.name in BUNDLED_RU:
+        if self.path is not None and self.path.name in BUNDLED:
             from .i18n import tr
             return tr(self.name)
         return self.name or (self.path.stem if self.path is not None else "")

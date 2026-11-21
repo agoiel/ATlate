@@ -208,6 +208,12 @@ class ScrollContent(QWidget):
         self._pending = False
         self._forced = False
         self._fitted: tuple[int, int] | None = None     # (ширина, высота), под которые уже разложено
+        # свой таймер, а не QTimer.singleShot: он удаляется вместе с окном, и отложенный пересчёт
+        # не сработает на уже удалённом содержимом (при пересборке окна или при выходе)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(0)
+        self._timer.timeout.connect(self.refit)
 
     def refit(self) -> None:
         self._pending = False
@@ -236,7 +242,7 @@ class ScrollContent(QWidget):
         self._forced = self._forced or force
         if not self._pending:
             self._pending = True
-            QTimer.singleShot(0, self.refit)
+            self._timer.start()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
