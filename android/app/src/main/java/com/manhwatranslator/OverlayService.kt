@@ -24,6 +24,8 @@ import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.Languages
 import com.manhwatranslator.core.PageResult
+import com.manhwatranslator.core.TitleStore
+import com.manhwatranslator.core.History
 import com.manhwatranslator.core.Timings
 import com.manhwatranslator.core.tr
 import com.manhwatranslator.core.trf
@@ -466,6 +468,10 @@ class OverlayService : Service() {
         val boxes = if (dev && settings.debugBoxes) res.debug?.passes.orEmpty() else emptyList()
         translationView?.show(res.bubbles, region, settings.maxFontSp, boxes)
         shownResult = res
+        if (dev) {
+            val title = TitleStore.load(this, settings.activeTitle)?.name ?: ""
+            Thread { History.add(this, res, settings, title) }.start()       // файл — не в главном потоке
+        }
         if (dev) {
             val report = res.debug?.report() ?: res.error
             showDebugPanel(report, region)

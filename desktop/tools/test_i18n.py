@@ -214,6 +214,16 @@ def windows() -> None:
     verify("редактор глоссария", ed)
     ed.close()
 
+    from app import history
+    from app.models import Box, Bubble, PageResult
+    from app.ui.history_window import HistoryDialog
+    hp = tmp / "history.jsonl"
+    history.add(PageResult(bubbles=[Bubble(Box(0, 0, 1, 1), [], text="민준", translation="Minjun")]), cfg, "t", hp)
+    hd = HistoryDialog(win, hp)
+    hd.show()
+    verify("история переводов", hd)
+    hd.close()
+
     from app.models import Box, Bubble, PageResult
     win.shown_result = PageResult(bubbles=[Bubble(Box(0, 0, 10, 10), [], text="a", translation="b")])
     win.enter_mini()

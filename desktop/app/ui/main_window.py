@@ -1008,6 +1008,10 @@ class MainWindow(QWidget):
         clear_btn = pill(tr("Очистить"), "tonal", "refresh")
         clear_btn.clicked.connect(self._clear_dev_log)
         fl.addWidget(clear_btn)
+        hist_btn = pill(tr("История переводов"), "tonal", "list",
+                        tr("Оригинал и перевод каждой реплики, пока включён режим разработчика"))
+        hist_btn.clicked.connect(self.show_history)
+        fl.addWidget(hist_btn)
         el.addWidget(buttons)
         extra.setVisible(bool(c.get("dev_mode")))
         card.add(extra)
@@ -1453,6 +1457,7 @@ class MainWindow(QWidget):
         self._set_busy(False)
         if result.detected_lang:
             self._on_language_detected(result.detected_lang)
+        self._remember(result)
         if token == "file":
             self._report(result)
             self._show_file_result(result)
@@ -1618,6 +1623,18 @@ class MainWindow(QWidget):
         self.list_window.set_result(None)
         self._fill_titles()
         self._set_status(tr("Контекст и кэш очищены."))
+
+    def show_history(self) -> None:
+        from .history_window import HistoryDialog
+        HistoryDialog(self).exec()
+
+    def _remember(self, result: PageResult) -> None:
+        """Режим разработчика: записать перевод в историю."""
+        if not self.cfg.get("dev_mode"):
+            return
+        from .. import history
+        t = titles.load(self.cfg.get("active_title", ""))
+        history.add(result, self.cfg, t.name if t else "")
 
     def show_help(self) -> None:
         HelpDialog(self, self.cfg["hotkeys"]).exec()

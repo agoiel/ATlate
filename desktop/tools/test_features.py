@@ -170,9 +170,82 @@ def test_copy() -> None:
     check("окно списка: без перевода кнопка неактивна", not lw.copy_all.isEnabled())
 
 
+# ---------------------------------------------------------------- история переводов
+def test_history() -> None:
+    import csv
+    import io
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from app import history
+    from app.ui.history_window import HistoryDialog
+    from app.ui.main_window import MainWindow
+
+    tmp = Path(tempfile.mkdtemp())
+    path = tmp / "history.jsonl"
+    cfg = {"target_lang": "ru", "translator": "google_free", "source_lang": "ko"}
+    p1 = page(("어디 가?", "Куда идёшь?"), ("쿵", ""))
+    p1.bubbles[0].lang = "ko"
+    n1 = history.add(p1, cfg, "Соло", path)
+    n2 = history.add(page(("Hola", "Привет")), dict(cfg, translator="deepl"), "", path)
+    lines = history.load(path)
+    check("история: записаны только реплики с переводом", n1 == 1 and n2 == 1 and len(lines) == 2)
+    check("история: новые сверху", lines[0].original == "Hola" and lines[1].original == "어디 가?")
+    check("история: тайтл, языки и переводчик сохранены",
+          (lines[1].title, lines[1].src, lines[1].tgt, lines[1].translator) == ("Соло", "ko", "ru", "google_free"))
+    check("история: поиск по оригиналу, переводу и тайтлу (без регистра)",
+          [x.original for x in history.search(lines, "куда")] == ["어디 가?"]
+          and len(history.search(lines, "СОЛО")) == 1 and len(history.search(lines, "")) == 2)
+    rows = list(csv.reader(io.StringIO(history.to_csv(lines))))
+    check("история: CSV с заголовком", rows[0][0] == "time" and rows[1][5:] == ["Hola", "Привет"], str(rows[1]))
+    check("история: текст для буфера — парами", history.to_text(lines[:1]) == "Hola\nПривет")
+    with path.open("a", encoding="utf-8") as f:
+        f.write("{оборванная запись\n")
+    check("история: повреждённая строка пропускается", len(history.load(path)) == 2)
+    old_max = history.MAX_BYTES
+    history.MAX_BYTES = 4000
+    try:
+        for i in range(200):
+            history.add(page((f"원문 {i}", f"перевод {i}")), cfg, "", path)
+    finally:
+        history.MAX_BYTES = old_max
+    kept = history.load(path)
+    check("история: файл не растёт бесконечно, новое остаётся",
+          path.stat().st_size <= 4000 + 200 and kept[0].original == "원문 199", f"{path.stat().st_size} байт")
+
+    # окно программы: пишет только в режиме разработчика
+    real = history.PATH
+    history.PATH = tmp / "app_history.jsonl"
+    try:
+        wcfg = new_cfg()
+        win = MainWindow(wcfg)
+        win._remember(page(("a", "б")))
+        check("режим разработчика выключен — история не пишется", not history.PATH.exists())
+        wcfg["dev_mode"] = True
+        win._remember(page(("a", "б")))
+        check("режим разработчика включён — пишется", len(history.load()) == 1)
+        dlg = HistoryDialog(win)
+        check("окно истории: видна запись", dlg.shown and "б" in dlg.view.toPlainText())
+        dlg.search.setText("нет такого")
+        check("окно истории: поиск", not dlg.shown and "Ничего не найдено" in dlg.view.toPlainText())
+        dlg.search.setText("")
+        real_q = QMessageBox.question
+        QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+        try:
+            dlg._clear()
+        finally:
+            QMessageBox.question = real_q
+        check("окно истории: очистка удаляет файл", not history.PATH.exists() and not dlg.all)
+        dlg.close()
+        win.close()
+    finally:
+        history.PATH = real
+
+
 def main() -> int:
     test_updates()
     test_copy()
+    test_history()
     failed = [r for r in rows if not r[0]]
     print(f"failed: {len(failed)}")
     return 1 if failed else 0

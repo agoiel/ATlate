@@ -635,4 +635,20 @@ EN: dict[str, str] = {
     "Копировать всё": "Copy all",
     "Скопировать перевод страницы — {0} или значок в компактной панели. В окне со списком отдельная реплика копируется щелчком.":
         "Copy the page translation — {0} or the icon in the compact panel. In the list window, click a line to copy it.",
+    # 0.6.6: история переводов
+    "История переводов": "Translation history",
+    "Оригинал и перевод каждой реплики, пока включён режим разработчика": "The original and translation of every line while developer mode is on",
+    "Пишется, пока включён режим разработчика. Хранятся последние несколько тысяч реплик.":
+        "Recorded while developer mode is on. The last few thousand lines are kept.",
+    "Поиск по оригиналу, переводу или тайтлу": "Search the original, translation or title",
+    "Реплик: {0}": "Lines: {0}",
+    " · показаны последние {0}": " · showing the latest {0}",
+    "Копировать": "Copy",
+    "Найденные реплики: оригинал и перевод": "Found lines: original and translation",
+    "Сохранить в CSV…": "Save as CSV…",
+    "Ничего не найдено.": "Nothing found.",
+    "История пуста: включите режим разработчика и переведите что-нибудь.": "The history is empty: turn on developer mode and translate something.",
+    "Сохранить историю": "Save history",
+    "Очистить историю?": "Clear the history?",
+    "Все сохранённые реплики будут удалены.": "All saved lines will be deleted.",
 }

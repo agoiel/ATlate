@@ -26,6 +26,7 @@ import android.widget.Toast
 import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.Enhance
 import com.manhwatranslator.core.Glossary
+import com.manhwatranslator.core.History
 import com.manhwatranslator.core.GlossaryStore
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.tr
@@ -819,6 +820,9 @@ class MainActivity : Activity() {
         }
         row.addView(clearBtn, lp(0, weight = 1f).margins(this, start = 8))
         extra.addView(row, lp().margins(this, top = 12))
+        val histBtn = PillButton(this, tr("История переводов"), R.drawable.ic_book, PillStyle.TONAL, 44)
+        histBtn.onClick { Dialogs.history(this) }
+        extra.addView(histBtn, lp().margins(this, top = 8))
         body.addView(extra)
         card.addView(body)
 
@@ -928,6 +932,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 PageResult(error = trf("Ошибка: %s", e.message))
             }
+            if (s.devMode) History.add(this, res, s, TitleStore.load(this, s.activeTitle)?.name ?: "")
             main.post {
                 progress.dismiss()
                 Dialogs.result(this, res, shot)
