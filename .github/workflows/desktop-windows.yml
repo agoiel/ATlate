@@ -1,7 +1,8 @@
 name: Desktop on Windows
 
 # Проверки, которым нужна настоящая Windows: горячие клавиши (через систему, при английской
-# и русской раскладке) и общие тесты языков и глоссария.
+# и русской раскладке), общие тесты языков и глоссария, «Голос в чат» (распознавание речи
+# настоящей моделью и в собранном exe).
 on:
   push:
     paths:
@@ -15,7 +16,7 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: desktop
@@ -27,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install -q PySide6-Essentials numpy Pillow requests pynput pyphen pyinstaller
+        run: python -m pip install -q PySide6-Essentials numpy Pillow requests pynput pyphen pyinstaller faster-whisper==1.2.1 sounddevice
       - name: FriBiDi for Arabic and Thai text layout (the same step as in the release build)
         shell: pwsh
         run: ./tools/get_fribidi.ps1
@@ -51,17 +52,45 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host "python exit code: $code"
           exit $code
+      - name: Speech for the voice check (Windows speech synthesis)
+        # фразы для «Голоса в чат» говорит сама Windows; если голосов нет — проверка обойдётся без них
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force ../out/voice_audio | Out-Null
+          $dir = (Resolve-Path ../out/voice_audio).Path
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          Write-Host "voices: $(($s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }) -join ', ')"
+          $s.SetOutputToWaveFile("$dir\en_bridge.wav"); $s.Speak("Need help at the bridge.")
+          $s.SetOutputToWaveFile("$dir\en_gg.wav"); $s.Speak("Good game everyone, let's play again.")
+          $s.Dispose()
+          Get-ChildItem $dir
+      - name: Voice to chat (end of phrase, speech model, whole chain into the clipboard)
+        run: |
+          python -X faulthandler tools/test_voice.py ../out/voice --audio ../out/voice_audio
+          $code = $LASTEXITCODE
+          Write-Host "python exit code: $code"
+          exit $code
       - name: Studio text in Thai and Arabic (fonts, hyphenation, shaping)
         run: python tools/test_typeset_langs.py ../out/typeset
-      - name: Files bundled into the exe are found (FriBiDi, hyphenation dictionaries)
+      - name: Files bundled into the exe are found (FriBiDi, hyphenation dictionaries, speech recognition)
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --onedir --log-level WARN --name frozen_check `
             --distpath ../out/frozen --workpath ../out/frozen-build `
-            --add-data "libs;libs" --collect-data pyphen tools/frozen_check.py
-          ../out/frozen/frozen_check/frozen_check.exe
+            --add-data "libs;libs" --collect-data pyphen `
+            --collect-data faster_whisper --collect-binaries ctranslate2 --collect-binaries onnxruntime `
+            --exclude-module av --exclude-module hf_xet --exclude-module pandas tools/frozen_check.py
+          $wav = if (Test-Path ../out/voice_audio/en_bridge.wav) { "../out/voice_audio/en_bridge.wav" } else { "" }
+          ../out/frozen/frozen_check/frozen_check.exe --voice ../out/voice/models/whisper-base $wav
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "frozen size: $([math]::Round((Get-ChildItem -Recurse ../out/frozen | Measure-Object Length -Sum).Sum / 1MB)) MB"
           Remove-Item -Recurse -Force ../out/frozen, ../out/frozen-build
+      - name: Leave the speech model out of the uploaded results
+        if: always()
+        shell: pwsh
+        run: if (Test-Path ../out/voice/models) { Remove-Item -Recurse -Force ../out/voice/models }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

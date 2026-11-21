@@ -87,6 +87,8 @@ jobs:
             --icon icon.ico --add-data "icon.png;." @libs `
             --collect-all winrt --collect-data pyphen `
             --hidden-import pynput.keyboard._win32 --hidden-import pynput.mouse._win32 `
+            --collect-data faster_whisper --collect-binaries ctranslate2 --collect-binaries onnxruntime `
+            --exclude-module av --exclude-module hf_xet --exclude-module pandas `
             --exclude-module torch --exclude-module torchvision --exclude-module easyocr `
             main.py
           Copy-Item -Recurse glossaries dist/ATlate/glossaries

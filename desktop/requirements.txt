@@ -4,6 +4,8 @@ Pillow>=10.0
 requests>=2.31
 pynput>=1.7.6
 pyphen>=0.14                 # словари переносов для тайпа в Студии
+faster-whisper==1.2.1        # «Голос в чат»: распознавание речи на компьютере (модель скачивается отдельно)
+sounddevice>=0.4.6           # «Голос в чат»: запись с микрофона
 
 # Windows OCR (встроенный в Windows 10/11)
 winrt-runtime; sys_platform == "win32"
