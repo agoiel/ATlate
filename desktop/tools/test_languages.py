@@ -610,7 +610,8 @@ def editor_merge() -> None:
     from PySide6.QtWidgets import QApplication
 
     from app.ui.glossary_editor import GlossaryEditor
-    app = QApplication.instance() or QApplication([])
+    global _APP
+    _APP = app = QApplication.instance() or QApplication([])     # живёт до конца проверки
     path = out / "editor_merge.json"
     Glossary(name="t", source_lang="ko", auto=True, entries=[
         GlossaryEntry("민준", "Минджун", "", True), GlossaryEntry("서연", "Соён", "", True)]).save(path)
@@ -630,6 +631,8 @@ def editor_merge() -> None:
     got = [e.source for e in Glossary.load(path).entries]
     check("редактор: записи, добавленные в фоне, не теряются", "헌터" in got, f"{got}")
     check("редактор: удалённая запись не возвращается", "서연" not in got and "민준" in got, f"{got}")
+    ed.deleteLater()
+    app.processEvents()
 
 
 def main() -> int:
@@ -647,5 +650,9 @@ def main() -> int:
     return 1 if failed else 0
 
 
+_APP = None
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    sys.stdout.flush()
+    os._exit(code)      # без разбора окон Qt при выходе: на Windows он иногда падал уже после проверок

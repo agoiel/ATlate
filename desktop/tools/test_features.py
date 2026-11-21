@@ -301,4 +301,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    sys.stdout.flush()
+    os._exit(code)      # без разбора окон Qt при выходе: на Windows он иногда падал уже после проверок

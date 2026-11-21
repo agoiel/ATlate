@@ -171,7 +171,8 @@ def windows() -> None:
     from app.ui.main_window import MainWindow
 
     check("программа загрузилась с английским интерфейсом", i18n.english)
-    app = QApplication.instance() or QApplication(sys.argv)
+    global _APP
+    _APP = app = QApplication.instance() or QApplication(sys.argv)     # живёт до конца проверки
     tmp = Path(tempfile.mkdtemp())
     cfg = Config(tmp / "config.json")
     cfg["dev_mode"] = True
@@ -251,5 +252,9 @@ def main() -> int:
     return 1 if failed else 0
 
 
+_APP = None
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    sys.stdout.flush()
+    os._exit(code)      # без разбора окон Qt при выходе: на Windows он иногда падал уже после проверок
