@@ -650,9 +650,25 @@ def main() -> int:
     return 1 if failed else 0
 
 
+def _close_qt() -> None:
+    """Закрыть и удалить все окна Qt, пока Python жив. Иначе на Windows Qt разбирает их при выходе
+    из процесса и зовёт обработчики Python, которых уже нет (падение после «failed: 0»)."""
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete.value))
+    app.processEvents()
+
+
 _APP = None
 
 if __name__ == "__main__":
     code = main()
+    _close_qt()
     sys.stdout.flush()
-    os._exit(code)      # без разбора окон Qt при выходе: на Windows он иногда падал уже после проверок
+    os._exit(code)
