@@ -12,5 +12,7 @@ desktop/build/
 desktop/dist/
 desktop/config.json
 desktop/error.log
+desktop/libs/
+desktop/out/
 desktop/*.spec
 __pycache__/

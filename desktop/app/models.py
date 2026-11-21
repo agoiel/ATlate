@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .i18n import tr
+
 
 @dataclass
 class Box:
@@ -97,6 +99,12 @@ class PageResult:
     line_count: int = 0
     # Автоопределение языка: какой язык выбран в этот раз (пусто — язык не менялся)
     detected_lang: str = ""
+    # Язык, который определил сам переводчик (текст на латинице: «определит переводчик»), код ISO
+    source_detected: str = ""
+    # Сколько новых терминов добавил авто-глоссарий
+    glossary_added: int = 0
+    # Выбранный бесплатный переводчик не ответил и перевёл другой — что показать (пусто — не было)
+    fallback: str = ""
     # Подробности для режима разработчика
     debug: "DebugInfo | None" = None
 
@@ -104,8 +112,8 @@ class PageResult:
 # ---------------------------------------------------------------- режим разработчика
 
 VARIANT_NAMES = {
-    "orig": "оригинал", "inv": "инверсия", "local": "локальный контраст",
-    "local_inv": "инверсия контраста", "color": "цветовой контраст",
+    "orig": tr("оригинал"), "inv": tr("инверсия"), "local": tr("локальный контраст"),
+    "local_inv": tr("инверсия контраста"), "color": tr("цветовой контраст"),
 }
 
 # Цвета рамок для проходов — по порядку вариантов
@@ -140,30 +148,30 @@ class DebugInfo:
     note: str = ""      # дополнительная строка отчёта (например, оценки автоопределения языка)
 
     def summary(self) -> str:
-        mode = f"параллельно ×{self.threads}" if self.threads > 1 else "по очереди"
-        return f"Всего {self.total_ms:.0f} мс · {mode}"
+        mode = tr("параллельно ×{0}", self.threads) if self.threads > 1 else tr("по очереди")
+        return tr("Всего {0:.0f} мс · {1}", self.total_ms, mode)
 
     def report(self) -> str:
         out = [self.summary()]
         if self.stages:
             out.append(" · ".join(f"{n} {ms:.0f}" for n, ms in self.stages))
         if self.passes:
-            out.append("Проходы:")
+            out.append(tr("Проходы:"))
             for p in self.passes:
                 err = " ⚠" if p.error else ""
-                out.append(f"  {VARIANT_NAMES.get(p.variant, p.variant)}: {len(p.lines)} строк "
-                           f"({p.ocr_ms:.0f} мс, подготовка {p.prep_ms:.0f} мс){err}")
-        line = (f"Строк {self.lines} (проходы добавили {self.added}, заменили {self.replaced})"
-                f" · облаков {self.bubbles}")
+                out.append(tr("  {0}: {1} строк ({2:.0f} мс, подготовка {3:.0f} мс){4}",
+                              VARIANT_NAMES.get(p.variant, p.variant), len(p.lines), p.ocr_ms, p.prep_ms, err))
+        line = (tr("Строк {0} (проходы добавили {1}, заменили {2}) · облаков {3}",
+                   self.lines, self.added, self.replaced, self.bubbles))
         if self.cache_hits:
-            line += f" · из кэша {self.cache_hits}"
+            line += tr(" · из кэша {0}", self.cache_hits)
         out.append(line)
         if self.note:
             out.append(self.note)
         errors = sorted({p.error for p in self.passes if p.error})
         if errors:
-            out.append("Ошибки проходов:")
+            out.append(tr("Ошибки проходов:"))
             out.extend(errors)
         if self.error:
-            out.append(f"Ошибка: {self.error}")
+            out.append(tr("Ошибка: {0}", self.error))
         return "\n".join(out)

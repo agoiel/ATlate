@@ -18,6 +18,10 @@ class Pipeline(private val ctx: Context) {
     private var loadedStamp = 0L
     // автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
     private var autoOk = false
+    // итоги последнего перевода: сколько терминов добавил авто-глоссарий, какой язык определил переводчик
+    private var glossaryAdded = 0
+    private var lastDetected = ""
+    private var fallbackNote = ""
     private var autoSize = 0L
     private var autoNote = ""
 
@@ -166,6 +170,9 @@ class Pipeline(private val ctx: Context) {
         }
 
         var error = ""
+        glossaryAdded = 0
+        lastDetected = ""
+        fallbackNote = ""
         if (todo.isNotEmpty()) {
             try {
                 // облака на разных языках переводятся отдельными запросами
@@ -181,7 +188,8 @@ class Pipeline(private val ctx: Context) {
         }
         timings.mark(tr("перевод"))
         return PageResult(bubbles, error, hits, t1 - t0, System.currentTimeMillis() - t1, lines.size, stats,
-            debug = debug(hits, error), detectedLang = detected)
+            debug = debug(hits, error), detectedLang = detected, sourceDetected = lastDetected,
+            glossaryAdded = glossaryAdded, fallback = fallbackNote)
     }
 
     /** Итог сравнения «по очереди» и «параллельно» на одной и той же картинке. */
@@ -247,27 +255,84 @@ class Pipeline(private val ctx: Context) {
         val texts = bubbles.map { it.text }
         RateLimit.intervalMs = (s.requestIntervalSec.coerceIn(0f, 30f) * 1000).toLong()
         val tr = Translators.create(s)
-        val glossary = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }
+        // файл глоссария запоминаем: пока идёт запрос, в настройках могут выбрать другой
+        val glossFile = s.glossary
+        // глоссарий на другой язык не применяется: например, встроенный русский при переводе на английский
+        val glossary = glossFile.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(ctx, it) }?.takeIf { it.fits(s.targetLang) }
         val found = glossary?.find(texts) ?: emptyList()
         val anchored = if (glossary != null && !tr.usesLlm && found.isNotEmpty()) texts.map { glossary.applyAnchors(it) } else null
         val n = s.contextSize
+        // авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
+        val collect = glossary != null && glossary.auto && tr.usesLlm && !glossFile.startsWith("universal_")
         val req = TranslateRequest(
             texts = texts, src = src, tgt = tgt,
             history = if (n > 0) history.toList().takeLast(n) else emptyList(),
             glossary = found, anchored = anchored,
             screen = s.contentMode == "screen",
+            collectTerms = collect,
         )
-        val out = tr.translate(req)
+        var usedFallback = false
+        val out = try {
+            tr.translate(req)
+        } catch (e: TranslateException) {
+            usedFallback = true
+            fallback(req, s, tr, e)
+        }
+        if (req.detected.isNotBlank()) lastDetected = req.detected
+        if (collect && req.terms.isNotEmpty()) {
+            // тот же файл, которым переводили, перечитываем: его могли изменить в редакторе,
+            // а пополнение — выключить, пока шёл перевод
+            val fresh = GlossaryStore.load(ctx, glossFile)?.takeIf { it.auto && it.fits(req.tgt.code) }
+            val added = fresh?.addTerms(req.terms, texts).orEmpty()
+            if (fresh != null && added.isNotEmpty()) {
+                if (fresh.targetLang.isBlank()) fresh.targetLang = req.tgt.code     // термины переведены на этот язык
+                try {
+                    GlossaryStore.save(ctx, glossFile, fresh)
+                    glossaryAdded += added.size
+                } catch (_: Exception) {
+                }
+            }
+        }
         bubbles.forEachIndexed { i, b ->
             val t = out.getOrNull(i).orEmpty()
             b.translation = t
             if (t.isNotBlank()) {
-                cache[key(s, b.text)] = t
+                // перевод запасного переводчика в кэш не идёт: когда выбранный снова заработает, переведёт он
+                if (!usedFallback) cache[key(s, b.text)] = t
                 history.addLast(b.text to t)
                 while (history.size > Title.MAX_HISTORY) history.removeFirst()
             }
         }
     }
 
+    /**
+     * Выбранный бесплатный переводчик не ответил — пробуем другие бесплатные. Бесплатные способы
+     * неофициальные: Google ограничивает запросы при VPN, у Lingva падают серверы. Переводчики
+     * с ключом не подменяются; Яндекс используется только бесплатным способом.
+     */
+    private fun fallback(req: TranslateRequest, s: Settings, failed: Translator, err: TranslateException): List<String> {
+        val cur = s.translator.ifBlank { "google_free" }
+        val paidYandex = cur == "yandex" && s.yandexKey.isNotBlank()
+        if (!s.freeFallback || cur !in FREE_TRANSLATORS || paidYandex) throw err
+        for (name in FREE_TRANSLATORS) {
+            if (name == cur) continue
+            val alt: Translator = when (name) {
+                "yandex" -> YandexTranslator("", "")
+                "lingva" -> LingvaTranslator(s.lingvaUrl)
+                "duckduckgo" -> DuckDuckGoTranslator()
+                else -> GoogleFreeTranslator()
+            }
+            val out = try { alt.translate(req) } catch (_: TranslateException) { continue }
+            fallbackNote = trf("%s не ответил — перевёл %s", failed.title, alt.title)
+            return out
+        }
+        throw err
+    }
+
     fun close() = ocr.close()
+
+    companion object {
+        /** Бесплатные переводчики без ключа — в этом порядке пробуются, если выбранный не ответил. */
+        val FREE_TRANSLATORS = listOf("google_free", "yandex", "lingva", "duckduckgo")
+    }
 }

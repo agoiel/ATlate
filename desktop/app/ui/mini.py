@@ -29,6 +29,7 @@ from PySide6.QtGui import (QColor, QCursor, QFont, QFontMetricsF, QGuiApplicatio
 from PySide6.QtWidgets import QWidget
 
 from ..capture import exclude_from_capture
+from ..i18n import tr
 from . import theme
 from .widgets import round_pixmap
 
@@ -352,21 +353,21 @@ class MiniPanel(QWidget):
         st = self._state()
         if group == "translate":
             if st.get("live_mode"):
-                main = Item("main", "Пауза Live", "pause", True) if st.get("live_on") \
-                    else Item("main", "Включить Live", "play", True)
-                mode = Item("mode", "Режим: Live", "refresh")
+                main = Item("main", tr("Пауза Live"), "pause", True) if st.get("live_on") \
+                    else Item("main", tr("Включить Live"), "play", True)
+                mode = Item("mode", tr("Режим: Live"), "refresh")
             else:
-                main = Item("main", "Перевести", "play", True)
-                mode = Item("mode", "Режим: Скриншот", "refresh")
-            hide = Item("toggle", "Скрыть перевод", "hide") if st.get("overlay_visible") \
-                else Item("toggle", "Показать перевод", "eye")
+                main = Item("main", tr("Перевести"), "play", True)
+                mode = Item("mode", tr("Режим: Скриншот"), "refresh")
+            hide = Item("toggle", tr("Скрыть перевод"), "hide") if st.get("overlay_visible") \
+                else Item("toggle", tr("Показать перевод"), "eye")
             return [main, mode, hide]
         if group == "zone":
             has = bool(st.get("has_region"))
-            return [Item("zone_new", "Новая", "select", True),
-                    Item("zone_show", "Показать", "eye", enabled=has),
-                    Item("zone_hide", "Скрыть", "hide", enabled=has and bool(st.get("zone_visible")))]
-        return [Item("full", "Обычное окно", "window", True), Item("quit", "Закрыть ATlate", "power")]
+            return [Item("zone_new", tr("Новая"), "select", True),
+                    Item("zone_show", tr("Показать"), "eye", enabled=has),
+                    Item("zone_hide", tr("Скрыть"), "hide", enabled=has and bool(st.get("zone_visible")))]
+        return [Item("full", tr("Обычное окно"), "window", True), Item("quit", tr("Закрыть ATlate"), "power")]
 
     # ------------------------------------------------------------ раскрытие панели
     def expand(self) -> None:

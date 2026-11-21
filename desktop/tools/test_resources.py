@@ -30,6 +30,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np  # noqa: E402
@@ -98,6 +99,14 @@ def fake_grab(region):
     if screen["moving"]:
         img = Image.fromarray(np.roll(np.asarray(img), 45 * calls["grab"], axis=0))
     return img.copy(), 1.0
+
+
+def fake_grab_raw(region):
+    """То же, но как QImage — так снимок получает Live."""
+    from PySide6.QtGui import QImage
+    img, k = fake_grab(region)
+    arr = np.ascontiguousarray(np.asarray(img.convert("RGB")))
+    return QImage(arr.data, arr.shape[1], arr.shape[0], 3 * arr.shape[1], QImage.Format.Format_RGB888).copy(), k
 
 
 class ScreenOcr(OcrBackend):
@@ -216,6 +225,7 @@ def main() -> int:
     show("straight")
 
     mw.grab_region = fake_grab
+    mw.grab_region_raw = fake_grab_raw
     pipeline_module.create_translator = lambda key, c: CountingTranslator({})
     rss_start = rss_mb()
     win = mw.MainWindow(cfg)

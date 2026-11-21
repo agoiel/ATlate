@@ -11,6 +11,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="ATlate"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Manhwa">
 

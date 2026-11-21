@@ -461,6 +461,18 @@ class Stepper(ctx: Context, title: String, subtitle: String?, initial: Float, pr
 /** Строка с переключателем. */
 class SwitchRow(ctx: Context, title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) :
     LinearLayout(ctx) {
+    private val sw = Switch(ctx)
+    private var silent = false
+
+    /** Положение переключателя; изменение отсюда не вызывает onChange (для обновления из кода). */
+    var checked: Boolean
+        get() = sw.isChecked
+        set(v) {
+            silent = true
+            sw.isChecked = v
+            silent = false
+        }
+
     init {
         val c = T.c
         orientation = HORIZONTAL
@@ -470,13 +482,12 @@ class SwitchRow(ctx: Context, title: String, subtitle: String?, checked: Boolean
         col.addView(TextView(ctx).apply { text = title; textSize = 15f; setTextColor(c.text) })
         if (subtitle != null) col.addView(TextView(ctx).apply { text = subtitle; textSize = 12.5f; setTextColor(c.text2) })
         addView(col, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        val sw = Switch(ctx)
         val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
         sw.thumbTintList = ColorStateList(states, intArrayOf(c.primary, if (c.dark) Color.parseColor("#8FB3B9") else Color.WHITE))
         sw.trackTintList = ColorStateList(states, intArrayOf(
             Color.argb(110, Color.red(c.primary), Color.green(c.primary), Color.blue(c.primary)), c.border))
         sw.isChecked = checked
-        sw.setOnCheckedChangeListener { _, on -> onChange(on) }
+        sw.setOnCheckedChangeListener { _, on -> if (!silent) onChange(on) }
         addView(sw)
         setOnClickListener { sw.toggle() }
     }

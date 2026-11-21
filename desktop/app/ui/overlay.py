@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, Q
 from PySide6.QtWidgets import QWidget
 
 from ..capture import Region, exclude_from_capture, find_screen
+from ..i18n import tr
 from ..models import PASS_COLORS, PageResult
 
 _FLAGS = int(Qt.TextFlag.TextWordWrap.value) | int(Qt.AlignmentFlag.AlignCenter.value)
@@ -60,7 +61,7 @@ class OverlayWindow(QWidget):
             p.fillRect(r, QColor(172, 134, 83, 40))
             p.setPen(QPen(QColor(172, 134, 83), 3, Qt.PenStyle.DashLine))
             p.drawRect(r)
-            label = f"Зона перевода · {self.width()}×{self.height()}"
+            label = tr("Зона перевода · {0}×{1}", self.width(), self.height())
             f = QFont("Segoe UI")
             f.setPixelSize(13)
             f.setWeight(QFont.Weight.DemiBold)

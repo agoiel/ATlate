@@ -9,6 +9,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # на Windows-сборке задаётся windows
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 
 from app.ui import theme  # noqa: E402
@@ -209,8 +210,9 @@ for c in cards[1:]:
     QTest.qWait(400)
 squeezed("all cards open")
 stretched("all cards open")
-# список в «Тонкой настройке» (движок OCR) внутри раскрытой карточки
-eng = [s for s in win.findChildren(Select) if s.findData("easyocr") >= 0][0]
+# список в «Тонкой настройке» внутри раскрытой карточки — тема оформления (у движка OCR
+# пункт EasyOCR есть, только если он установлен, поэтому список может быть из одного пункта)
+eng = [s for s in win.findChildren(Select) if s.findData("light") >= 0][0]
 show(eng)
 click(eng.header)
 QTest.qWait(400)

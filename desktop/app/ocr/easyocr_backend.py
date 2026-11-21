@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from .. import languages
+from ..i18n import tr
 from ..models import Box, TextLine
 from .base import OcrBackend, OcrError
 
@@ -24,7 +25,7 @@ class EasyOcrBackend(OcrBackend):
         try:
             import easyocr  # noqa: F401
         except ImportError as e:
-            raise OcrError("EasyOCR не установлен. Выполните: pip install easyocr") from e
+            raise OcrError(tr("EasyOCR не установлен. Выполните: pip install easyocr")) from e
         self._readers: dict[str, object] = {}
 
     def _reader(self, lang: str):
@@ -40,7 +41,7 @@ class EasyOcrBackend(OcrBackend):
         try:
             results = self._reader(lang).readtext(np.asarray(img), detail=1, paragraph=False)
         except Exception as e:  # noqa: BLE001
-            raise OcrError(f"Ошибка EasyOCR: {e}") from e
+            raise OcrError(tr("Ошибка EasyOCR: {0}", e)) from e
 
         min_conf = float(self.cfg.get("ocr_min_conf", 0.3))
         out: list[TextLine] = []

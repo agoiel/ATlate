@@ -11,10 +11,12 @@
 from __future__ import annotations
 
 import shutil
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+os.environ.setdefault("ATLATE_UI_LANG", "ru")   # проверки написаны для русского интерфейса
 
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402

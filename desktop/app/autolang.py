@@ -33,6 +33,8 @@ _SIMP_SET, _TRAD_SET = set(_SIMPLIFIED), set(_TRADITIONAL)
 
 MIN_LETTERS = 4         # меньше букв — судить не о чем («!?», одно короткое слово)
 CHINESE = ("zh", "zh-tw")
+# языки на латинице: их все читает одна модель, поэтому при пробе латиница — одна на всех
+LATIN = {"en", "de", "es", "pt", "id", "fil", "latin"}
 
 
 def _count(rx: re.Pattern, text: str) -> int:
@@ -77,7 +79,7 @@ def score(text: str, lang: str) -> float:
             return 0.0
     if lang in CHINESE and _count(_HIRAGANA, text) >= 2:
         return 0.0
-    if lang == "en":
+    if lang in LATIN:
         total = max(total, _count(_LATIN, text))
     return own * own / max(1, total)
 
@@ -104,15 +106,18 @@ def choose(texts: dict[str, str], current: str) -> tuple[str | None, dict[str, f
     Возвращает (язык или None, если уверенно сказать нельзя; оценки по языкам).
     """
     scores = {lang: round(score(text, lang), 1) for lang, text in texts.items()}
-    cjk = {lang: s for lang, s in scores.items() if lang != "en"}
+    cjk = {lang: s for lang, s in scores.items() if lang not in LATIN}
     best = max(cjk, key=cjk.get) if cjk else None
-    en = scores.get("en", 0.0)
+    latin = next((lang for lang in scores if lang in LATIN), None)
+    en = scores.get(latin, 0.0) if latin else 0.0
     if best is not None and cjk[best] >= MIN_LETTERS and cjk[best] >= 0.3 * en:
         if best in CHINESE:
             best = chinese_variant(texts, current)
         return best, scores
-    if en >= MIN_LETTERS:
-        return "en", scores
+    if latin and en >= MIN_LETTERS:
+        # латиница: какой именно это язык (английский, испанский…), по буквам не понять —
+        # его определит переводчик. Но если язык на латинице уже выбран — он и остаётся
+        return (current if current in LATIN else latin), scores
     return None, scores
 
 

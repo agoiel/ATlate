@@ -158,12 +158,12 @@ def clean_key(blocks: list[Block]) -> tuple:
 
 
 def render(project: Project, page: Page, original: np.ndarray | None = None,
-           clean: np.ndarray | None = None) -> Rendered:
+           clean: np.ndarray | None = None, lang: str = "") -> Rendered:
     """Стереть оригинал и вписать перевод. clean — уже готовый клин этой страницы, если есть."""
     arr = original if original is not None else load_image(project.image_path(page))
     if clean is None:
         clean = clean_page(arr, page.blocks)
-    result, layouts = typeset_page(clean, page.blocks, project.style)
+    result, layouts = typeset_page(clean, page.blocks, project.style, lang)
     return Rendered(arr, clean, result, layouts)
 
 
@@ -190,14 +190,16 @@ def prepare_page(pipeline: Pipeline, project: Project, page: Page, retranslate: 
     page.status = "error" if page.error else "done"
 
 
-def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False) -> Rendered:
-    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать."""
+def process_page(pipeline: Pipeline, project: Project, page: Page, retranslate: bool = False,
+                 lang: str = "") -> Rendered:
+    """Полный цикл для страницы: найти текст (если ещё не искали), перевести, стереть, вписать.
+    lang — язык перевода (словарь переносов); по умолчанию — из настроек конвейера."""
     prepare_page(pipeline, project, page, retranslate)
-    return render(project, page)
+    return render(project, page, lang=lang or pipeline.cfg.get("target_lang", ""))
 
 
-def export_page(project: Project, page: Page, rendered: Rendered | None = None) -> Path:
-    r = rendered or render(project, page)
+def export_page(project: Project, page: Page, rendered: Rendered | None = None, lang: str = "") -> Path:
+    r = rendered or render(project, page, lang=lang)
     out = project.out_path(page)
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.suffix.lower() in (".jpg", ".jpeg"):

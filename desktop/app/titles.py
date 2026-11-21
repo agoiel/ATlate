@@ -13,9 +13,9 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .config import ROOT
+from .config import DATA_ROOT
 
-TITLES_DIR = ROOT / "titles"
+TITLES_DIR = DATA_ROOT / "titles"
 MAX_HISTORY = 60
 MAX_CACHE = 3000
 

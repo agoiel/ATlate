@@ -21,12 +21,13 @@ import re
 import numpy as np
 from PIL import Image, ImageFilter
 
+from ..i18n import tr
 from ..models import Box, TextLine
 
 MODES = {
-    "fast": "Быстрый — один проход",
-    "thorough": "Тщательный — 3 прохода (тёмные фоны, светлый текст)",
-    "max": "Максимальный — 5 проходов (пёстрые фоны, цветной текст)",
+    "fast": tr("Быстрый — один проход"),
+    "thorough": tr("Тщательный — 3 прохода (тёмные фоны, светлый текст)"),
+    "max": tr("Максимальный — 5 проходов (пёстрые фоны, цветной текст)"),
 }
 
 _LETTER = re.compile(r"[^\W\d_]", re.UNICODE)

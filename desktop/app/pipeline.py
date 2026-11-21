@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from collections import OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
@@ -17,13 +18,21 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from PIL import Image
 
-from . import angle, autolang, languages, titles
+from . import angle, autolang, i18n, languages, titles
 from .bubbles import group_lines
 from .config import GLOSSARY_DIR, Config
 from .glossary import Glossary
+from .i18n import tr
 from .models import DebugInfo, PageResult, PassInfo
 from .ocr import OcrBackend, OcrError, OcrLanguageMissing, create_ocr, enhance
-from .translators import RateLimit, TranslateError, TranslateRequest, Translator, create_translator
+from .translators import (TRANSLATORS, RateLimit, TranslateError, TranslateRequest, Translator,
+                          create_translator)
+
+# Бесплатные переводчики без ключа — в этом порядке пробуются, если выбранный не ответил
+FREE_TRANSLATORS = ("google_free", "yandex", "lingva", "duckduckgo")
+
+
+_GLOSSARY_LOCK = threading.Lock()   # глоссарий могут пополнять и главное окно, и Студия
 
 
 def _norm(text: str) -> str:
@@ -67,6 +76,11 @@ class Pipeline:
         self.history: deque[tuple[str, str]] = deque(maxlen=titles.MAX_HISTORY)
         self._title_id: str | None = None
         self._pool: ThreadPoolExecutor | None = None
+        self._glossary_stamp = 0
+        self._fallbacks: dict[str, Translator] = {}
+        self.fallback_note = ""         # кто перевёл вместо выбранного бесплатного переводчика
+        self.glossary_added = 0         # сколько терминов авто-глоссарий добавил за последний перевод
+        self.last_detected = ""         # язык, который определил сам переводчик (для текста на латинице)
         # автоопределение языка: подтверждён ли текущий язык (тогда пробовать остальные не нужно)
         self._auto_ok = False
         self._auto_note = ""
@@ -105,6 +119,7 @@ class Pipeline:
     def reload(self) -> None:
         """Перечитать настройки (после окна настроек)."""
         self._translator = None
+        self._fallbacks.clear()
         self._glossary_name = None
         if self.cfg["ocr_engine"] != self._ocr_name:
             self._ocr = None
@@ -126,17 +141,76 @@ class Pipeline:
         return self._translator
 
     def _load_glossary(self) -> Glossary | None:
+        """Глоссарий из настроек. Перечитывается, если файл изменился (правка в редакторе,
+        пополнение из Студии или из главного окна)."""
         name = self.cfg.get("glossary") or ""
-        if name != self._glossary_name:
+        path = GLOSSARY_DIR / name
+        try:
+            stamp = path.stat().st_mtime_ns if name else 0
+        except OSError:
+            stamp = 0
+        if name != self._glossary_name or stamp != self._glossary_stamp:
             self._glossary_name = name
+            self._glossary_stamp = stamp
             self.glossary = None
-            path = GLOSSARY_DIR / name
-            if name and path.exists():
+            if name and stamp:
                 try:
                     self.glossary = Glossary.load(path)
                 except (OSError, ValueError):
                     self.glossary = None
         return self.glossary
+
+    def _fallback(self, req: TranslateRequest, err: TranslateError) -> tuple[list[str], Translator]:
+        """Выбранный бесплатный переводчик не ответил — пробуем другие бесплатные.
+
+        Бесплатные способы неофициальные: Google ограничивает запросы при VPN, у Lingva падают
+        серверы, DuckDuckGo меняет страницу. Если один не ответил, страницу переводит следующий,
+        а в строке статуса видно, кто перевёл. Переводчики с ключом не подменяются.
+        """
+        cur = self._translator_key
+        paid_yandex = cur == "yandex" and self.cfg.translator_settings("yandex").get("api_key")
+        if not self.cfg.get("free_fallback", True) or cur not in FREE_TRANSLATORS or paid_yandex:
+            raise err
+        for name in FREE_TRANSLATORS:
+            if name == cur:
+                continue
+            alt = self._fallbacks.get(name)
+            if alt is None:
+                # Яндекс — только бесплатным способом: платный ключ без спроса не тратим
+                settings = {} if name == "yandex" else self.cfg.translator_settings(name)
+                alt = self._fallbacks[name] = TRANSLATORS[name](settings)
+            try:
+                out = alt.translate(req)
+            except TranslateError:
+                continue
+            self.fallback_note = tr("{0} не ответил — перевёл {1}", self.translator.title, alt.title)
+            return out, alt
+        raise err
+
+    def _grow_glossary(self, glossary: Glossary, terms: list[dict], texts: list[str], tgt: str) -> None:
+        """Авто-глоссарий: добавить новые термины от ИИ-переводчика в тот глоссарий, которым
+        переводили (пока шёл запрос, в настройках могли выбрать другой), и сохранить файл."""
+        with _GLOSSARY_LOCK:
+            try:
+                glossary = Glossary.load(glossary.path)     # файл мог поменяться, пока шёл перевод
+            except (OSError, ValueError, TypeError):
+                return
+            # за время запроса пополнение могли выключить; встроенные и чужие по языку — не трогаем
+            if not glossary.auto or glossary.path.name.startswith("universal_") or not glossary.fits(tgt):
+                return
+            added = glossary.add_terms(terms, texts)
+            if not added:
+                return
+            if not glossary.target_lang:
+                glossary.target_lang = tgt          # термины переведены на этот язык
+            try:
+                glossary.save()
+                if glossary.path.name == self._glossary_name:
+                    self._glossary_stamp = glossary.path.stat().st_mtime_ns
+                    self.glossary = glossary
+            except OSError:
+                return
+        self.glossary_added += len(added)
 
     # ------------------------------------------------------------ автоопределение языка
     def reset_auto(self) -> None:
@@ -149,7 +223,8 @@ class Pipeline:
         Если уверенно сказать нельзя (текста мало), остаётся текущий язык.
         """
         ocr = self.ocr
-        cands = ocr.available_languages(list(languages.SOURCE_LANGUAGES))
+        # по одному языку на письменность: все языки на латинице читает одна и та же модель
+        cands = ocr.available_languages(list(languages.PROBE))
         if not cands:
             return current
         if len(cands) == 1:
@@ -168,12 +243,15 @@ class Pipeline:
             else:
                 texts = {c: read(c) for c in cands}
             best, scores = autolang.choose(texts, current)
-        names = {c: languages.src(c)["name"].split(" (")[0].lower() for c in cands}
-        self._auto_note = "Язык: " + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
-            + f" → {names.get(best, 'не определён')}"
+        names = {c: i18n.lower(languages.src(c)["name"].split(" (")[0]) for c in cands}
+        self._auto_note = tr("Язык: ") + ", ".join(f"{names[c]} {scores.get(c, 0):g}" for c in cands) \
+            + f" → {names.get(best, tr('не определён'))}"
+        if best == "latin" and languages.is_latin(current):
+            best = current      # выбранный язык на латинице точнее, чем «язык определит переводчик»
         if best is None:
             # текста слишком мало; но язык без установленного распознавания оставлять нельзя
-            best = current if current in cands else cands[0]
+            usable = current in cands or (languages.is_latin(current) and "latin" in cands)
+            best = current if usable else cands[0]
         if best != current:
             self.cfg["source_lang"] = best
             result.detected_lang = best
@@ -290,12 +368,12 @@ class Pipeline:
             return result
         except OcrError as e:
             result.error = str(e)
-            watch.mark("распознавание")
+            watch.mark(tr("распознавание"))
             result.debug = DebugInfo(stages=watch.stages, total_ms=watch.total(), error=str(e))
             return result
         t1 = time.perf_counter()
         result.timings["ocr"] = t1 - t0
-        watch.mark("распознавание")
+        watch.mark(tr("распознавание"))
 
         def debug() -> DebugInfo:
             return DebugInfo(passes=passes, stages=list(watch.stages), total_ms=watch.total(), threads=threads,
@@ -327,7 +405,7 @@ class Pipeline:
         result.line_count = len(lines)
         t2 = time.perf_counter()
         result.timings["bubbles"] = t2 - t1
-        watch.mark("облака")
+        watch.mark(tr("облака"))
         if not translate:
             result.debug = debug()
             return result
@@ -345,6 +423,7 @@ class Pipeline:
                 todo.append(b)
 
         if todo:
+            self.glossary_added, self.last_detected, self.fallback_note = 0, "", ""
             try:
                 # облака на разных языках переводятся отдельными запросами
                 groups: dict[str, list] = {}
@@ -355,8 +434,11 @@ class Pipeline:
             except TranslateError as e:
                 result.error = str(e)
             self._persist_title()
+            result.glossary_added = self.glossary_added
+            result.source_detected = self.last_detected
+            result.fallback = self.fallback_note
         result.timings["translate"] = time.perf_counter() - t2
-        watch.mark("перевод")
+        watch.mark(tr("перевод"))
         result.debug = debug()
         return result
 
@@ -406,18 +488,19 @@ class Pipeline:
                           for l in ls)
 
         a, b = keys(seq), keys(par)
-        out = ["Сравнение распознавания", f"По очереди: {seq_ms:.0f} мс"]
+        out = [tr("Сравнение распознавания"), tr("По очереди: {0:.0f} мс", seq_ms)]
         if threads > 1:
-            out.append(f"Параллельно (×{threads}): {par_ms:.0f} мс")
+            out.append(tr("Параллельно (×{0}): {1:.0f} мс", threads, par_ms))
             k = seq_ms / par_ms if par_ms else 0
-            out.append(f"Быстрее в {k:.1f} раза" if k >= 1 else f"Медленнее в {1 / k:.1f} раза" if k else "")
+            out.append(tr("Быстрее в {0:.1f} раза",
+                          k) if k >= 1 else tr("Медленнее в {0:.1f} раза", 1 / k) if k else "")
         else:
-            out.append("Параллельно: недоступно (один проход, одно ядро или EasyOCR)")
+            out.append(tr("Параллельно: недоступно (один проход, одно ядро или EasyOCR)"))
         if a == b:
-            out.append(f"Результат совпал: {len(a)} строк")
+            out.append(tr("Результат совпал: {0} строк", len(a)))
         else:
             diff = len(set(a) ^ set(b))
-            out.append(f"Результат различается: {len(a)} и {len(b)} строк, расхождений {diff}")
+            out.append(tr("Результат различается: {0} и {1} строк, расхождений {2}", len(a), len(b), diff))
         return "\n".join(x for x in out if x)
 
     def _cache_key(self, text: str) -> str:
@@ -429,8 +512,10 @@ class Pipeline:
         cfg = self.cfg
         texts = [b.text for b in bubbles]
         glossary = self._load_glossary()
+        if glossary is not None and not glossary.fits(cfg["target_lang"]):
+            glossary = None         # например, встроенный русский глоссарий при переводе на английский
         RateLimit.interval = max(0.0, float(cfg.get("request_interval", 1.0)))
-        tr = self.translator
+        tor = self.translator
 
         n_ctx = int(cfg["context_size"])
         req = TranslateRequest(
@@ -440,14 +525,29 @@ class Pipeline:
         )
         if glossary:
             req.glossary = glossary.find(texts)
-            if not tr.uses_llm and req.glossary:
+            if not tor.uses_llm and req.glossary:
                 req.anchored = [glossary.apply_anchors(t) for t in texts]
+        # авто-глоссарий — только с ИИ-переводчиками и не для встроенных универсальных глоссариев
+        req.collect_terms = bool(glossary and glossary.auto and tor.uses_llm
+                                 and not (self._glossary_name or "").startswith("universal_"))
 
-        out = tr.translate(req)
+        fallback = False
+        try:
+            out = tor.translate(req)
+        except TranslateError as e:
+            out, tor = self._fallback(req, e)
+            fallback = True
+        if req.detected:
+            self.last_detected = req.detected
+        if req.collect_terms and req.terms:
+            self._grow_glossary(glossary, req.terms, texts, req.tgt)
         for b, t in zip(bubbles, out):
             b.translation = t
             if t:
-                self.cache[self._cache_key(b.text)] = t
+                # перевод запасного переводчика в кэш не идёт: когда выбранный снова заработает,
+                # эти реплики переведёт он
+                if not fallback:
+                    self.cache[self._cache_key(b.text)] = t
                 self.history.append((b.text, t))
         while len(self.cache) > 3000:
             self.cache.popitem(last=False)

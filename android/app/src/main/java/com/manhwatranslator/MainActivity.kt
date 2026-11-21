@@ -25,6 +25,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.manhwatranslator.core.DevLog
 import com.manhwatranslator.core.Enhance
+import com.manhwatranslator.core.Glossary
 import com.manhwatranslator.core.GlossaryStore
 import com.manhwatranslator.core.I18n
 import com.manhwatranslator.core.tr
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
     private lateinit var srcPicker: PickerView
     private lateinit var tgtPicker: PickerView
     private lateinit var glossPicker: PickerView
+    private lateinit var autoGloss: SwitchRow
+    private lateinit var autoGlossHint: android.widget.TextView
     private lateinit var titlePicker: PickerView
     private lateinit var keysBox: LinearLayout
     private lateinit var translatorDropdown: Dropdown
@@ -89,7 +92,7 @@ class MainActivity : Activity() {
         content.addView(buildGlossary(), lp().margins(this, top = 14))
         content.addView(buildTuning(), lp().margins(this, top = 14))
         content.addView(buildDeveloper(), lp().margins(this, top = 14))
-        content.addView(ui.caption(tr("ATlate 0.5 · распознавание: Google ML Kit")).apply {
+        content.addView(ui.caption(trf("ATlate %s · распознавание: Google ML Kit", BuildConfig.VERSION_NAME)).apply {
             gravity = Gravity.CENTER
             alpha = 0.8f
         }, lp().margins(this, top = 22))
@@ -242,7 +245,7 @@ class MainActivity : Activity() {
     private fun renderLanguages() {
         val name = Languages.src(s.sourceLang).name.substringBefore(" (")
         // в режиме «Авто» показываем и язык, который сейчас найден
-        srcPicker.setValue(if (s.autoLang) trf("Авто · %s", name.lowercase()) else name)
+        srcPicker.setValue(if (s.autoLang) trf("Авто · %s", I18n.lower(name)) else name)
         tgtPicker.setValue(Languages.tgt(s.targetLang).name)
     }
 
@@ -275,6 +278,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(items, cur) { d, which ->
                 s.targetLang = Languages.targets[which].code
                 renderLanguages()
+                refreshAutoGlossary()       // глоссарий мог стать неподходящим (или снова подходящим)
                 d.dismiss()
             }.show()
     }
@@ -296,6 +300,9 @@ class MainActivity : Activity() {
         card.addView(Stepper(this, tr("Пауза между запросами"), tr("Защищает от блокировки за частые запросы"),
             s.requestIntervalSec, 0.5f, 0f, 10f, { String.format(tr("%.1f с"), it) }) { s.requestIntervalSec = it },
             lp().margins(this, top = 12))
+        card.addView(SwitchRow(this, tr("Запасные бесплатные переводчики"),
+            tr("Если бесплатный переводчик не отвечает, перевести другим бесплатным"), s.freeFallback) { s.freeFallback = it },
+            lp().margins(this, top = 8))
         selectTranslator(s.translator)
         return card
     }
@@ -303,6 +310,7 @@ class MainActivity : Activity() {
     private fun selectTranslator(key: String) {
         s.translator = key
         translatorDropdown.select(key)
+        refreshAutoGlossary()       // пополнение глоссария работает только с ИИ-переводчиками
         keysBox.removeAllViews()
         fun field(label: String, value: String, hint: String, secret: Boolean = false, save: (String) -> Unit) {
             keysBox.addView(Field(this, label, value, hint, secret) { save(it.trim()) }, lp().margins(this, top = 12))
@@ -400,7 +408,62 @@ class MainActivity : Activity() {
         row.addView(edit, lp(0, weight = 1f))
         row.addView(create, lp(0, weight = 1f).margins(this, start = 10))
         card.addView(row, lp().margins(this, top = 10))
+        val autoNew = PillButton(this, tr("Авто-глоссарий"), R.drawable.ic_bolt, PillStyle.TONAL, 44)
+        autoNew.onClick { createAutoGlossary() }
+        card.addView(autoNew, lp().margins(this, top = 10))
+        autoGloss = SwitchRow(this, tr("Пополнять глоссарий сам"),
+            tr("ИИ-переводчик добавляет новые имена и термины, повторы пропускаются"), false) { setGlossaryAuto(it) }
+        card.addView(autoGloss, lp().margins(this, top = 6))
+        autoGlossHint = ui.caption("")
+        card.addView(autoGlossHint, lp().margins(this, top = 2))
         return card
+    }
+
+    // ---------------------------------------------------------------- авто-глоссарий
+    private fun currentGlossary() = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(this, it) }
+
+    /** Переключатель «Пополнять сам» — по текущему глоссарию; подсказка — почему он недоступен. */
+    private fun refreshAutoGlossary() {
+        if (!::autoGloss.isInitialized) return
+        val g = currentGlossary()
+        val universal = s.glossary.startsWith("universal_")
+        autoGloss.checked = g != null && g.auto && !universal
+        autoGloss.isEnabled = g != null && !universal
+        autoGloss.alpha = if (autoGloss.isEnabled) 1f else 0.5f
+        val llm = Translators.create(s).usesLlm
+        val hint = when {
+            g != null && !g.fits(s.targetLang) -> trf("Этот глоссарий — для перевода на %s, поэтому сейчас он не используется. Выберите другой или создайте авто-глоссарий.",
+                I18n.lower(Languages.nameOf(g.targetLang)))
+            g == null -> tr("Выберите или создайте глоссарий — или нажмите «Авто-глоссарий».")
+            universal -> tr("Встроенный универсальный глоссарий не пополняется — нажмите «Авто-глоссарий».")
+            g.auto && !llm -> tr("Пополнение работает только с ИИ-переводчиками (Gemini, Claude, OpenAI-совместимые). С выбранным переводчиком глоссарий только используется.")
+            g.auto -> trf("Добавлено автоматически: %s. Такие записи помечены [авто] в редакторе — проверьте их.", g.autoCount)
+            else -> ""
+        }
+        autoGlossHint.text = hint
+        autoGlossHint.visibility = if (hint.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun setGlossaryAuto(on: Boolean) {
+        val g = currentGlossary()
+        if (g == null || s.glossary.startsWith("universal_")) return refreshAutoGlossary()
+        g.auto = on
+        GlossaryStore.save(this, s.glossary, g)
+        refreshAutoGlossary()
+    }
+
+    /** Новый пустой глоссарий, который пополняется сам; сразу выбирается для текущего тайтла. */
+    private fun createAutoGlossary() {
+        val title = TitleStore.load(this, s.activeTitle)
+        askName(tr("Новый авто-глоссарий"), title?.name ?: "") { name ->
+            val file = GlossaryStore.fileNameFor(this, name)
+            GlossaryStore.save(this, file, Glossary(name, s.sourceLang, emptyList(), auto = true, targetLang = s.targetLang))
+            s.glossary = file
+            title?.let { it.glossary = file; TitleStore.save(this, it) }
+            refreshGlossary()
+            toast(if (Translators.create(s).usesLlm) tr("Авто-глоссарий создан: новые имена и термины будут добавляться при переводе.")
+                  else tr("Авто-глоссарий создан. Чтобы он пополнялся, выберите ИИ-переводчик (Gemini, Claude или OpenAI-совместимый)."))
+        }
     }
 
     private fun refreshGlossary() {
@@ -414,12 +477,15 @@ class MainActivity : Activity() {
         }
         val g = s.glossary.takeIf { it.isNotBlank() }?.let { GlossaryStore.load(this, it) }
         if (g == null && s.glossary.isNotBlank()) s.glossary = ""
-        glossPicker.setValue(g?.let { trf("%s · %s зап.", it.name.ifBlank { s.glossary }, it.entries.size) } ?: tr("Без глоссария"))
+        glossPicker.setValue(g?.let {
+            trf("%s · %s зап.", GlossaryStore.title(s.glossary, it), it.entries.size) + if (it.auto) tr(" · авто") else ""
+        } ?: tr("Без глоссария"))
+        refreshAutoGlossary()
     }
 
     private fun pickGlossary() {
         val files = GlossaryStore.list(this)
-        val names = listOf(tr("Без глоссария")) + files.map { GlossaryStore.load(this, it)?.name?.ifBlank { null } ?: it }
+        val names = listOf(tr("Без глоссария")) + files.map { f -> GlossaryStore.load(this, f)?.let { GlossaryStore.title(f, it) } ?: f }
         val cur = files.indexOf(s.glossary) + 1
         AlertDialog.Builder(this).setTitle(tr("Глоссарий"))
             .setSingleChoiceItems(names.toTypedArray(), cur) { d, which ->
