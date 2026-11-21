@@ -62,6 +62,8 @@ class Settings(ctx: Context) {
     var skipCut by bool("skip_cut", true)
     /** Перевод под тем же углом, что и наклонённый оригинал */
     var keepTilt by bool("keep_tilt", true)
+    /** «Слова на экране»: удержание пальца на слове — «Копировать» и «В словарик» */
+    var wordTouch by bool("word_touch", true)
     var maxFontSp by int("max_font_sp", 16)
     /** Выделять зону по всей ширине экрана (задаётся только высота) */
     var fullWidthSelect by bool("full_width_select", false)

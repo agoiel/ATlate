@@ -23,7 +23,29 @@ data class Box(val x: Float, val y: Float, val w: Float, val h: Float) {
  * отдельно хранятся наклон и настоящие размеры: [angle] — в градусах, плюс — правый край выше
  * левого; [len] и [thick] — длина и высота строки (0 — неизвестны, тогда берётся рамка).
  */
-data class TextLine(val box: Box, val text: String, val angle: Float = 0f, val len: Float = 0f, val thick: Float = 0f)
+data class TextLine(val box: Box, val text: String, val angle: Float = 0f, val len: Float = 0f, val thick: Float = 0f,
+                    /** Слова строки с рамками — для «Слов на экране» (удержание пальца, словарик). */
+                    val words: List<Word> = emptyList())
+
+/** Слово строки и его рамка. */
+data class Word(val text: String, val box: Box)
+
+/**
+ * Слова строки. Если распознавание не дало рамок слов, строка делится по пробелам,
+ * а ширина — пропорционально числу букв (для выбора пальцем этого достаточно).
+ */
+fun wordsOf(line: TextLine): List<Word> {
+    if (line.words.isNotEmpty()) return line.words
+    val parts = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (parts.isEmpty()) return emptyList()
+    val total = parts.sumOf { it.length } + (parts.size - 1)
+    val unit = line.box.w / maxOf(1, total)
+    var x = line.box.x
+    return parts.map { part ->
+        val w = unit * part.length
+        Word(part, Box(x, line.box.y, w, line.box.h)).also { x += w + unit }
+    }
+}
 
 /** Облако: несколько строк, склеенных в одну реплику. */
 class Bubble(val box: Box, val lines: List<TextLine>, val text: String) {

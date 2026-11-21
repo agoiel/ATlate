@@ -21,6 +21,7 @@ import android.widget.TextView
 import android.content.res.ColorStateList
 import com.manhwatranslator.core.PageResult
 import com.manhwatranslator.core.History
+import com.manhwatranslator.core.Vocabulary
 
 /** Диалоги в стиле приложения: ожидание, результат перевода, справка. */
 object Dialogs {
@@ -237,6 +238,132 @@ object Dialogs {
 
     private const val SHOW = 300
 
+    /**
+     * Словарик: слова, отмеченные на экране, с переводом и заметкой. Касание слова — исправить
+     * слово, перевод или заметку (транскрипцию, род — что угодно) или удалить. «Поделиться» — CSV,
+     * первые столбцы которого — слово и перевод (для карточек Anki).
+     */
+    fun vocabulary(ctx: Context) {
+        val ui = Ui(ctx)
+        val c = T.c
+        var all = Vocabulary.load(ctx)
+        var shown: List<Vocabulary.Entry> = all
+        var query = ""
+        val box = ui.vertical().apply { setPadding(ctx.dp(20), ctx.dp(20), ctx.dp(20), ctx.dp(16)) }
+        box.addView(ui.text(tr("Словарик"), 20f, c.text, Fonts.medium))
+        box.addView(ui.caption(tr("Удержите палец на слове в переводе и нажмите «В словарик» — слово оригинала попадёт сюда с переводом. Коснитесь слова, чтобы исправить его или дописать заметку (транскрипцию, род — что угодно).")),
+            lp().margins(ctx, top = 2))
+        val count = ui.caption("")
+        val list = ui.vertical()
+        lateinit var fill: () -> Unit
+        fill = {
+            shown = Vocabulary.search(all, query)
+            count.text = if (shown.size == all.size) trf("Слов: %s", all.size) else trf("Найдено: %s из %s", shown.size, all.size)
+            list.removeAllViews()
+            if (shown.isEmpty()) {
+                list.addView(ui.caption(if (all.isEmpty()) tr("Пока пусто: удержите палец на слове в переводе и нажмите «В словарик».")
+                    else tr("Ничего не найдено.")), lp().margins(ctx, top = 8))
+            }
+            for (e in shown.take(SHOW)) {
+                val row = ui.vertical().apply {
+                    setPadding(ctx.dp(14), ctx.dp(10), ctx.dp(14), ctx.dp(10))
+                    background = pressable(rounded(c.surfaceAlt, ctx.dpF(14f)), ctx.dpF(14f))
+                    isClickable = true
+                    setOnClickListener { editWord(ctx, e) { all = Vocabulary.load(ctx); fill() } }
+                }
+                row.addView(ui.text(e.word + "  —  " + e.translation.ifBlank { "?" }, 16f, c.text, Fonts.medium))
+                if (e.note.isNotBlank()) row.addView(ui.text(e.note, 13.5f, c.primary))
+                if (e.context.isNotBlank()) {
+                    row.addView(ui.text(e.context + if (e.contextTr.isNotBlank()) " — ${e.contextTr}" else "", 12.5f, c.text2),
+                        lp().margins(ctx, top = 2))
+                }
+                list.addView(row, lp().margins(ctx, top = 8))
+            }
+        }
+        box.addView(Field(ctx, "", "", tr("Поиск по слову, переводу, заметке или тайтлу")) { query = it; fill() },
+            lp().margins(ctx, top = 12))
+        box.addView(count, lp().margins(ctx, top = 6))
+        val maxH = (ctx.resources.displayMetrics.heightPixels * 0.5f).toInt()
+        box.addView(MaxHeightScrollView(ctx, maxH).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list)
+        }, lp().margins(ctx, top = 4))
+
+        val d = base(ctx, box)
+        val row = ui.horizontal()
+        val add = PillButton(ctx, tr("Добавить"), null, PillStyle.TONAL, 44)
+        add.onClick { editWord(ctx, null) { all = Vocabulary.load(ctx); fill() } }
+        val copy = PillButton(ctx, tr("Копировать"), null, PillStyle.TONAL, 44)
+        copy.onClick {
+            if (shown.isNotEmpty()) copyToClipboard(ctx, Vocabulary.toText(shown), trf("Скопировано слов: %s", shown.size))
+        }
+        row.addView(add, lp(0, weight = 1f))
+        row.addView(copy, lp(0, weight = 1f).margins(ctx, start = 8))
+        box.addView(row, lp().margins(ctx, top = 14))
+        val row2 = ui.horizontal()
+        val share = PillButton(ctx, tr("Поделиться"), null, PillStyle.TONAL, 44)
+        share.onClick {
+            if (shown.isEmpty()) return@onClick
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "ATlate vocabulary.csv")
+                putExtra(android.content.Intent.EXTRA_TEXT, Vocabulary.toCsv(shown))
+            }
+            try {
+                ctx.startActivity(android.content.Intent.createChooser(send, tr("Поделиться словариком")))
+            } catch (_: Exception) {
+            }
+        }
+        val ok = PillButton(ctx, tr("Готово"), null, PillStyle.PRIMARY, 44)
+        ok.onClick { d.dismiss() }
+        row2.addView(share, lp(0, weight = 1f))
+        row2.addView(ok, lp(0, weight = 1f).margins(ctx, start = 8))
+        box.addView(row2, lp().margins(ctx, top = 8))
+        fill()
+        d.show()
+    }
+
+    /** Исправить слово (e = null — добавить новое вручную): слово, перевод, заметка; удалить. */
+    private fun editWord(ctx: Context, e: Vocabulary.Entry?, onSaved: () -> Unit) {
+        val s = Settings(ctx)
+        val form = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(ctx.dp(20), ctx.dp(8), ctx.dp(20), 0)
+        }
+        val word = Field(ctx, tr("СЛОВО"), e?.word.orEmpty())
+        val tr_ = Field(ctx, tr("ПЕРЕВОД"), e?.translation.orEmpty())
+        val note = Field(ctx, tr("ЗАМЕТКА"), e?.note.orEmpty(), tr("Транскрипция, род, пример — что угодно"))
+        form.addView(word)
+        form.addView(tr_, lp().margins(ctx, top = 10))
+        form.addView(note, lp().margins(ctx, top = 10))
+        val b = android.app.AlertDialog.Builder(ctx)
+            .setTitle(if (e == null) tr("Новое слово") else tr("Слово"))
+            .setView(form)
+            .setPositiveButton(tr("Сохранить")) { _, _ ->
+                val all = Vocabulary.load(ctx)
+                val w = word.edit.text.toString().trim()
+                if (e == null) {
+                    if (w.isNotEmpty()) Vocabulary.add(ctx, Vocabulary.Entry(w, tr_.edit.text.toString().trim(),
+                        note.edit.text.toString().trim(), lang = "", tgt = s.targetLang))
+                } else {
+                    val cur = all.firstOrNull { it.key == e.key && it.added == e.added } ?: return@setPositiveButton
+                    if (w.isNotEmpty()) cur.word = w
+                    cur.translation = tr_.edit.text.toString().trim()
+                    cur.note = note.edit.text.toString().trim()
+                    Vocabulary.save(ctx, all)
+                }
+                onSaved()
+            }
+            .setNegativeButton(tr("Отмена"), null)
+        if (e != null) b.setNeutralButton(tr("Удалить")) { _, _ ->
+            val all = Vocabulary.load(ctx)
+            all.removeAll { it.key == e.key && it.added == e.added }
+            Vocabulary.save(ctx, all)
+            onSaved()
+        }
+        b.show()
+    }
+
     fun help(ctx: Context) {
         val ui = Ui(ctx)
         val c = T.c
@@ -249,6 +376,7 @@ object Dialogs {
             tr("Перевод появится прямо поверх облаков. Нажмите «Аа» ещё раз — перевод исчезнет, листайте дальше."),
             tr("Долгое нажатие на кнопку открывает меню: новая зона, показать текущую зону, смена режима, остановка."),
             tr("Режим Live: перевод появляется сам, когда страница перестаёт двигаться. Нажатие на кнопку — пауза."),
+            tr("Незнакомое слово? Удержите на нём палец: плашка спрячется, над словом оригинала появятся «Копировать» и «В словарик». Слова с переводом и заметками — в «Словарике»."),
         )
         val list = ui.vertical()
         steps.forEachIndexed { i, t ->

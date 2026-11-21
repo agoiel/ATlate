@@ -31,6 +31,10 @@ import com.manhwatranslator.core.tr
 import com.manhwatranslator.core.trf
 import com.manhwatranslator.core.Pipeline
 import com.manhwatranslator.core.Settings
+import com.manhwatranslator.core.Bubble
+import com.manhwatranslator.core.Vocabulary
+import com.manhwatranslator.core.Word
+import com.manhwatranslator.core.wordsOf
 import java.util.concurrent.Executors
 
 /**
@@ -72,6 +76,13 @@ class OverlayService : Service() {
     private var lastSourceShown = ""        // какой язык, определённый переводчиком, уже показан
     private var shownResult: PageResult? = null   // перевод, который сейчас на экране (для «Копировать перевод»)
 
+    // ---- «Слова на экране»: окна касаний над плашками и кнопки над выбранным словом
+    private val touchViews = ArrayList<View>()
+    private var chips: WordChipsView? = null
+    private var picked: Triple<Int, Bubble, Word>? = null   // номер облака, облако, слово
+    private var pickedRegion = Rect()
+    private val dismissChips = Runnable { closeWordChips() }
+
     // ---- режим Live
     private var liveOn = false
     private var liveShown = false             // перевод показан и страница не двигалась
@@ -102,7 +113,7 @@ class OverlayService : Service() {
             }
             ACTION_RESET -> {
                 pipeline.reset()   // контекст перечитается из памяти при следующем переводе
-                translationView?.clear()
+                clearTranslation()
                 updateButton()
                 return START_NOT_STICKY
             }
@@ -240,6 +251,7 @@ class OverlayService : Service() {
     private fun removeViews() {
         closeMenu()
         closeDebugPanel()
+        removeWordTouch()
         listOf<View?>(selectView, translationView, button).forEach { v ->
             if (v != null) try { wm.removeView(v) } catch (_: Exception) {}
         }
@@ -265,6 +277,150 @@ class OverlayService : Service() {
         button?.live = if (settings.translateMode == "live") liveOn else null
     }
 
+    /** Убрать перевод с экрана (вместе с окнами касаний над плашками и кнопками над словом). */
+    private fun clearTranslation() {
+        removeWordTouch()
+        translationView?.clear()
+    }
+
+    // ---------------------------------------------------------------- слова на экране
+    /** Окна касаний ровно над плашками: удержание пальца на слове — «Копировать» и «В словарик». */
+    private fun addWordTouch(region: Rect) {
+        removeWordTouch()
+        val tv = translationView ?: return
+        if (!settings.wordTouch || !tv.hasContent) return
+        for ((index, r) in tv.plateRects()) {
+            val v = WordTouchView(this,
+                onLongPress = { x, y -> pickWord(index, x, y, region) },
+                onTap = { x, y -> if (picked?.first == index) pickWord(index, x, y, region) else closeWordChips() },
+                onSwipe = {
+                    // палец повели по плашке — листают главу: убираем перевод, следующий жест уже листает
+                    closeWordChips()
+                    clearTranslation()
+                    updateButton()
+                })
+            val p = overlayParams(r.width().toInt().coerceAtLeast(1), r.height().toInt().coerceAtLeast(1), 0)
+            p.x = r.left.toInt()
+            p.y = r.top.toInt()
+            try {
+                wm.addView(v, p)
+                touchViews.add(v)
+            } catch (_: Exception) {
+            }
+        }
+        // кнопка стоит над плашкой — поднимаем её поверх окон касаний, иначе её не нажать
+        val b = button
+        val bp = buttonParams
+        if (b != null && bp != null) {
+            val br = android.graphics.RectF(bp.x.toFloat(), bp.y.toFloat(), (bp.x + b.sizePx).toFloat(), (bp.y + b.sizePx).toFloat())
+            if (tv.plateRects().any { android.graphics.RectF.intersects(it.second, br) }) {
+                try { wm.removeView(b); wm.addView(b, bp) } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun removeWordTouch() {
+        closeWordChips()
+        for (v in touchViews) try { wm.removeView(v) } catch (_: Exception) {}
+        touchViews.clear()
+    }
+
+    /** Слово оригинала под пальцем (координаты экрана) в облаке index. */
+    private fun wordAt(bubble: Bubble, x: Float, y: Float, region: Rect): Word? {
+        val ix = x - region.left
+        val iy = y - region.top
+        val words = bubble.lines.flatMap { wordsOf(it) }.filter { Vocabulary.clean(it.text).isNotEmpty() }
+        if (words.isEmpty()) return null
+        // точное попадание, иначе — ближайшее слово облака (палец толще слова)
+        words.firstOrNull { w -> ix >= w.box.x - 4 && ix <= w.box.x2 + 4 && iy >= w.box.y - 4 && iy <= w.box.y2 + 4 }?.let { return it }
+        return words.minByOrNull { w ->
+            val dx = maxOf(w.box.x - ix, 0f, ix - w.box.x2)
+            val dy = maxOf(w.box.y - iy, 0f, iy - w.box.y2)
+            dx * dx + dy * dy
+        }
+    }
+
+    private fun pickWord(index: Int, x: Float, y: Float, region: Rect) {
+        val tv = translationView ?: return
+        val bubble = tv.shownBubbles.getOrNull(index) ?: return
+        val word = wordAt(bubble, x, y, region) ?: return
+        main.removeCallbacks(dismissChips)
+        picked = Triple(index, bubble, word)
+        pickedRegion = Rect(region)
+        tv.peek(index, android.graphics.RectF(word.box.x, word.box.y, word.box.x2, word.box.y2))
+        showWordChips(region, word)
+    }
+
+    private fun showWordChips(region: Rect, word: Word) {
+        chips?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        val v = WordChipsView(this, onCopy = { copyWord() }, onAdd = { addWord() },
+            // касание мимо кнопок: чуть позже закрыть — если коснулись другого слова, оно откроется снова
+            onOutside = { main.postDelayed(dismissChips, 150) })
+        val p = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+        v.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val screenW = resources.displayMetrics.widthPixels
+        val gap = dpF(6f).toInt()
+        val cx = region.left + word.box.cx
+        p.x = (cx - v.measuredWidth / 2f).toInt().coerceIn(gap, (screenW - v.measuredWidth - gap).coerceAtLeast(gap))
+        val above = (region.top + word.box.y - v.measuredHeight - gap).toInt()
+        p.y = if (above > gap) above else (region.top + word.box.y2 + gap).toInt()
+        try {
+            wm.addView(v, p)
+            chips = v
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun closeWordChips() {
+        main.removeCallbacks(dismissChips)
+        chips?.let { try { wm.removeView(it) } catch (_: Exception) {} }
+        chips = null
+        picked = null
+        translationView?.unpeek()
+    }
+
+    private fun copyWord() {
+        val w = picked?.third ?: return
+        val word = Vocabulary.clean(w.text)
+        copyToClipboard(this, word, trf("Скопировано: %s", word))
+        chips?.say(trf("Скопировано: %s", word))
+        main.postDelayed(dismissChips, 1200)
+    }
+
+    private fun addWord() {
+        val (_, bubble, w) = picked ?: return
+        val lang = bubble.lang.ifBlank { settings.sourceLang }
+        val word = Vocabulary.baseForm(w.text, lang)
+        val old = Vocabulary.find(Vocabulary.load(this), word, lang)
+        if (old != null && old.translation.isNotBlank()) {
+            chips?.say(trf("Уже в словарике: %s — %s", old.word, old.translation))
+            main.postDelayed(dismissChips, 2500)
+            return
+        }
+        chips?.say(trf("Перевожу «%s»…", word))
+        val shown = chips
+        val title = TitleStore.load(this, settings.activeTitle)?.name ?: ""
+        val entry = Vocabulary.Entry(word, lang = lang, tgt = settings.targetLang, context = bubble.text,
+            contextTr = bubble.translation, title = title)
+        worker.execute {
+            val failed = try {
+                entry.translation = Vocabulary.translateWord(this, settings, word, lang, entry.context, entry.contextTr).first
+                ""
+            } catch (e: Exception) {
+                e.message.orEmpty()
+            }
+            val (saved, _) = try { Vocabulary.add(this, entry) } catch (_: Exception) { entry to false }
+            main.post {
+                if (chips === shown && shown != null) {
+                    shown.say(if (failed.isEmpty()) trf("%s — %s · в словарике", saved.word, saved.translation.ifBlank { "?" })
+                    else trf("%s — в словарике, перевод не получен", saved.word))
+                    main.postDelayed(dismissChips, 2500)
+                }
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- действия
     private fun onButtonTap() {
         if (menu != null) { closeMenu(); return }
@@ -284,7 +440,7 @@ class OverlayService : Service() {
 
     private fun startSelection() {
         if (selectView != null || busy) return
-        translationView?.clear()
+        clearTranslation()
         updateButton()
         val wasLive = liveOn
         if (wasLive) setLive(false)
@@ -317,11 +473,12 @@ class OverlayService : Service() {
         val items = ArrayList<Pair<String, () -> Unit>>()
         items.add(tr("Выделить новую зону") to { startSelection() })
         if (settings.region != null) items.add(tr("Показать зону") to { showZone() })
-        if (translationView?.hasContent == true) items.add(tr("Убрать перевод") to { translationView?.clear(); updateButton() })
+        if (translationView?.hasContent == true) items.add(tr("Убрать перевод") to { clearTranslation(); updateButton() })
         val copy = shownResult?.copyText().orEmpty()
         if (translationView?.hasContent == true && copy.isNotEmpty()) items.add(tr("Копировать перевод") to {
             copyToClipboard(this, copy, trf("Перевод скопирован: облаков %s", shownResult?.translations()?.size ?: 0))
         })
+        items.add(tr("Словарик") to { openVocabulary() })
         items.add((if (live) tr("Режим: Live → Скриншот") else tr("Режим: Скриншот → Live")) to { switchMode() })
         if (settings.devMode && settings.region != null) items.add(tr("Сравнить: по очереди и параллельно") to { compareModes() })
         items.add(tr("Остановить переводчик") to { stopEverything() })
@@ -340,6 +497,15 @@ class OverlayService : Service() {
         p.y = (bp?.y ?: 0).coerceAtLeast(gap)
         wm.addView(m, p)
         menu = m
+    }
+
+    /** Словарик открывается в приложении (окно поверх читалки было бы неудобно редактировать). */
+    private fun openVocabulary() {
+        val i = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(MainActivity.EXTRA_VOCABULARY, true)
+        }
+        try { startActivity(i) } catch (_: Exception) {}
     }
 
     private fun closeMenu() {
@@ -402,7 +568,7 @@ class OverlayService : Service() {
                 baseThumb = cur
             } else if (diff(base, cur) > 6f) {
                 // страница сдвинулась — убираем старый перевод и ждём остановки
-                translationView?.clear()
+                clearTranslation()
                 liveShown = false
                 baseThumb = null
                 prevThumb = cur
@@ -428,7 +594,7 @@ class OverlayService : Service() {
         val timings = Timings()
         button?.visibility = View.INVISIBLE
         debugWrap?.visibility = View.INVISIBLE
-        translationView?.clear()
+        clearTranslation()
         main.postDelayed({
             val full = cap.capture()
             button?.visibility = View.VISIBLE
@@ -468,6 +634,7 @@ class OverlayService : Service() {
         val boxes = if (dev && settings.debugBoxes) res.debug?.passes.orEmpty() else emptyList()
         translationView?.show(res.bubbles, region, settings.maxFontSp, boxes)
         shownResult = res
+        addWordTouch(region)
         if (dev) {
             val title = TitleStore.load(this, settings.activeTitle)?.name ?: ""
             Thread { History.add(this, res, settings, title) }.start()       // файл — не в главном потоке
@@ -559,7 +726,7 @@ class OverlayService : Service() {
         updateButton()
         button?.visibility = View.INVISIBLE
         debugWrap?.visibility = View.INVISIBLE
-        translationView?.clear()
+        clearTranslation()
         toast(tr("Сравниваю… это займёт несколько секунд"))
         main.postDelayed({
             val full = cap.capture()
