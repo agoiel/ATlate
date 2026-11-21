@@ -112,7 +112,8 @@ class MiniPanel(QWidget):
                        Group("exit", "exit", "full")]
         n = len(self.groups)
         self.full_h = W + n * (BTN + GAP) + 4
-        self.setFixedSize(W + 2 * EXT, self.full_h)
+        self.ext = EXT          # запас окна по бокам; растёт, если вытянутая кнопка шире (крупный шрифт, масштаб)
+        self.setFixedSize(W + 2 * self.ext, self.full_h)
 
         self._font = QFont(theme.font_family())
         self._font.setPixelSize(13)
@@ -183,7 +184,7 @@ class MiniPanel(QWidget):
     # ------------------------------------------------------------ геометрия
     def panel_pos(self) -> QPoint:
         """Левый верхний угол самой панели на экране (окно шире: по бокам запас)."""
-        return self.pos() + QPoint(EXT, 0)
+        return self.pos() + QPoint(self.ext, 0)
 
     def _screen_rect(self) -> QRect:
         s = QGuiApplication.screenAt(self.panel_pos() + QPoint(W // 2, W // 2)) or QGuiApplication.primaryScreen()
@@ -192,10 +193,10 @@ class MiniPanel(QWidget):
     def place(self, pos: list | tuple | None) -> None:
         """Поставить панель в сохранённое место (или в правый верхний угол), не дальше края экрана."""
         if pos and len(pos) == 2:
-            self.move(int(pos[0]) - EXT, int(pos[1]))
+            self.move(int(pos[0]) - self.ext, int(pos[1]))
         else:
             r = QGuiApplication.primaryScreen().availableGeometry()
-            self.move(r.right() - W - 24 - EXT, r.top() + 120)
+            self.move(r.right() - W - 24 - self.ext, r.top() + 120)
         self._clamp()
 
     def _clamp(self) -> None:
@@ -204,13 +205,13 @@ class MiniPanel(QWidget):
         x = min(max(r.left() + 4, p.x()), r.right() - W - 4)
         y = min(max(r.top() + 4, p.y()), r.bottom() - self.full_h - 4)
         if (x, y) != (p.x(), p.y()):
-            self.move(x - EXT, y)
+            self.move(x - self.ext, y)
 
     def _body_rect(self) -> QRectF:
-        return QRectF(EXT, 0, W, W + (self.full_h - W) * self._t)
+        return QRectF(self.ext, 0, W, W + (self.full_h - W) * self._t)
 
     def _button_rect(self, i: int) -> QRectF:
-        return QRectF(EXT + (W - BTN) / 2, W + i * (BTN + GAP), BTN, BTN)
+        return QRectF(self.ext + (W - BTN) / 2, W + i * (BTN + GAP), BTN, BTN)
 
     def _pill_rect(self, i: int, ext: float | None = None) -> QRectF:
         """Кнопка i, вытянутая на долю ext (по умолчанию — как сейчас)."""
@@ -223,7 +224,7 @@ class MiniPanel(QWidget):
         """Сообщение: вытягивается от значка (у свёрнутой панели — сам значок целиком)."""
         e = self._ext[-1] if ext is None else ext
         inset = 4.0 * self._t
-        r = QRectF(EXT + inset, inset, W - 2 * inset, W - 2 * inset)
+        r = QRectF(self.ext + inset, inset, W - 2 * inset, W - 2 * inset)
         extra = self._toast_w * e
         return r.adjusted(0, 0, extra, 0) if self._side > 0 else r.adjusted(-extra, 0, 0, 0)
 
@@ -247,6 +248,18 @@ class MiniPanel(QWidget):
             it.x = x
             x += it.w + CHIP_GAP
         g.width = x - CHIP_GAP + (BTN - CHIP_H) / 2
+        self._fit_ext(g.width)
+
+    def _fit_ext(self, need: float) -> None:
+        """Сделать окно шире, если вытянутая кнопка в него не помещается. Панель остаётся на месте."""
+        want = int(need) + 17
+        if want <= self.ext:
+            return
+        p = self.panel_pos()
+        self.ext = want
+        self.setFixedSize(W + 2 * self.ext, self.full_h)
+        self.move(p - QPoint(self.ext, 0))
+        self._apply_mask()
 
     def _pick_side(self, need: float) -> None:
         """Вытягивать вправо, если там хватает места; иначе туда, где его больше."""
@@ -259,7 +272,7 @@ class MiniPanel(QWidget):
     def _apply_mask(self) -> None:
         """Мышь ловится только там, где панель нарисована; остальная часть окна её пропускает."""
         running = self._anim.state() == QVariantAnimation.State.Running
-        region = QRegion(EXT, 0, W, self.full_h if (self._t > 0.0 or running) else W)
+        region = QRegion(self.ext, 0, W, self.full_h if (self._t > 0.0 or running) else W)
         for i in range(len(self.groups)):
             if self._ext[i] > 0.0 or self._ext_to[i] > 0.0:
                 region = region.united(QRegion(self._pill_rect(i, 1.0).toAlignedRect().adjusted(-2, -2, 2, 2)))
@@ -274,7 +287,7 @@ class MiniPanel(QWidget):
     def _hit(self, pos: QPointF) -> bool:
         """Находится ли точка окна на нарисованной части панели."""
         if self._t <= 0.0:
-            if QRectF(EXT, 0, W, W).contains(pos):
+            if QRectF(self.ext, 0, W, W).contains(pos):
                 return True
         elif self._body_rect().contains(pos):
             return True
@@ -418,7 +431,7 @@ class MiniPanel(QWidget):
 
     def _set_spin(self, v) -> None:
         self._spin = float(v)
-        self.update(EXT, 0, W, W)
+        self.update(self.ext, 0, W, W)
 
     def _schedule_collapse(self) -> None:
         self._collapse.start(int(max(0.0, self.collapse_delay) * 1000))
@@ -665,7 +678,7 @@ class MiniPanel(QWidget):
             self._paint_toast(p, edge)
 
         # значок: логотип, вокруг — состояние (идёт перевод / Live работает)
-        c = QPointF(EXT + W / 2, W / 2)
+        c = QPointF(self.ext + W / 2, W / 2)
         p.drawPixmap(QRectF(c.x() - LOGO / 2, c.y() - LOGO / 2, LOGO, LOGO), self._logo, QRectF(self._logo.rect()))
         ring = QRectF(c.x() - LOGO / 2 - 3, c.y() - LOGO / 2 - 3, LOGO + 6, LOGO + 6)
         p.setBrush(Qt.BrushStyle.NoBrush)

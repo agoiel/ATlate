@@ -153,8 +153,19 @@ def test_copy() -> None:
     widest = max(g.width for g in win.mini.groups)
     detail = "; ".join(f"{g.key} {g.width:.0f}: " + ", ".join(f"{it.text or it.key} {it.w:.0f}" for it in g.items)
                        for g in win.mini.groups)
-    check("компактная панель: вытянутая кнопка помещается в окно", widest <= mini_mod.EXT,
-          f"{widest:.0f} из {mini_mod.EXT} · шрифт {win.mini._font.family()} · {detail}")
+    check("компактная панель: вытянутая кнопка помещается в окно", widest <= win.mini.ext,
+          f"{widest:.0f} из {win.mini.ext} · шрифт {win.mini._font.family()} · {detail}")
+    # крупный шрифт (масштаб Windows, другой шрифт): окно панели расширяется, сама панель не сдвигается
+    from PySide6.QtGui import QFontMetricsF
+    before = win.mini.panel_pos()
+    win.mini._font.setPixelSize(30)
+    win.mini._fm = QFontMetricsF(win.mini._font)
+    win.mini._layout(0)
+    check("компактная панель: крупный шрифт — окно шире, панель на месте",
+          win.mini.groups[0].width <= win.mini.ext and win.mini.panel_pos() == before and win.mini.ext > mini_mod.EXT,
+          f"{win.mini.groups[0].width:.0f} из {win.mini.ext}")
+    win.mini._font.setPixelSize(13)
+    win.mini._fm = QFontMetricsF(win.mini._font)
     copy_item = next(it for it in win.mini.groups[0].items if it.key == "copy")
     check("значок без надписи, с подсказкой", copy_item.text == "" and copy_item.hint == "Копировать перевод")
     win.exit_mini()
