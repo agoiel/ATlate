@@ -1,0 +1,43 @@
+font: Pangolin Regular (/home/runner/work/ATlate/ATlate/desktop/fonts/Pangolin-Regular.ttf)
+01_ko.png: blocks 6, translated 6, overflow 0, error ''
+   [bubble] '어디 가는 거야?' -> 'Куда ты собрался?' size 33 lines 1
+   [box   ] '북쪽 성문' -> 'Северные ворота' size 33 lines 1
+   [bubble] '여기서 기다리라고 했잖아!' -> 'Я же сказал ждать здесь!' size 33 lines 2
+   [bubble] '정말 괜찮겠어? 저 녀석은 위험해.' -> 'Ты точно в порядке? Этот парен' size 33 lines 2
+   [free  ] '쾅!' -> 'БАХ!' size 36 lines 1
+   [box   ] '그는 돌아오지 않아.' -> 'Он не вернётся.' size 33 lines 1
+02_en.png: blocks 6, translated 6, overflow 0, error ''
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 28 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 24 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 28 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 32 lines 2
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 32 lines 1
+03_strip.png: blocks 18, translated 18, overflow 0, error ''
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 28 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 24 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 28 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 32 lines 2
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 32 lines 1
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 28 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 24 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 28 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 32 lines 2
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 32 lines 1
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 28 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 24 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 28 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 32 lines 2
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 32 lines 1
+04_tilt_en.png: blocks 6, translated 6, overflow 0, error ''
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 36 lines 2 tilt +15
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 36 lines 2 tilt -20
+   [bubble] 'He is not coming back.' -> 'Он не вернётся.' size 33 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 22 lines 1 tilt -10
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 30 lines 2 tilt +30
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1 tilt +22
+project reload ok: True
+tilt ok: True

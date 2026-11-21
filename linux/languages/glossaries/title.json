@@ -1,0 +1,43 @@
+{
+  "name": "Тайтл",
+  "source_lang": "ko",
+  "target_lang": "ru",
+  "auto": true,
+  "entries": [
+    {
+      "source": "강진우",
+      "target": "Кан Джину",
+      "note": "главный герой"
+    },
+    {
+      "source": "민준",
+      "target": "Минджун",
+      "note": "мужчина, друг",
+      "auto": true
+    },
+    {
+      "source": "헌터 협회",
+      "target": "Ассоциация охотников",
+      "note": "организация",
+      "auto": true
+    },
+    {
+      "source": "북쪽 성문 길드",
+      "target": "Гильдия Северных врат",
+      "note": "",
+      "auto": true
+    },
+    {
+      "source": "용의 심장",
+      "target": "Сердце дракона",
+      "note": "предмет",
+      "auto": true
+    },
+    {
+      "source": "서연",
+      "target": "Соён",
+      "note": "",
+      "auto": true
+    }
+  ]
+}
