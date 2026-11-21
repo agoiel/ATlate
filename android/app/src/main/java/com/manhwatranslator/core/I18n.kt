@@ -305,6 +305,8 @@ object I18n {
         "ИИ вернул ответ не в формате JSON. Попробуйте ещё раз." to "The AI didn’t reply in JSON format. Try again.",
         "Gemini: укажите API-ключ (aistudio.google.com)" to "Gemini: enter an API key (aistudio.google.com)",
         "Gemini: пустой ответ" to "Gemini: empty response",
+        "Gemini: модель «%s» недоступна — её отключили или в названии опечатка. Укажите в настройках другую, например %s." to
+            "Gemini: model “%s” is unavailable — it was retired or the name has a typo. Choose another one in settings, e.g. %s.",
         "OpenAI-совместимый" to "OpenAI-compatible",
         "Укажите адрес сервера и модель в настройках" to "Enter the server address and model in settings",
         "Сервер вернул неожиданный ответ" to "The server returned an unexpected response",

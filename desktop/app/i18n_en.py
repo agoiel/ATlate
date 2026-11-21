@@ -256,6 +256,8 @@ EN: dict[str, str] = {
     "Gemini: укажите API-ключ в настройках (aistudio.google.com).":
         "Gemini: enter the API key in the settings (aistudio.google.com).",
     "Gemini: пустой ответ {0}": "Gemini: empty response {0}",
+    "Gemini: модель «{0}» недоступна — её отключили или в названии опечатка. Укажите в настройках другую, например {1}.":
+        "Gemini: model “{0}” is unavailable — it was retired or the name has a typo. Choose another one in settings, e.g. {1}.",
     "OpenAI-совместимый": "OpenAI-compatible",
     "Укажите адрес сервера и модель в настройках.": "Enter the server address and the model in the settings.",
     "Сервер вернул неожиданный ответ.": "The server returned an unexpected response.",

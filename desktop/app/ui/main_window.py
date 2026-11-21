@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
 
 from .. import __version__, i18n, languages, titles
 from ..capture import Region, find_screen, grab_region, grab_region_raw, gray_thumb, qimage_to_pil
-from ..config import DATA_ROOT, GLOSSARY_DIR, ROOT, Config
+from ..config import DATA_ROOT, GEMINI_MODEL, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
 from ..hotkeys import Hotkeys
 from ..i18n import tr
@@ -617,7 +617,7 @@ class MainWindow(QWidget):
             link(tr("Открыть Naver Cloud Platform"), "https://www.ncloud.com/product/aiService/papagoTranslation")
         elif name == "gemini":
             field(tr("API-ключ Gemini"), "api_key", "AIza…", secret=True)
-            field(tr("Модель"), "model", "gemini-2.5-flash-lite", default="gemini-2.5-flash-lite")
+            field(tr("Модель"), "model", GEMINI_MODEL, default=GEMINI_MODEL)
             link(tr("Получить ключ в Google AI Studio"), "https://aistudio.google.com/apikey")
         elif name == "claude":
             field(tr("API-ключ Claude"), "api_key", "sk-ant-…", secret=True)

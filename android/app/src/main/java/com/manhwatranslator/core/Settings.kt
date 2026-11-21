@@ -6,6 +6,14 @@ import android.graphics.Rect
 
 /** Настройки приложения (SharedPreferences). */
 class Settings(ctx: Context) {
+    companion object {
+        /** «-latest» — постоянное имя, которое Google сам переводит на новую Flash-Lite. */
+        const val GEMINI_MODEL = "gemini-flash-lite-latest"
+        /** Стояла по умолчанию в прошлых версиях и уже отключена — давала ошибку 404 на каждый запрос.
+         *  Модель, выбранную вручную, не трогаем: при 404 переводчик подскажет сменить её. */
+        val RETIRED_GEMINI = setOf("gemini-2.5-flash-lite")
+    }
+
     private val p: SharedPreferences = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     var sourceLang by str("source_lang", "ko")
@@ -30,7 +38,12 @@ class Settings(ctx: Context) {
     var microsoftKey by str("ms_key", "")
     var microsoftRegion by str("ms_region", "global")
     var geminiKey by str("gemini_key", "")
-    var geminiModel by str("gemini_model", "gemini-2.5-flash-lite")
+    /** Модель Gemini. Старая модель по умолчанию (её отключил Google) заменяется на новую. */
+    var geminiModel: String
+        get() = p.getString("gemini_model", null)?.trim().let {
+            if (it.isNullOrEmpty() || it in RETIRED_GEMINI) GEMINI_MODEL else it
+        }
+        set(value) { p.edit().putString("gemini_model", value).apply() }
     var openaiUrl by str("openai_url", "https://api.openai.com/v1")
     var openaiKey by str("openai_key", "")
     var openaiModel by str("openai_model", "gpt-4o-mini")

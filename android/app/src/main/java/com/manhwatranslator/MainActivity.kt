@@ -432,8 +432,8 @@ class MainActivity : Activity() {
             }
             "gemini" -> {
                 field(tr("API-ключ Gemini"), s.geminiKey, "AIza…", secret = true) { s.geminiKey = it }
-                field(tr("Модель"), s.geminiModel, "gemini-2.5-flash-lite") {
-                    s.geminiModel = it.ifEmpty { "gemini-2.5-flash-lite" }
+                field(tr("Модель"), s.geminiModel, Settings.GEMINI_MODEL) {
+                    s.geminiModel = it.ifEmpty { Settings.GEMINI_MODEL }
                 }
                 link(tr("Получить ключ в Google AI Studio"), "https://aistudio.google.com/apikey")
             }

@@ -10,7 +10,19 @@ permissions:
   contents: write
 
 jobs:
+  # Номер версии в коде совпадает с тегом: иначе программа покажет старый номер,
+  # как было с 0.6.4 и 0.6.5 (в окне стояло 0.6.3)
+  version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version in code matches the tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: python3 .github/scripts/check_version.py "$TAG"
+
   android:
+    needs: version
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -40,6 +52,7 @@ jobs:
           path: android/out/ATlate.apk
 
   windows:
+    needs: version
     runs-on: windows-latest
     defaults:
       run:

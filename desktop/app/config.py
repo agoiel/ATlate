@@ -57,6 +57,14 @@ DATA_ROOT = data_root(ROOT)
 CONFIG_PATH = DATA_ROOT / "config.json"
 GLOSSARY_DIR = DATA_ROOT / "glossaries"
 
+# Модель Gemini по умолчанию. «-latest» — постоянное имя, которое Google сам переводит на новую
+# Flash-Lite, поэтому отключение старой модели не ломает перевод.
+GEMINI_MODEL = "gemini-flash-lite-latest"
+# Модель, которая стояла по умолчанию в прошлых версиях и уже отключена Google: при загрузке
+# настроек она заменяется на GEMINI_MODEL (иначе каждый запрос получал ошибку 404).
+# Модель, выбранную вручную, не трогаем — при ошибке 404 программа подскажет сменить её.
+RETIRED_GEMINI = {"gemini-2.5-flash-lite"}
+
 DEFAULTS: dict = {
     "source_lang": "ko",
     "auto_lang": False,               # экранный переводчик сам определяет язык оригинала (source_lang — последний найденный)
@@ -107,7 +115,7 @@ DEFAULTS: dict = {
         "claude": {"api_key": "", "model": "claude-haiku-5-5"},
         "deepl": {"api_key": ""},
         "microsoft": {"api_key": "", "region": "global"},
-        "gemini": {"api_key": "", "model": "gemini-2.5-flash-lite"},
+        "gemini": {"api_key": "", "model": GEMINI_MODEL},
         "openai": {
             # Подходит для OpenAI, OpenRouter, DeepSeek и локальных моделей (Ollama, LM Studio)
             "base_url": "http://localhost:11434/v1",
@@ -143,6 +151,13 @@ DEFAULTS: dict = {
 }
 
 
+def _migrate(cfg: dict) -> None:
+    """Поправить устаревшие настройки из прошлых версий."""
+    gemini = cfg.get("translators", {}).get("gemini")
+    if isinstance(gemini, dict) and str(gemini.get("model", "")).strip() in RETIRED_GEMINI:
+        gemini["model"] = GEMINI_MODEL
+
+
 def _merge(base: dict, override: dict) -> dict:
     out = copy.deepcopy(base)
     for k, v in (override or {}).items():
@@ -170,6 +185,7 @@ class Config(dict):
                 data = {}
         self.clear()
         self.update(_merge(DEFAULTS, data))
+        _migrate(self)
 
     save_error = ""            # почему не удалось сохранить в последний раз (пусто — сохранилось)
     on_save_error = None       # кому сообщить, что сохранить не удалось (окно показывает это в строке состояния)

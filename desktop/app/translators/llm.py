@@ -16,6 +16,7 @@ import json
 import re
 
 from .. import languages
+from ..config import GEMINI_MODEL
 from ..i18n import tr
 from .base import TranslateError, TranslateRequest, Translator
 
@@ -193,7 +194,7 @@ class GeminiTranslator(LLMTranslator):
         key = self.settings.get("api_key", "").strip()
         if not key:
             raise TranslateError(tr("Gemini: укажите API-ключ в настройках (aistudio.google.com)."))
-        model = self.settings.get("model", "gemini-2.5-flash-lite").strip()
+        model = self.settings.get("model", "").strip() or GEMINI_MODEL
         system, user = build_messages(req)
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -201,7 +202,14 @@ class GeminiTranslator(LLMTranslator):
             "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"},
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        r = self._post(url, json=body, headers={"x-goog-api-key": key})
+        try:
+            r = self._post(url, json=body, headers={"x-goog-api-key": key})
+        except TranslateError as e:
+            if e.code == 404:       # модель отключили или в названии опечатка — скажем прямо
+                raise TranslateError(tr("Gemini: модель «{0}» недоступна — её отключили или в названии опечатка. "
+                                        "Укажите в настройках другую, например {1}.", model, GEMINI_MODEL),
+                                     404) from None
+            raise
         data = r.json()
         try:
             cand = data["candidates"][0]
