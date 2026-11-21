@@ -5,7 +5,7 @@ name: Release notes
 # Новые релизы получают описание сразу при публикации (release.yml).
 on:
   push:
-    branches: [main, claude/nifty-shannon-tu33a5]
+    branches: [main]
     paths:
       - "release-notes/**"
       - ".github/scripts/release_notes.py"
