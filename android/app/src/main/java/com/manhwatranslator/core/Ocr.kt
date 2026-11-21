@@ -154,7 +154,8 @@ class Ocr(private val ctx: Context) {
         }
         // порядок проходов всегда одинаковый: вариант за вариантом, распознаватель за распознавателем
         val passes = results.flatMap { it.orEmpty() }.map { p ->
-            PassInfo(p.variant, p.script, p.lines.map { l -> TextLine(Box(l.box.x / k, l.box.y / k, l.box.w / k, l.box.h / k), l.text, l.angle, l.len / k, l.thick / k) },
+            PassInfo(p.variant, p.script, p.lines.map { l -> TextLine(Box(l.box.x / k, l.box.y / k, l.box.w / k, l.box.h / k), l.text, l.angle, l.len / k, l.thick / k,
+                l.words.map { w -> Word(w.text, Box(w.box.x / k, w.box.y / k, w.box.w / k, w.box.h / k)) }) },
                 p.prepMs, p.ocrMs, p.error)
         }
         val stats = LinkedHashMap<String, Int>()
@@ -259,8 +260,13 @@ class Ocr(private val ctx: Context) {
                     if (len > 1f && thick > 1f) angle = -Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
                     else { len = 0f; thick = 0f }
                 }
+                // слова с рамками — чтобы слово можно было выбрать пальцем («Слова на экране»)
+                val words = line.elements.mapNotNull { el ->
+                    val b = el.boundingBox ?: return@mapNotNull null
+                    Word(el.text, Box(b.left.toFloat(), b.top.toFloat(), b.width().toFloat(), b.height().toFloat()))
+                }
                 out.add(TextLine(Box(r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat()),
-                    line.text, angle, len, thick))
+                    line.text, angle, len, thick, words))
             }
         }
         return out

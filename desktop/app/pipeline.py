@@ -25,11 +25,9 @@ from .glossary import Glossary
 from .i18n import tr
 from .models import DebugInfo, PageResult, PassInfo
 from .ocr import OcrBackend, OcrError, OcrLanguageMissing, create_ocr, enhance
-from .translators import (TRANSLATORS, RateLimit, TranslateError, TranslateRequest, Translator,
+# FREE_TRANSLATORS — бесплатные переводчики без ключа, в этом порядке пробуются, если выбранный не ответил
+from .translators import (FREE_TRANSLATORS, TRANSLATORS, RateLimit, TranslateError, TranslateRequest, Translator,
                           create_translator)
-
-# Бесплатные переводчики без ключа — в этом порядке пробуются, если выбранный не ответил
-FREE_TRANSLATORS = ("google_free", "yandex", "lingva", "duckduckgo")
 
 
 _GLOSSARY_LOCK = threading.Lock()   # глоссарий могут пополнять и главное окно, и Студия

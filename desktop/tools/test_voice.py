@@ -4,7 +4,10 @@
 
 * Без сети и микрофона: конец фразы по громкости, выдумки Whisper на тишине, язык фразы из двух,
   коды языков чата для переводчиков, запрос к ИИ для чата, запасной бесплатный переводчик,
-  подпись клавиши, звуки.
+  словарь для чата (склонения, ложные совпадения, подсказка распознаванию, подстановка для обычных
+  переводчиков и список для ИИ), подпись клавиши, звуки.
+* Вкладки в окне: «Голос» открывает свою страницу, «Скриншот» и «Live» возвращают экранный
+  переводчик; словари в списке — с моего языка.
 * Модель распознавания: --model — готовая папка; без него быстрая модель скачивается в out/models
   (заодно проверяется скачивание). Фразы — WAV из --audio с именами из CASES; тишина и шум — пусто.
 * Вся цепочка в окне: «Проверить» и «рация» (клавиша удерживается) → запись (подменённый микрофон
@@ -183,6 +186,8 @@ def offline() -> None:
         TRANSLATORS.update(saved)
         tmod.create_translator = real_create
 
+    glossary_checks(cfg)
+
     from app.hotkeys import key_down, pretty
     check("подпись клавиши: <alt>+v → Alt+V", pretty("<alt>+v") == "Alt+V" and pretty("<ctrl>+<shift>+t") ==
           "Ctrl+Shift+T" and pretty("<f8>") == "F8")
@@ -192,6 +197,121 @@ def offline() -> None:
     check("звуки: короткие и негромкие", all(0.1 < len(x) / 44100 < 0.4 and np.abs(x).max() <= 0.25 for x in tones))
     check("8 кГц → 16 кГц и 48 кГц → 16 кГц", len(voice.resample(np.zeros(8000), 8000)) == 16000
           and len(voice.resample(np.zeros(48000), 48000)) == 16000)
+
+
+def glossary_checks(cfg) -> None:
+    from app.config import GLOSSARY_DIR
+    from app.glossary import Glossary, GlossaryEntry
+
+    g = Glossary(name="t", source_lang="ru", target_lang="en", entries=[GlossaryEntry(a, b) for a, b in [
+        ("мид", "mid"), ("катка", "match"), ("лес", "jungle"), ("пуш", "push"), ("топ", "top"), ("го", "go"),
+        ("гг", "gg"), ("гг вп", "gg wp"), ("ульта", "ult")]])
+    cases = {
+        "Го на мид!": "go на mid!",
+        "Ещё одну катку?": "Ещё одну match?",
+        "Встретимся в лесу": "Встретимся в jungle",
+        "Мидом пойдём, ульту не трать": "mid пойдём, ult не трать",
+        "гг вп всем": "gg wp всем",
+        "Пушка сломалась": "Пушка сломалась",          # не «push»
+        "Не надо топать": "Не надо топать",            # не «top»
+        "В этом году": "В этом году",                  # «го» — только целым словом
+        "лестница": "лестница",
+    }
+    bad = {t: voice.apply_terms(t, voice.find_terms(g, t)) for t in cases}
+    bad = {t: r for t, r in bad.items() if r != cases[t]}
+    check("словарь: склонения находятся, похожие слова — нет", not bad, str(bad))
+    hw = voice.hotwords("ru", ["катка", "Мид", "дпс"])
+    check("словарь: его слова подсказываются распознаванию, без повторов", hw and "дпс" in hw
+          and hw.lower().count("мид") == 1 and len(hw) <= 302, repr(hw))
+    check("словарь: подсказка не длиннее ~300 знаков", len(voice.hotwords("ru", [f"слово{i}" for i in range(200)])) <= 302)
+    check("словарь подходит только к своим языкам", voice.glossary_fits(g, "ru", "en")
+          and not voice.glossary_fits(g, "ru", "ko") and not voice.glossary_fits(g, "en", "en"))
+
+    bundled = Glossary.load(ROOT / "glossaries" / "game_ru_en.json")
+    check("встроенный словарь игрового сленга: русский → английский", bundled.source_lang == "ru"
+          and bundled.target_lang == "en" and len(bundled.entries) >= 30
+          and voice.apply_terms("го мид", voice.find_terms(bundled, "го мид")) == "go mid", f"{len(bundled.entries)} слов")
+    cfg["voice_glossary"] = "game_ru_en.json"
+    if (GLOSSARY_DIR / "game_ru_en.json").exists():
+        check("выбранный словарь берётся, только если языки совпадают",
+              voice.chat_glossary(cfg, "ru", "en") is not None and voice.chat_glossary(cfg, "ru", "ja") is None)
+
+    # обычному переводчику — подстановка в текст, ИИ — список в запросе
+    seen = {}
+
+    class Machine:
+        title, uses_llm = "M", False
+
+        def __init__(self, _s):
+            pass
+
+        def translate(self, req):
+            seen["m"] = (list(req.anchored or []), [e.source for e in req.glossary])
+            return ["ok"]
+
+    class Llm(Machine):
+        title, uses_llm = "L", True
+
+        def translate(self, req):
+            seen["l"] = (req.anchored, sorted(e.source for e in req.glossary))
+            return ["ok"]
+
+    import app.translators as tmod
+    real_create = tmod.create_translator
+    try:
+        tmod.create_translator = lambda name, c: Machine(None)
+        voice.translate(cfg, "Го на мид, катку выиграем", "ru", "en", g)
+        tmod.create_translator = lambda name, c: Llm(None)
+        voice.translate(cfg, "Го на мид, катку выиграем", "ru", "en", g)
+    finally:
+        tmod.create_translator = real_create
+    check("обычный переводчик получает фразу со словами из словаря", seen.get("m", ([""],))[0] ==
+          ["go на mid, match выиграем"], str(seen.get("m")))
+    check("ИИ-переводчик получает слова словаря списком, фразу — как есть",
+          seen.get("l") == (None, ["го", "катка", "мид"]), str(seen.get("l")))
+
+
+def tabs() -> None:
+    """Вкладки «Скриншот | Live | Голос» в настоящем окне."""
+    import tempfile
+
+    from PySide6.QtWidgets import QApplication
+
+    from app.config import Config
+    from app.ui.main_window import MainWindow
+
+    qa = QApplication.instance() or QApplication(sys.argv)
+    cfg = Config(Path(tempfile.mkdtemp()) / "config.json")
+    cfg.update(translate_mode="shot", ui_page="screen", voice_my_lang="ru", voice_chat_lang="en")
+    win = MainWindow(cfg)
+    win.resize(1000, 900)
+    win.show()
+    for _ in range(5):
+        qa.processEvents()
+    check("сначала открыт экранный переводчик", win.screen_page.isVisible() and not win.voice_page.isVisible()
+          and win.screen_actions.isVisible() and not win.voice_actions.isVisible())
+    win._on_mode_switch("voice")
+    for _ in range(5):
+        qa.processEvents()
+    check("«Голос»: своя страница и свои кнопки в шапке, режим перевода не тронут",
+          win.voice_page.isVisible() and not win.screen_page.isVisible() and win.voice_actions.isVisible()
+          and cfg["ui_page"] == "voice" and cfg["translate_mode"] == "shot"
+          and win.mode_switch.buttons["voice"].isChecked())
+    if voice.available():
+        names = [win.voice_gloss_combo.itemText(i) for i in range(win.voice_gloss_combo.count())]
+        check("словари в списке — с моего языка", any("слов" in n and "сленг" in n.lower() for n in names)
+              and not any("корейск" in n.lower() for n in names), str(names))
+    win._rebuild()
+    for _ in range(5):
+        qa.processEvents()
+    check("после пересборки окна вкладка «Голос» остаётся", win.voice_page.isVisible())
+    win._on_mode_switch("live")
+    for _ in range(5):
+        qa.processEvents()
+    check("«Live» возвращает экранный переводчик и включает режим Live",
+          win.screen_page.isVisible() and not win.voice_page.isVisible() and cfg["ui_page"] == "screen"
+          and cfg["translate_mode"] == "live" and win.mode_switch.buttons["live"].isChecked())
+    win.close()
 
 
 # ================================================================ модель
@@ -266,12 +386,13 @@ def chain(audio_dir: Path | None, have_model: bool) -> None:
 
     qa = QApplication.instance() or QApplication(sys.argv)
     cfg = Config(out / "cfg_voice.json")
-    cfg.update(voice_enabled=True, voice_my_lang="ru", voice_chat_lang="en", voice_sounds=False, voice_model="base")
+    cfg.update(voice_enabled=True, voice_my_lang="ru", voice_chat_lang="en", voice_sounds=False, voice_model="base",
+               voice_glossary="game_ru_en.json")
     voice.Recorder = FakeRecorder
     calls = []
 
-    def fake_translate(c, text, src, tgt):
-        calls.append((text, src, tgt))
+    def fake_translate(c, text, src, tgt, glossary=None):
+        calls.append((text, src, tgt, glossary))
         return f"[{tgt}] {text}", "Тест"
 
     voice.translate = fake_translate
@@ -318,6 +439,10 @@ def chain(audio_dir: Path | None, have_model: bool) -> None:
     else:
         ok = done and results and not results[-1].translated and "bridge" in clip.lower()
     check("фраза → распознана → перевод в буфере обмена", ok, repr(clip))
+    if spoken == "ru":
+        check("словарь для чата дошёл до переводчика", calls and calls[-1][3] is not None
+              and calls[-1][3].path.name == "game_ru_en.json",
+              calls[-1][3].path.name if calls and calls[-1][3] is not None else "нет")
     check("плашка: перевод и бледной строкой — что сказано", ctl.toast.kind == "done" and ctl.toast.body == clip
           and (ctl.toast.note == results[-1].heard if spoken == "ru" else ctl.toast.note == ""),
           f"{ctl.toast.title!r}")
@@ -353,6 +478,7 @@ def main() -> int:
     if have:
         recognition(audio_dir)
     chain(audio_dir, have)
+    tabs()
     failed = [r for r in rows if not r[0]]
     print(f"failed: {len(failed)}")
     return 1 if failed else 0

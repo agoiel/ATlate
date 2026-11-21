@@ -45,10 +45,12 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
-    private companion object {
-        const val REQ_CAPTURE = 1
-        const val REQ_PICK = 2
-        const val REQ_NOTIF = 3
+    companion object {
+        /** Открыть словарик сразу (из меню плавающей кнопки) */
+        const val EXTRA_VOCABULARY = "vocabulary"
+        private const val REQ_CAPTURE = 1
+        private const val REQ_PICK = 2
+        private const val REQ_NOTIF = 3
     }
 
     private lateinit var s: Settings
@@ -119,6 +121,7 @@ class MainActivity : Activity() {
             root.setPadding(0, 0, 0, bottom + dp(24))
         }
         handleShare(intent)
+        openVocabularyIfAsked(intent)
         showUpdate()
         checkUpdates()
     }
@@ -175,6 +178,14 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
+        openVocabularyIfAsked(intent)
+    }
+
+    private fun openVocabularyIfAsked(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_VOCABULARY, false) == true) {
+            intent.removeExtra(EXTRA_VOCABULARY)
+            Dialogs.vocabulary(this)
+        }
     }
 
     override fun onResume() {
@@ -270,7 +281,7 @@ class MainActivity : Activity() {
         val row = ui.horizontal().apply { gravity = Gravity.TOP }
         val tiles = listOf(
             Tile(this, tr("Перевести\nскриншот"), R.drawable.ic_image) { pickImage() },
-            Tile(this, tr("Новый\nтайтл"), R.drawable.ic_refresh) { createTitle() },
+            Tile(this, tr("Словарик"), R.drawable.ic_bookmark) { Dialogs.vocabulary(this) },
             Tile(this, tr("Как\nпользоваться"), R.drawable.ic_help) { showHelp() },
         )
         tiles.forEachIndexed { i, t ->
@@ -767,6 +778,9 @@ class MainActivity : Activity() {
         }, lp().margins(this, top = 2))
         body.addView(SwitchRow(this, tr("Повторять наклон текста"), tr("Перевод под тем же углом, что и оригинал"),
             s.keepTilt) { s.keepTilt = it }, lp().margins(this, top = 2))
+        body.addView(SwitchRow(this, tr("Слова на экране"),
+            tr("Удержите палец на слове в переводе — появятся «Копировать» и «В словарик». Проведёте пальцем по плашке — перевод уберётся, листайте дальше"),
+            s.wordTouch) { s.wordTouch = it }, lp().margins(this, top = 2))
         body.addView(SwitchRow(this, tr("Проверять обновления"), tr("Раз в день узнавать на GitHub, не вышла ли новая версия"),
             s.updateCheck) {
             s.updateCheck = it

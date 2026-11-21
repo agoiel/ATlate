@@ -14,6 +14,10 @@
   а известные выдумки отсеивает фильтр.
 * Переводит тот же переводчик, что выбран для манхвы; если бесплатный не ответил — другой
   бесплатный, как и при обычном переводе.
+* Словарь для чата — обычный глоссарий (с какого языка говорю → на язык чата): игровые слова,
+  герои, ники. Его слова подсказываются распознаванию, а в перевод попадают как записаны —
+  у обычных переводчиков подстановкой в текст, у ИИ — списком в запросе. Русские слова
+  склоняются, поэтому «катку», «мидом», «лесу» тоже находятся.
 
 Тут нет ничего от Qt: окно и горячая клавиша — в ui/voice_chat.py.
 """
@@ -28,13 +32,14 @@ import sys
 import threading
 import types
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from . import i18n, languages
-from .config import DATA_ROOT
+from .config import DATA_ROOT, GLOSSARY_DIR
+from .glossary import Glossary, GlossaryEntry
 from .i18n import tr
 
 RATE = 16000                    # Whisper слушает 16 кГц, моно
@@ -169,6 +174,22 @@ HOTWORDS = {
 }
 
 
+def hotwords(lang: str, extra: list[str] = ()) -> str | None:
+    """Подсказка распознаванию: игровые слова языка и слова из словаря для чата (не больше ~300 знаков —
+    длинную подсказку Whisper всё равно обрежет)."""
+    words: list[str] = []
+    base = HOTWORDS.get(lang, "")
+    for w in [x.strip(" .") for x in base.split(",")] + [x.strip() for x in extra]:
+        if w and w.lower() not in (v.lower() for v in words):
+            words.append(w)
+    out = ""
+    for w in words:
+        if len(out) + len(w) + 2 > 300:
+            break
+        out = f"{out}, {w}" if out else w
+    return (out[:1].upper() + out[1:] + ".") if out else None
+
+
 def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", text.lower()).split())
 
@@ -229,7 +250,8 @@ class Recognizer:
             self._name = name
         return self._model
 
-    def recognize(self, audio: np.ndarray, name: str, mine: str, chat: str) -> Heard:
+    def recognize(self, audio: np.ndarray, name: str, mine: str, chat: str, words: list[str] = ()) -> Heard:
+        """words — слова из словаря для чата (на моём языке): их легче узнать в речи."""
         vad = _faster_whisper().vad
         with self._lock:
             model = self._load(name)
@@ -243,7 +265,7 @@ class Recognizer:
             lang = choose_language(dict(probs), mine, chat)
             segments, _info = model.transcribe(
                 speech, language=languages.whisper_code(lang), beam_size=5, condition_on_previous_text=False,
-                without_timestamps=True, vad_filter=False, hotwords=HOTWORDS.get(lang))
+                without_timestamps=True, vad_filter=False, hotwords=hotwords(lang, words if lang == mine else ()))
             segments = list(segments)
         kept = [s for s in segments if not (s.no_speech_prob > 0.6 and s.avg_logprob < -1.0)]
         text = " ".join(s.text.strip() for s in kept).strip()
@@ -438,31 +460,90 @@ def beep(kind: str) -> None:
         pass
 
 
-# ================================================================ перевод
-def translate(cfg, text: str, src: str, tgt: str) -> tuple[str, str]:
-    """Перевести фразу для чата → (перевод, кто перевёл). Бесплатный переводчик не ответил —
-    пробуем другие бесплатные (как при обычном переводе, см. Pipeline._fallback)."""
-    from .pipeline import FREE_TRANSLATORS
-    from .translators import TRANSLATORS, TranslateError, TranslateRequest, create_translator
+# ================================================================ словарь для чата
+def glossary_fits(g: Glossary, mine: str, chat: str) -> bool:
+    """Словарь подходит, если он с моего языка (или язык не указан) и на язык чата (или на любой)."""
+    src_ok = not g.source_lang or languages.whisper_code(g.source_lang) == languages.whisper_code(mine)
+    return src_ok and g.fits(chat)
 
-    req = TranslateRequest(texts=[text], src=src, tgt=tgt, chat=True)
-    name = cfg.get("translator", "google_free")
-    tor = create_translator(name, cfg)
+
+def chat_glossary(cfg, mine: str, chat: str) -> Glossary | None:
+    """Выбранный словарь для чата, если он есть и подходит к языкам."""
+    name = cfg.get("voice_glossary") or ""
+    if not name:
+        return None
     try:
-        return (tor.translate(req) or [""])[0].strip(), tor.title
-    except TranslateError as err:
-        paid_yandex = name == "yandex" and cfg.translator_settings("yandex").get("api_key")
-        if not cfg.get("free_fallback", True) or name not in FREE_TRANSLATORS or paid_yandex:
-            raise
-        for alt_name in FREE_TRANSLATORS:
-            if alt_name == name:
-                continue
-            alt = TRANSLATORS[alt_name]({} if alt_name == "yandex" else cfg.translator_settings(alt_name))
-            try:
-                return (alt.translate(req) or [""])[0].strip(), alt.title
-            except TranslateError:
-                continue
-        raise err
+        g = Glossary.load(GLOSSARY_DIR / name)
+    except (OSError, ValueError):
+        return None
+    return g if glossary_fits(g, mine, chat) else None
+
+
+_CYR_ENDING = "аеёиоуыэюяйьмхвг"         # буквы русских окончаний: катк-у, мид-ом, лес-ами, хорош-его
+_CJK = re.compile("[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]")
+
+
+def _term_pattern(source: str) -> str:
+    """Шаблон слова из словаря в распознанной фразе.
+
+    * Кириллица: слово может склоняться. Последняя гласная (или ь, й) у слов от четырёх букв —
+      часть окончания (катка → катк-у), дальше до трёх букв окончания. Буквы окончания — только
+      гласные и м, х, в, г: «пушка» не станет «push», «топать» — «top».
+    * Латиница: множественное число (heals, tank's).
+    * Короткие (1–2 буквы: «го», «гг») — только целым словом, иначе «го» нашлось бы в «год».
+    * Иероглифы и хангыль: просто как есть (там нет пробелов, а окончания пишутся слитно).
+    """
+    s = source.strip()
+    if _CJK.match(s):
+        return re.escape(s)
+    tail = ""
+    last = s[-1:].lower()
+    if len(s) >= 3 and re.match("[а-яё]", last):
+        if len(s) >= 4 and last in "аяоеыиуюьй":
+            s = s[:-1]
+        tail = f"[{_CYR_ENDING}]{{0,3}}"
+    elif len(s) >= 3 and re.match("[a-z]", last):
+        tail = "(?:s|es|'s)?"
+    return r"(?<![^\W_])" + re.escape(s) + tail + r"(?![^\W_])"
+
+
+def find_terms(g: Glossary | None, text: str) -> list[tuple[int, int, GlossaryEntry]]:
+    """Слова словаря во фразе: (начало, конец, запись), без пересечений; длинные термины важнее
+    («гг вп» раньше «гг»)."""
+    if g is None:
+        return []
+    entries = sorted((e for e in g.entries if e.source.strip() and e.target.strip()),
+                     key=lambda e: len(e.source.strip()), reverse=True)
+    found: list[tuple[int, int, GlossaryEntry]] = []
+    for e in entries:
+        for m in re.finditer(_term_pattern(e.source), text, re.IGNORECASE):
+            if not any(m.start() < b and a < m.end() for a, b, _e in found):
+                found.append((m.start(), m.end(), e))
+    return sorted(found, key=lambda t: t[0])
+
+
+def apply_terms(text: str, found: list[tuple[int, int, GlossaryEntry]]) -> str:
+    """Подставить переводы слов словаря прямо во фразу — обычный переводчик оставит их как есть."""
+    out, pos = [], 0
+    for a, b, e in found:
+        out += [text[pos:a], e.target.strip()]
+        pos = b
+    return "".join(out + [text[pos:]])
+
+
+# ================================================================ перевод
+def translate(cfg, text: str, src: str, tgt: str, glossary: Glossary | None = None) -> tuple[str, str]:
+    """Перевести фразу для чата → (перевод, кто перевёл). Слова словаря обычным переводчикам
+    подставляются в текст, ИИ — уходят списком; бесплатный не ответил — переводит другой бесплатный."""
+    from . import translators
+
+    req = translators.TranslateRequest(texts=[text], src=src, tgt=tgt, chat=True)
+    found = find_terms(glossary, text)
+    if found:
+        seen: dict[int, GlossaryEntry] = {id(e): e for _a, _b, e in found}
+        req.glossary = list(seen.values())
+    out, by = translators.translate_with_fallback(cfg, req, [apply_terms(text, found)] if found else None)
+    return (out or [""])[0].strip(), by
 
 
 @dataclass
@@ -472,6 +553,7 @@ class Phrase:
     text: str               # что лежит в буфере обмена: перевод или сама фраза
     translated: bool        # False — фразу сказали сразу на языке чата
     by: str = ""            # кто перевёл
+    terms: list[str] = field(default_factory=list)    # какие слова словаря нашлись во фразе
 
 
 def process(audio: np.ndarray, cfg, recognizer: Recognizer) -> Phrase:
@@ -481,15 +563,18 @@ def process(audio: np.ndarray, cfg, recognizer: Recognizer) -> Phrase:
     if len(audio) < RATE * MIN_SECONDS:
         raise VoiceError(tr("Слишком короткая запись — скажите фразу ещё раз."))
     mine, chat = my_language(cfg), chat_language(cfg)
-    heard = recognizer.recognize(audio, cfg.get("voice_model", "base"), mine, chat)
+    glossary = chat_glossary(cfg, mine, chat)
+    words = [e.source.strip() for e in glossary.entries if e.source.strip()] if glossary else []
+    heard = recognizer.recognize(audio, cfg.get("voice_model", "base"), mine, chat, words)
     if not heard.text:
         raise VoiceError(tr("Речь не распознана — скажите фразу ещё раз."))
     if languages.whisper_code(heard.lang) == languages.whisper_code(chat):
         return Phrase(heard.text, heard.lang, heard.text, False)
     try:
-        text, by = translate(cfg, heard.text, heard.lang, chat)
+        text, by = translate(cfg, heard.text, heard.lang, chat, glossary)
     except TranslateError as e:
         raise VoiceError(str(e)) from e
     if not text:
         raise VoiceError(tr("Переводчик вернул пустой ответ."))
-    return Phrase(heard.text, heard.lang, text, True, by)
+    terms = [e.source for _a, _b, e in find_terms(glossary, heard.text)]
+    return Phrase(heard.text, heard.lang, text, True, by, terms)

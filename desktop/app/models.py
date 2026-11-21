@@ -45,6 +45,14 @@ class Box:
 
 
 @dataclass
+class Word:
+    """Слово строки и его рамка — для «Слов на экране» (наведение мыши, словарик)."""
+
+    text: str
+    box: Box
+
+
+@dataclass
 class TextLine:
     """Одна строка текста, найденная OCR."""
 
@@ -53,6 +61,26 @@ class TextLine:
     conf: float = 1.0
     # наклон строки в градусах (плюс — правый край выше), если распознавание смогло его оценить
     angle: float | None = None
+    # слова строки с рамками (Windows OCR даёт их сам; у EasyOCR — пусто, см. words_of)
+    words: list[Word] = field(default_factory=list)
+
+
+def words_of(line: TextLine) -> list[Word]:
+    """Слова строки. Если распознавание не дало рамок слов, строка делится по пробелам,
+    а ширина — пропорционально числу букв (для наведения мыши этого достаточно)."""
+    if line.words:
+        return line.words
+    parts = line.text.split()
+    if not parts:
+        return []
+    total = sum(len(p) for p in parts) + (len(parts) - 1)
+    unit = line.box.w / max(1, total)
+    out, x = [], line.box.x
+    for part in parts:
+        w = unit * len(part)
+        out.append(Word(part, Box(x, line.box.y, w, line.box.h)))
+        x += w + unit
+    return out
 
 
 @dataclass

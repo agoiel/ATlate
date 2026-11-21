@@ -235,36 +235,49 @@ class PlateRenderer(private val ctx: Context) {
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD) }
     private val minFontPx = ctx.dpF(8f)
 
+    /** Прямая рамка плашки облака на экране (без поворота) — там, где её можно коснуться. */
+    fun plateRect(b: Bubble, ox: Float, oy: Float, maxFontPx: Float): RectF = geometry(b, ox, oy, maxFontPx, 1f).first
+
+    /** Рамка плашки, текст и его ширина — общие для рисования и для области касания. */
+    private fun geometry(b: Bubble, ox: Float, oy: Float, maxFontPx: Float, scale: Float): Triple<RectF, StaticLayout, Int> {
+        val screen = b.kind == "screen"
+        val pad = if (screen) ctx.dpF(2f) * scale else max(ctx.dpF(3f) * scale, 0.35f * b.lineHeight)
+        // наклонённый текст: плашка берёт настоящие размеры и центр текста (прямая рамка
+        // наклонённой строки заметно больше её самой) и рисуется под тем же углом
+        val tilted = b.tilted
+        val bw = if (tilted) b.tiltW else b.box.w
+        val bh = if (tilted) b.tiltH else b.box.h
+        // в манхве русский текст длиннее корейского — даём плашке стать шире;
+        // обычный текст на экране закрываем точно по месту
+        val w = if (screen) max(bw + 2 * pad, ctx.dpF(24f) * scale)
+        else max(max(bw + 2 * pad, bw * 1.3f), ctx.dpF(48f) * scale)
+        var h = bh + 2 * pad
+        val cx = ox + (if (tilted) b.tiltCx else b.box.cx)
+        val cy = oy + (if (tilted) b.tiltCy else b.box.cy)
+        val textW = max(10, (w - 2 * ctx.dpF(3f) * scale).toInt())
+        // на экране шрифт подбираем под высоту исходной строки
+        val maxSize = if (screen) min(maxFontPx * scale, max(b.lineHeight * 0.9f, ctx.dpF(9f) * scale)) else maxFontPx * scale
+        var size = maxSize
+        var layout = makeLayout(b.translation, textW, size)
+        while (layout.height > h - ctx.dpF(4f) * scale && size > minFontPx * scale) {
+            size -= scale
+            layout = makeLayout(b.translation, textW, size)
+        }
+        h = max(h, layout.height + ctx.dpF(6f) * scale)
+        return Triple(RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2), layout, textW)
+    }
+
     /** [scale] — во сколько раз пиксели картинки крупнее пикселей экрана (для скриншота). */
     fun draw(c: Canvas, bubbles: List<Bubble>, ox: Float, oy: Float, maxFontPx: Float, scale: Float = 1f) {
         for (b in bubbles) {
             if (b.translation.isBlank()) continue
             val screen = b.kind == "screen"
-            val pad = if (screen) ctx.dpF(2f) * scale else max(ctx.dpF(3f) * scale, 0.35f * b.lineHeight)
-            // наклонённый текст: плашка берёт настоящие размеры и центр текста (прямая рамка
-            // наклонённой строки заметно больше её самой) и рисуется под тем же углом
+            val (rect, layout, textW) = geometry(b, ox, oy, maxFontPx, scale)
+            val w = rect.width()
+            val h = rect.height()
+            val cx = rect.centerX()
+            val cy = rect.centerY()
             val tilted = b.tilted
-            val bw = if (tilted) b.tiltW else b.box.w
-            val bh = if (tilted) b.tiltH else b.box.h
-            // в манхве русский текст длиннее корейского — даём плашке стать шире;
-            // обычный текст на экране закрываем точно по месту
-            val w = if (screen) max(bw + 2 * pad, ctx.dpF(24f) * scale)
-            else max(max(bw + 2 * pad, bw * 1.3f), ctx.dpF(48f) * scale)
-            var h = bh + 2 * pad
-            val cx = ox + (if (tilted) b.tiltCx else b.box.cx)
-            val cy = oy + (if (tilted) b.tiltCy else b.box.cy)
-            val textW = max(10, (w - 2 * ctx.dpF(3f) * scale).toInt())
-            // на экране шрифт подбираем под высоту исходной строки
-            val maxSize = if (screen) min(maxFontPx * scale, max(b.lineHeight * 0.9f, ctx.dpF(9f) * scale)) else maxFontPx * scale
-            var size = maxSize
-            var layout = makeLayout(b.translation, textW, size)
-            while (layout.height > h - ctx.dpF(4f) * scale && size > minFontPx * scale) {
-                size -= scale
-                layout = makeLayout(b.translation, textW, size)
-            }
-            h = max(h, layout.height + ctx.dpF(6f) * scale)
-
-            val rect = RectF(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
             val bg = b.bgColor
             val lum = 0.299 * Color.red(bg) + 0.587 * Color.green(bg) + 0.114 * Color.blue(bg)
             if (screen) {
@@ -327,8 +340,44 @@ class TranslationView(ctx: Context) : View(ctx) {
         typeface = Fonts.medium
     }
     private val hideFrame = Runnable { frame = null; invalidate() }
+    /** «Слова на экране»: плашка этого облака на время спрятана, слово [mark] обведено (координаты картинки). */
+    private var peekIndex = -1
+    private var mark: RectF? = null
+    private val markStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = ctx.dpF(2f)
+        color = Color.rgb(217, 178, 124)
+    }
+    private val markFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(60, 217, 178, 124) }
 
     val hasContent: Boolean get() = bubbles.any { it.translation.isNotBlank() }
+    val shownBubbles: List<Bubble> get() = bubbles
+
+    /** Рамки плашек на экране (в координатах экрана) — там их можно коснуться. Номер — как в [shownBubbles]. */
+    fun plateRects(): List<Pair<Int, RectF>> {
+        val out = ArrayList<Pair<Int, RectF>>()
+        bubbles.forEachIndexed { i, b ->
+            if (b.translation.isBlank()) return@forEachIndexed
+            val r = renderer.plateRect(b, region.left.toFloat(), region.top.toFloat(), maxFontPx)
+            // плашка наклонённого текста повёрнута — берём и рамку самого облака
+            r.union(region.left + b.box.x, region.top + b.box.y, region.left + b.box.x2, region.top + b.box.y2)
+            out.add(i to r)
+        }
+        return out
+    }
+
+    fun peek(index: Int, word: RectF) {
+        peekIndex = index
+        mark = RectF(word)
+        invalidate()
+    }
+
+    fun unpeek() {
+        if (peekIndex < 0 && mark == null) return
+        peekIndex = -1
+        mark = null
+        invalidate()
+    }
 
     fun show(bubbles: List<Bubble>, region: Rect, maxFontSp: Int, debugPasses: List<PassInfo> = emptyList()) {
         this.bubbles = bubbles
@@ -341,6 +390,8 @@ class TranslationView(ctx: Context) : View(ctx) {
     fun clear() {
         bubbles = emptyList()
         passes = emptyList()
+        peekIndex = -1
+        mark = null
         invalidate()
     }
 
@@ -369,7 +420,13 @@ class TranslationView(ctx: Context) : View(ctx) {
         }
         val ox = (region.left - loc[0]).toFloat()
         val oy = (region.top - loc[1]).toFloat()
-        if (bubbles.isNotEmpty()) renderer.draw(c, bubbles, ox, oy, maxFontPx)
+        if (bubbles.isNotEmpty()) renderer.draw(c, bubbles.filterIndexed { i, _ -> i != peekIndex }, ox, oy, maxFontPx)
+        mark?.let { m ->
+            val pad = context.dpF(3f)
+            val r = RectF(ox + m.left - pad, oy + m.top - pad, ox + m.right + pad, oy + m.bottom + pad)
+            c.drawRoundRect(r, context.dpF(6f), context.dpF(6f), markFill)
+            c.drawRoundRect(r, context.dpF(6f), context.dpF(6f), markStroke)
+        }
         if (passes.isNotEmpty()) {
             // рамки поверх плашек: каждый вариант картинки — своим цветом
             val order = passes.map { it.variant }.distinct()
@@ -481,5 +538,102 @@ class DebugPanel(ctx: Context, private val onCopy: (String) -> Unit, private val
 
     private fun render() {
         body.text = if (expanded) full else full.lineSequence().take(2).joinToString("\n")
+    }
+}
+
+
+// ==================================================================== слова на экране
+
+/**
+ * Невидимое окно над плашкой перевода: удержание пальца выбирает слово оригинала, касание —
+ * другое слово того же облака, проведение пальцем — убирает перевод, чтобы листать дальше.
+ * Окно слоя с переводом касания пропускает (иначе нельзя было бы листать главу), поэтому
+ * касания ловят только такие окна — ровно над плашками.
+ */
+@SuppressLint("ViewConstructor", "ClickableViewAccessibility")
+class WordTouchView(
+    ctx: Context,
+    private val onLongPress: (Float, Float) -> Unit,
+    private val onTap: (Float, Float) -> Unit,
+    private val onSwipe: () -> Unit,
+) : View(ctx) {
+    private val detector = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent) = true
+        override fun onLongPress(e: MotionEvent) = this@WordTouchView.onLongPress(e.rawX, e.rawY)
+        override fun onSingleTapUp(e: MotionEvent): Boolean { onTap(e.rawX, e.rawY); return true }
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            if (!swiped) { swiped = true; onSwipe() }
+            return true
+        }
+    })
+    private var swiped = false
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) swiped = false
+        return detector.onTouchEvent(e)
+    }
+}
+
+/** Две кнопки над словом: «Копировать» и «В словарик»; потом — короткий итог вместо них.
+ *  Общей подложки нет: у каждой кнопки свой фон, между ними — прозрачный промежуток. */
+@SuppressLint("ViewConstructor")
+class WordChipsView(ctx: Context, onCopy: () -> Unit, onAdd: () -> Unit, private val onOutside: () -> Unit) :
+    android.widget.LinearLayout(ctx) {
+    private val copy = chip(ctx, tr("Копировать"), onCopy)
+    private val add = chip(ctx, tr("В словарик"), onAdd)
+    private val msg = android.widget.TextView(ctx).apply {
+        textSize = 14f
+        typeface = Fonts.medium
+        setTextColor(Brand.CREAM)
+        val h = ctx.dpF(14f).toInt()
+        val v = ctx.dpF(9f).toInt()
+        setPadding(h, v, h, v)
+        background = chipBackground(ctx)
+        visibility = GONE
+    }
+
+    init {
+        orientation = HORIZONTAL
+        val gap = ctx.dpF(6f).toInt()
+        addView(copy)
+        addView(add, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = gap })
+        addView(msg)
+    }
+
+    private fun chip(ctx: Context, title: String, action: () -> Unit) = android.widget.TextView(ctx).apply {
+        text = title
+        textSize = 14.5f
+        typeface = Fonts.medium
+        setTextColor(Brand.CREAM)
+        val h = ctx.dpF(14f).toInt()
+        val v = ctx.dpF(9f).toInt()
+        setPadding(h, v, h, v)
+        background = android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(Color.argb(70, 243, 227, 204)), chipBackground(ctx), null)
+        setOnClickListener { action() }
+    }
+
+    /** Фон одной кнопки: тёмная таблетка с тонкой светлой обводкой — читается и на тёмной странице. */
+    private fun chipBackground(ctx: Context) = android.graphics.drawable.GradientDrawable().apply {
+        cornerRadius = ctx.dpF(18f)
+        setColor(Color.rgb(63, 45, 39))
+        setStroke(ctx.dpF(1f).toInt(), Color.rgb(107, 80, 69))
+    }
+
+    /** Вместо кнопок — короткий итог («Скопировано», «hunter — охотник · в словарике»). */
+    fun say(text: String) {
+        copy.visibility = GONE
+        add.visibility = GONE
+        msg.text = text
+        msg.visibility = VISIBLE
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+            onOutside()
+            return true
+        }
+        return super.onTouchEvent(e)
     }
 }

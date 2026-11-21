@@ -705,6 +705,43 @@ object Translators {
 
     fun info(key: String): TranslatorInfo = all.firstOrNull { it.key == key } ?: all[0]
 
+    /**
+     * Перевести запрос выбранным переводчиком → (переводы, кто перевёл). Нет интернета, а языки
+     * скачаны — переводит офлайн-переводчик; выбранный бесплатный не ответил — другие бесплатные.
+     * Для словарика: ему не нужны ни кэш, ни контекст тайтла (см. Pipeline для страницы).
+     */
+    fun withFallback(ctx: android.content.Context, s: Settings, req: TranslateRequest): Pair<List<String>, String> {
+        val tor = create(s)
+        if (tor !is OfflineTranslator && s.freeFallback && !OfflineModels.online(ctx) && OfflineModels.ready(req.src, req.tgt)) {
+            val off = OfflineTranslator()
+            return off.translate(req) to off.title
+        }
+        try {
+            return tor.translate(req) to tor.title
+        } catch (err: TranslateException) {
+            if (s.freeFallback && err.code == Http.NO_CONNECTION && tor !is OfflineTranslator && OfflineModels.ready(req.src, req.tgt)) {
+                try {
+                    val off = OfflineTranslator()
+                    return off.translate(req) to off.title
+                } catch (_: TranslateException) {
+                }
+            }
+            val cur = s.translator.ifBlank { "google_free" }
+            if (!s.freeFallback || cur !in Pipeline.FREE_TRANSLATORS || (cur == "yandex" && s.yandexKey.isNotBlank())) throw err
+            for (name in Pipeline.FREE_TRANSLATORS) {
+                if (name == cur) continue
+                val alt: Translator = when (name) {
+                    "yandex" -> YandexTranslator("", "")
+                    "lingva" -> LingvaTranslator(s.lingvaUrl)
+                    "duckduckgo" -> DuckDuckGoTranslator()
+                    else -> GoogleFreeTranslator()
+                }
+                try { return alt.translate(req) to alt.title } catch (_: TranslateException) { }
+            }
+            throw err
+        }
+    }
+
     fun create(s: Settings): Translator = when (s.translator) {
         "yandex" -> YandexTranslator(s.yandexKey, s.yandexFolder)
         "duckduckgo" -> DuckDuckGoTranslator()
