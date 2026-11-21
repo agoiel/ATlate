@@ -91,27 +91,22 @@ jobs:
     if: always() && needs.android.result == 'success'
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           path: files
           merge-multiple: true
+
+      # описание: «Что нового» из release-notes/<тег>.md (если файл есть) и инструкция по установке
+      - name: Release notes
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: python3 .github/scripts/release_notes.py compose "$TAG" > release-body.md
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
           name: ATlate ${{ github.event.release.tag_name }}
           files: files/*
-          body: |
-            Переводчик манхвы, манги и маньхуа прямо с экрана.
-
-            ## Android
-            Скачайте **ATlate.apk**, откройте его на телефоне и разрешите установку из этого источника.
-            Если Play Защита предупредит о неизвестном приложении, нажмите «Подробнее» → «Всё равно установить».
-            Нужны Android 8.0 или новее и сервисы Google Play.
-
-            ## Windows
-            Скачайте **ATlate-windows.zip**, распакуйте и запустите `ATlate.exe`. Python не нужен.
-            Если Windows покажет «Система Windows защитила ваш компьютер», нажмите «Подробнее» → «Выполнить в любом случае».
-            Нужна Windows 10 или 11.
-
-            Инструкция и описание возможностей — в [README](https://github.com/agoiel/ATlate#readme).
+          body_path: release-body.md
