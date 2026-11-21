@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QDialog, QFileDi
 
 from .. import i18n, languages, vocab
 from ..i18n import tr
+from . import theme
 from .widgets import caption, label, pill
 
 COLS = ("word", "translation", "note")      # редактируемые столбцы
@@ -55,6 +56,9 @@ class VocabDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
                                    | QAbstractItemView.EditTrigger.EditKeyPressed)
+        pal = theme.palette()
+        self.table.setStyleSheet(f"QTableWidget {{ selection-background-color: {pal.selected}; "
+                                 f"selection-color: {pal.text}; }}")
         self.table.itemChanged.connect(self._on_edit)
         self.table.currentCellChanged.connect(lambda r, *_: self._show_example(r))
         lay.addWidget(self.table, 1)
