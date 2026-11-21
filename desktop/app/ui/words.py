@@ -16,8 +16,8 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QPoint, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 
 from .. import titles, vocab
 from ..capture import exclude_from_capture, find_screen
@@ -32,7 +32,8 @@ IDLE_MS = 500       # мышь стоит или далеко от перево�
 
 
 class WordChips(QWidget):
-    """Две кнопки над словом: «Копировать» и «В словарик»; потом — короткий итог вместо них."""
+    """Две кнопки над словом: «Копировать» и «В словарик»; потом — короткий итог вместо них.
+    Общей подложки нет: у каждой кнопки свой фон, между ними — прозрачный промежуток."""
 
     copy_clicked = Signal()
     add_clicked = Signal()
@@ -45,10 +46,11 @@ class WordChips(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self._excluded = False
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setContentsMargins(1, 1, 1, 1)
         lay.setSpacing(6)
-        style = ("QPushButton { background: #3F2D27; color: #F5E9DA; border: none; border-radius: 13px; "
-                 "padding: 5px 12px; font-weight: 600; } QPushButton:hover { background: #574036; }")
+        # тонкая светлая обводка — чтобы кнопка читалась и на тёмной странице
+        style = ("QPushButton { background: #3F2D27; color: #F5E9DA; border: 1px solid #6B5045; border-radius: 13px; "
+                 "padding: 6px 13px; font-weight: 600; } QPushButton:hover { background: #574036; }")
         self.btn_copy = QPushButton(theme.icon("copy", "#F5E9DA", 16), tr("Копировать"))
         self.btn_add = QPushButton(theme.icon("plus", "#F5E9DA", 16), tr("В словарик"))
         for b in (self.btn_copy, self.btn_add):
@@ -58,8 +60,11 @@ class WordChips(QWidget):
             lay.addWidget(b)
         self.btn_copy.clicked.connect(self.copy_clicked)
         self.btn_add.clicked.connect(self.add_clicked)
-        self.msg = QLabel()
-        self.msg.setStyleSheet("color: #F5E9DA; background: transparent; padding: 3px 8px; font-weight: 600;")
+        # итог — такая же таблетка, как кнопки (у QLabel в прозрачном окне скругление не рисуется)
+        self.msg = QPushButton()
+        self.msg.setStyleSheet(style)
+        self.msg.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.msg.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.msg.setVisible(False)
         lay.addWidget(self.msg)
         self.anchor = QRect()
@@ -95,15 +100,6 @@ class WordChips(QWidget):
         if y < geo.top():
             y = a.bottom() + 4
         self.move(x, y)
-
-    def paintEvent(self, _e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        bg = QColor("#2A1F1B")
-        bg.setAlphaF(0.95)
-        p.setPen(QColor("#574036"))
-        p.setBrush(bg)
-        p.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 18, 18)
 
 
 class WordHover(QObject):

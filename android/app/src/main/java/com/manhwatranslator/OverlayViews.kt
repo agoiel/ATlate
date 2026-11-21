@@ -574,7 +574,8 @@ class WordTouchView(
     }
 }
 
-/** Две кнопки над словом: «Копировать» и «В словарик»; потом — короткий итог вместо них. */
+/** Две кнопки над словом: «Копировать» и «В словарик»; потом — короткий итог вместо них.
+ *  Общей подложки нет: у каждой кнопки свой фон, между ними — прозрачный промежуток. */
 @SuppressLint("ViewConstructor")
 class WordChipsView(ctx: Context, onCopy: () -> Unit, onAdd: () -> Unit, private val onOutside: () -> Unit) :
     android.widget.LinearLayout(ctx) {
@@ -584,23 +585,18 @@ class WordChipsView(ctx: Context, onCopy: () -> Unit, onAdd: () -> Unit, private
         textSize = 14f
         typeface = Fonts.medium
         setTextColor(Brand.CREAM)
-        val h = ctx.dpF(12f).toInt()
-        val v = ctx.dpF(8f).toInt()
+        val h = ctx.dpF(14f).toInt()
+        val v = ctx.dpF(9f).toInt()
         setPadding(h, v, h, v)
+        background = chipBackground(ctx)
         visibility = GONE
     }
 
     init {
         orientation = HORIZONTAL
-        background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = ctx.dpF(22f)
-            setColor(Color.argb(242, 42, 31, 27))
-            setStroke(ctx.dpF(1f).toInt(), Color.rgb(87, 64, 54))
-        }
-        val pad = ctx.dpF(5f).toInt()
-        setPadding(pad, pad, pad, pad)
+        val gap = ctx.dpF(6f).toInt()
         addView(copy)
-        addView(add, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = pad })
+        addView(add, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = gap })
         addView(msg)
     }
 
@@ -613,9 +609,15 @@ class WordChipsView(ctx: Context, onCopy: () -> Unit, onAdd: () -> Unit, private
         val v = ctx.dpF(9f).toInt()
         setPadding(h, v, h, v)
         background = android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(Color.argb(70, 243, 227, 204)),
-            android.graphics.drawable.GradientDrawable().apply { cornerRadius = ctx.dpF(18f); setColor(Color.rgb(63, 45, 39)) }, null)
+            android.content.res.ColorStateList.valueOf(Color.argb(70, 243, 227, 204)), chipBackground(ctx), null)
         setOnClickListener { action() }
+    }
+
+    /** Фон одной кнопки: тёмная таблетка с тонкой светлой обводкой — читается и на тёмной странице. */
+    private fun chipBackground(ctx: Context) = android.graphics.drawable.GradientDrawable().apply {
+        cornerRadius = ctx.dpF(18f)
+        setColor(Color.rgb(63, 45, 39))
+        setStroke(ctx.dpF(1f).toInt(), Color.rgb(107, 80, 69))
     }
 
     /** Вместо кнопок — короткий итог («Скопировано», «hunter — охотник · в словарике»). */
