@@ -52,9 +52,11 @@ class Title:
         return t
 
 
-# Что тайтл помнит сам: у каждой манхвы своя область чтения, режим и языки. Запоминается, когда
-# переключаются на другой тайтл, и восстанавливается, когда возвращаются к этому.
-PROFILE_KEYS = ("last_region", "translate_mode", "source_lang", "auto_lang", "target_lang", "content_mode")
+# Что тайтл помнит сам: у каждой манхвы своя область чтения, режим и языки, а у игры — язык чата
+# для «Голоса в чат». Запоминается, когда переключаются на другой тайтл, и восстанавливается,
+# когда возвращаются к этому.
+PROFILE_KEYS = ("last_region", "translate_mode", "source_lang", "auto_lang", "target_lang", "content_mode",
+                "voice_chat_lang")
 
 
 def snapshot(cfg: dict) -> dict:

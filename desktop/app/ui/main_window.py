@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
                                QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QScrollArea,
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
-from .. import __version__, i18n, languages, titles
+from .. import __version__, i18n, languages, titles, voice
 from ..capture import Region, find_screen, grab_region, grab_region_raw, gray_thumb, qimage_to_pil
-from ..config import DATA_ROOT, GLOSSARY_DIR, ROOT, Config
+from ..config import DATA_ROOT, GEMINI_MODEL, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
-from ..hotkeys import Hotkeys
+from ..hotkeys import Hotkeys, pretty
 from ..i18n import tr
 from ..models import PageResult
 from ..ocr import easyocr_available
@@ -33,6 +33,7 @@ from . import theme
 from .glossary_editor import GlossaryEditor, new_glossary_file
 from .list_window import ListWindow
 from .mini import MiniPanel
+from .voice_chat import ModelDownload, VoiceController
 from .overlay import OverlayWindow, paint_plates
 from .selector import SelectionWindow
 from .widgets import (Card, Columns, Dropdown, Field, FlowLayout, Hero, ResponsiveRow, Segmented, StatusChip,
@@ -196,6 +197,14 @@ class MainWindow(QWidget):
         self.live_on = False
         self._file_image: Image.Image | None = None
         self.mini: MiniPanel | None = None      # панель компактного режима (создаётся при первом входе)
+        # «Голос в чат»: фраза в микрофон → перевод в буфер обмена
+        self.voice = VoiceController(cfg, self)
+        self.voice.changed.connect(self._refresh_voice)
+        self.voice.finished.connect(self._on_voice_done)
+        self.voice.failed.connect(self._on_voice_failed)
+        self._voice_dl: ModelDownload | None = None
+        self._voice_pct = 0
+        self.voice_howto = self.voice_model_note = self.voice_dl_btn = self.voice_test_btn = self.voice_result = None
 
         self.setWindowTitle(f"ATlate {__version__}")
         self.setObjectName("root")
@@ -238,6 +247,7 @@ class MainWindow(QWidget):
         self._refresh_status()
         QTimer.singleShot(500, self.check_ocr_language)
         QTimer.singleShot(4000, self.check_updates)
+        QTimer.singleShot(6000, self.voice.preload)
 
     # ================================================================ интерфейс
     def _build(self) -> None:
@@ -260,7 +270,8 @@ class MainWindow(QWidget):
         bl.addWidget(self._build_tiles())
         bl.addWidget(self._build_studio_banner())
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
-                                self._build_tuning(), self._build_hotkeys(), self._build_developer()])
+                                self._build_tuning(), self._build_hotkeys(), self._build_voice(),
+                                self._build_developer()])
         bl.addWidget(self.columns)
         foot = caption(tr("ATlate {0} · распознавание: {1}",
                           __version__, 'Windows OCR' if self.cfg['ocr_engine'] == 'windows' else 'EasyOCR'))
@@ -617,7 +628,7 @@ class MainWindow(QWidget):
             link(tr("Открыть Naver Cloud Platform"), "https://www.ncloud.com/product/aiService/papagoTranslation")
         elif name == "gemini":
             field(tr("API-ключ Gemini"), "api_key", "AIza…", secret=True)
-            field(tr("Модель"), "model", "gemini-2.5-flash-lite", default="gemini-2.5-flash-lite")
+            field(tr("Модель"), "model", GEMINI_MODEL, default=GEMINI_MODEL)
             link(tr("Получить ключ в Google AI Studio"), "https://aistudio.google.com/apikey")
         elif name == "claude":
             field(tr("API-ключ Claude"), "api_key", "sk-ant-…", secret=True)
@@ -996,6 +1007,185 @@ class MainWindow(QWidget):
                             "Работают при любой раскладке: Alt+Q сработает и на русской.")))
         return card
 
+    # ---------------------------------------------------------------- голос в чат
+    def _build_voice(self) -> Card:
+        c = self.cfg
+        card = Card(tr("Голос в чат"), tr("Скажите фразу — перевод сразу окажется в буфере обмена для чата игры"),
+                    "mic", collapsible=True, collapsed=True)
+        self.voice_howto = self.voice_model_note = self.voice_dl_btn = self.voice_test_btn = None
+        self.voice_result = None
+        if not voice.available():
+            card.add(caption(tr("В этой сборке нет распознавания речи. Если программа запущена из исходников, "
+                                "установите пакеты: pip install faster-whisper sounddevice")))
+            return card
+        on = SwitchRow(tr("Включить"), tr("Горячая клавиша работает поверх игры, даже когда окно свёрнуто"),
+                       bool(c.get("voice_enabled")))
+        card.add(on)
+
+        extra = QWidget()
+        el = QVBoxLayout(extra)
+        el.setContentsMargins(0, 0, 0, 0)
+        el.setSpacing(10)
+        self.voice_howto = caption("")
+        el.addWidget(self.voice_howto)
+        hk = Field(tr("Клавиша"), c["hotkeys"].get("voice", ""), "<alt>+v")
+        hk.edited.connect(self._set_voice_hotkey)
+        el.addWidget(hk)
+        langs = [(k, v["name"]) for k, v in languages.voice_languages().items()]
+        mine = self._combo(langs, voice.my_language(c), lambda v: self._set_voice("voice_my_lang", v))
+        chat = self._combo(langs, voice.chat_language(c), lambda v: self._set_voice("voice_chat_lang", v))
+        arrow = QLabel()
+        arrow.setPixmap(theme.pixmap("arrow", theme.palette().primary, 20))
+        el.addWidget(ResponsiveRow(self._labeled(tr("Я говорю на"), mine), arrow,
+                                   self._labeled(tr("Перевод в чат на"), chat), anchor=mine.header))
+
+        model = Dropdown(tr("Распознавание речи"), [
+            ("base", tr("Быстрое · {0} МБ", voice.MODELS["base"]["mb"]),
+             tr("Фраза распознаётся за 1–2 секунды"), ""),
+            ("small", tr("Точное · {0} МБ", voice.MODELS["small"]["mb"]),
+             tr("Лучше понимает быструю и невнятную речь, но в 2–3 раза дольше"), ""),
+        ], c.get("voice_model", "base"))
+        model.changed.connect(self._set_voice_model)
+        el.addWidget(model)
+        self.voice_model_note = caption("")
+        el.addWidget(self.voice_model_note)
+        self.voice_dl_btn = pill(tr("Скачать модель"), "primary", "download")
+        self.voice_dl_btn.clicked.connect(self._voice_download)
+        el.addWidget(self.voice_dl_btn, 0, Qt.AlignmentFlag.AlignLeft)
+
+        mics = voice.input_devices()
+        cur = c.get("voice_mic", "")
+        items = [("", tr("Как в системе"))] + [(m, m) for m in mics]
+        if cur and cur not in mics:
+            items.append((cur, tr("{0} (не подключён)", cur)))
+        mic = self._combo(items, cur, lambda v: self._set_voice("voice_mic", v))
+        el.addWidget(self._labeled(tr("Микрофон"), mic))
+        snd = SwitchRow(tr("Звуковые сигналы"), tr("Короткий звук, когда программа начала слушать и когда перевод "
+                                                   "готов: в полноэкранной игре окна не видно"),
+                        bool(c.get("voice_sounds", True)))
+        snd.toggled.connect(lambda v: self._set_voice("voice_sounds", v))
+        el.addWidget(snd)
+        self.voice_test_btn = pill(tr("Проверить"), "tonal", "mic", tr("Скажите фразу — перевод появится здесь и в буфере обмена"))
+        self.voice_test_btn.clicked.connect(lambda: self.voice.press(""))
+        el.addWidget(self.voice_test_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        self.voice_result = caption("")
+        self.voice_result.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.voice_result.setVisible(False)
+        el.addWidget(self.voice_result)
+        el.addWidget(caption(tr("Речь распознаётся прямо на компьютере, без интернета; в интернет уходит только текст — "
+                                "переводчику, выбранному выше. Сама программа в чат ничего не вставляет и клавиш "
+                                "не нажимает.")))
+        extra.setVisible(bool(c.get("voice_enabled")))
+        card.add(extra)
+
+        def toggle(v: bool) -> None:
+            self._set_voice("voice_enabled", v)
+            extra.setVisible(v)
+            relayout(extra)
+            if v:
+                self.voice.preload()
+            else:
+                self.voice.shutdown()       # освободить память, занятую моделью
+            self._start_hotkeys()
+
+        on.toggled.connect(toggle)
+        self._refresh_voice()
+        return card
+
+    def _set_voice(self, key: str, value) -> None:
+        self.cfg[key] = value
+        self.cfg.save()
+        self._refresh_voice()
+
+    def _set_voice_hotkey(self, value: str) -> None:
+        self.cfg["hotkeys"]["voice"] = value
+        self.cfg.save()
+        self._start_hotkeys()
+        self._refresh_voice()
+
+    def _set_voice_model(self, name: str) -> None:
+        if self._voice_dl is not None and self._voice_dl.running:
+            self._voice_dl.cancel()
+        self.voice.recognizer.unload()
+        self._set_voice("voice_model", name)
+        self.voice.preload()
+
+    def _refresh_voice(self) -> None:
+        """Подсказки и кнопки карточки «Голос в чат» по текущему состоянию."""
+        if self.voice_howto is None:
+            return
+        c = self.cfg
+        key = c["hotkeys"].get("voice", "")
+        if key:
+            self.voice_howto.setText(tr("Удерживайте {0} и говорите — отпустите, когда закончите. Или нажмите {0} один "
+                                        "раз: запись остановится сама, когда вы замолчите. Перевод сразу окажется в "
+                                        "буфере обмена — вставьте его в чат: Ctrl+V.", pretty(key)))
+        else:
+            self.voice_howto.setText(tr("Задайте клавишу ниже — без неё функция работает только кнопкой «Проверить»."))
+        if languages.whisper_code(voice.my_language(c)) == languages.whisper_code(voice.chat_language(c)):
+            self.voice_howto.setText(self.voice_howto.text() + " " + tr("Сейчас языки совпадают — фраза будет "
+                                                                        "копироваться без перевода."))
+        name = c.get("voice_model", "base")
+        mb = voice.MODELS.get(name, voice.MODELS["base"])["mb"]
+        dl = self._voice_dl if self._voice_dl is not None and self._voice_dl.running else None
+        if dl is not None:
+            self.voice_model_note.setText(tr("Скачивание модели… {0} %", self._voice_pct))
+            set_pill(self.voice_dl_btn, tr("Отменить"), "outline", "stop")
+            self.voice_dl_btn.setVisible(True)
+        elif voice.model_ready(name):
+            self.voice_model_note.setText(tr("Модель скачана ({0} МБ) — можно пользоваться.", mb))
+            self.voice_dl_btn.setVisible(False)
+        else:
+            self.voice_model_note.setText(tr("Модель распознавания скачивается один раз: {0} МБ.", mb))
+            set_pill(self.voice_dl_btn, tr("Скачать модель"), "primary", "download")
+            self.voice_dl_btn.setVisible(True)
+        state = self.voice.state
+        set_pill(self.voice_test_btn, tr("Остановить") if state == "listening" else
+                 tr("Распознаю…") if state == "busy" else tr("Проверить"), "tonal",
+                 "stop" if state == "listening" else "mic")
+        self.voice_test_btn.setEnabled(state != "busy")
+
+    def _voice_download(self) -> None:
+        if self._voice_dl is not None and self._voice_dl.running:
+            self._voice_dl.cancel()
+            return
+        dl = ModelDownload(self.cfg.get("voice_model", "base"), self)
+        dl.progress.connect(self._on_voice_progress)
+        dl.done.connect(self._on_voice_downloaded)
+        dl.failed.connect(lambda msg: (self._set_status(msg, True), self._refresh_voice()))
+        self._voice_dl, self._voice_pct = dl, 0
+        dl.start()
+        self._refresh_voice()
+
+    def _on_voice_progress(self, done: int, total: int) -> None:
+        pct = int(done * 100 / total) if total else 0
+        if pct != self._voice_pct:
+            self._voice_pct = pct
+            self._refresh_voice()
+
+    def _on_voice_downloaded(self) -> None:
+        self._set_status(tr("Модель распознавания скачана — «Голос в чат» готов."), notify=True)
+        self._refresh_voice()
+        self.voice.preload()
+
+    def _on_voice_done(self, phrase) -> None:
+        if phrase.translated:
+            text = tr("Распознано: {0}\nВ буфере: {1}", phrase.heard, phrase.text)
+        else:
+            text = tr("Сказано на языке чата — скопировано без перевода: {0}", phrase.text)
+        if self.voice_result is not None:
+            self.voice_result.setText(text)
+            self.voice_result.setVisible(True)
+            relayout(self.voice_result)
+        self._set_status(tr("Перевод в буфере обмена: {0}", phrase.text))
+
+    def _on_voice_failed(self, message: str) -> None:
+        if self.voice_result is not None:
+            self.voice_result.setText(message)
+            self.voice_result.setVisible(True)
+            relayout(self.voice_result)
+        self._set_status(message, True)
+
     # ---------------------------------------------------------------- для разработчиков
     def _build_developer(self) -> Card:
         c = self.cfg
@@ -1351,6 +1541,8 @@ class MainWindow(QWidget):
         self._stop_hotkeys()
         mapping = {}
         for action, combo in self.cfg["hotkeys"].items():
+            if action == "voice" and not (self.cfg.get("voice_enabled") and voice.available()):
+                continue
             if combo:
                 mapping[combo] = (lambda a=action: self.bridge.fired.emit(a))
         if not mapping:
@@ -1389,6 +1581,8 @@ class MainWindow(QWidget):
                 self.enter_mini()
         elif action == "copy":
             self.copy_translation()
+        elif action == "voice":
+            self.voice.press(self.cfg["hotkeys"].get("voice", ""))
 
     def _main_action(self) -> None:
         if self.cfg.get("translate_mode") == "live":
@@ -1771,6 +1965,9 @@ class MainWindow(QWidget):
         self.cfg.save()
         self.auto_timer.stop()
         self._stop_hotkeys()
+        if self._voice_dl is not None:
+            self._voice_dl.cancel()
+        self.voice.shutdown()
         if self.mini is not None:
             self.mini.shutdown()
         self.overlay.close()

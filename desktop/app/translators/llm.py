@@ -16,6 +16,7 @@ import json
 import re
 
 from .. import languages
+from ..config import GEMINI_MODEL
 from ..i18n import tr
 from .base import TranslateError, TranslateRequest, Translator
 
@@ -43,6 +44,16 @@ Rules:
 - Do not add notes or explanations. Do not merge or split fragments.
 {extra}- Answer ONLY with JSON: {answer} — exactly {n} translations in the same order."""
 
+CHAT_PROMPT = """You translate messages that a player dictated by voice for an online game chat,
+from {src} into {tgt}.
+
+Rules:
+- The text comes from speech recognition and may contain recognition errors. Silently fix obvious errors.
+- Write the way players write in a game chat in {tgt}: short, natural and casual. Keep the tone (friendly, rude, joking).
+- Keep nicknames, numbers and common gaming terms and abbreviations (gg, afk, mid…) the way players of that language write them.
+- Do not add quotes, notes, explanations or anything that was not said.
+{extra}- Answer ONLY with JSON: {answer} — exactly {n} translations in the same order."""
+
 # Авто-глоссарий: модель заодно называет новые имена и термины. Отдельного запроса нет —
 # это часть того же ответа, поэтому пополнение глоссария почти ничего не стоит.
 TERMS_RULE = """- Glossary building: in "terms" list proper names (characters, places, organizations, skills, items, titles, ranks) and recurring special terms that appear in these lines but are NOT in the glossary above. For each give "source" — exactly as written in the original lines, in base form without grammatical particles or case endings; "target" — the {tgt} translation you used; "note" — for people: gender and who they are, up to 5 words; otherwise what it is (place, skill, item…). Never include common words, interjections, sound effects, ordinary phrases or whole sentences. If there are none, return an empty list.
@@ -54,7 +65,7 @@ DETECT_RULE = """- The original language is not specified: detect it yourself an
 def build_messages(req: TranslateRequest) -> tuple[str, str]:
     src_name = languages.src(req.src)["llm"]
     tgt_name = languages.tgt(req.tgt)["llm"]
-    prompt = SCREEN_PROMPT if req.screen else SYSTEM_PROMPT
+    prompt = CHAT_PROMPT if req.chat else SCREEN_PROMPT if req.screen else SYSTEM_PROMPT
     detect = languages.src(req.src)["google"] == languages.AUTO
     extra, answer = "", ['"translations": ["...", "..."]']
     if detect:
@@ -78,7 +89,7 @@ def build_messages(req: TranslateRequest) -> tuple[str, str]:
         for o, t in req.history:
             parts.append(f"- {o} → {t}")
         parts.append("")
-    parts.append(f"Bubbles to translate ({len(req.texts)}):")
+    parts.append(f"{'Messages' if req.chat else 'Bubbles'} to translate ({len(req.texts)}):")
     parts.append(json.dumps(req.texts, ensure_ascii=False, indent=0))
     return system, "\n".join(parts)
 
@@ -193,7 +204,7 @@ class GeminiTranslator(LLMTranslator):
         key = self.settings.get("api_key", "").strip()
         if not key:
             raise TranslateError(tr("Gemini: укажите API-ключ в настройках (aistudio.google.com)."))
-        model = self.settings.get("model", "gemini-2.5-flash-lite").strip()
+        model = self.settings.get("model", "").strip() or GEMINI_MODEL
         system, user = build_messages(req)
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -201,7 +212,14 @@ class GeminiTranslator(LLMTranslator):
             "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"},
         }
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        r = self._post(url, json=body, headers={"x-goog-api-key": key})
+        try:
+            r = self._post(url, json=body, headers={"x-goog-api-key": key})
+        except TranslateError as e:
+            if e.code == 404:       # модель отключили или в названии опечатка — скажем прямо
+                raise TranslateError(tr("Gemini: модель «{0}» недоступна — её отключили или в названии опечатка. "
+                                        "Укажите в настройках другую, например {1}.", model, GEMINI_MODEL),
+                                     404) from None
+            raise
         data = r.json()
         try:
             cand = data["candidates"][0]

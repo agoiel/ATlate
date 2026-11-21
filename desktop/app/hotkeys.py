@@ -76,6 +76,31 @@ def parse(combo: str) -> tuple[int, int]:
     return mods, vk
 
 
+def pretty(combo: str) -> str:
+    """«<alt>+v» → «Alt+V» — для подсказок."""
+    names = {"ctrl": "Ctrl", "alt": "Alt", "shift": "Shift", "cmd": "Win", "win": "Win", "alt_gr": "AltGr",
+             "space": "Space", "enter": "Enter", "esc": "Esc", "tab": "Tab"}
+    out = []
+    for part in (p for p in combo.strip().split("+") if p):
+        name = part[1:-1] if part.startswith("<") and part.endswith(">") else part
+        base = name.lower().removesuffix("_l").removesuffix("_r")
+        out.append(names.get(base) or (name.upper() if len(name) <= 3 else name.capitalize()))
+    return "+".join(out)
+
+
+def key_down(combo: str) -> bool | None:
+    """Нажата ли сейчас обычная клавиша сочетания — для «Голоса в чат», где клавишу можно
+    удерживать, как рацию. None — неизвестно (не Windows)."""
+    if not combo or sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        _mods, vk = parse(combo)
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class Hotkeys:
     """Набор глобальных сочетаний. start({сочетание: функция}) → список ошибок (пустой — всё хорошо).
 

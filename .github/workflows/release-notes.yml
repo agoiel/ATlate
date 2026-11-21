@@ -1,0 +1,32 @@
+name: Release notes
+
+# Описание релизов на GitHub: «Что нового» из папки release-notes (по файлу на версию) и инструкция
+# по установке. Запускается, когда эти файлы меняются, и вручную; обновляет и уже вышедшие релизы.
+# Новые релизы получают описание сразу при публикации (release.yml).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "release-notes/**"
+      - ".github/scripts/release_notes.py"
+      - ".github/workflows/release-notes.yml"
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: "Теги через пробел (пусто — все, для которых есть заметки)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  notes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Update release descriptions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAGS: ${{ inputs.tags }}
+        run: python3 .github/scripts/release_notes.py apply $TAGS

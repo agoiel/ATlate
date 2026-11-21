@@ -110,6 +110,32 @@ TARGET_LANGUAGES: dict[str, dict] = {
     "ar": {"name": tr("Арабский"), "google": "ar", "deepl": "AR", "microsoft": "ar", "llm": "Arabic"},
 }
 
+# «Голос в чат»: языки, на которые можно переводить сказанное, кроме TARGET_LANGUAGES — для игр
+# на корейских, японских и китайских серверах. В обычном переводе их нет: там они языки оригинала.
+CHAT_LANGUAGES: dict[str, dict] = {
+    "ko": {"name": tr("Корейский"), "google": "ko", "deepl": "KO", "microsoft": "ko", "llm": "Korean"},
+    "ja": {"name": tr("Японский"), "google": "ja", "deepl": "JA", "microsoft": "ja", "llm": "Japanese"},
+    "zh": {"name": tr("Китайский упрощённый"), "google": "zh-CN", "deepl": "ZH-HANS", "microsoft": "zh-Hans",
+           "llm": "Simplified Chinese"},
+    "zh-tw": {"name": tr("Китайский традиционный"), "google": "zh-TW", "deepl": "ZH-HANT", "microsoft": "zh-Hant",
+              "llm": "Traditional Chinese"},
+}
+
+
+def voice_languages() -> dict[str, dict]:
+    """Языки для «Голоса в чат» по порядку: русский… английский, затем корейский, японский, китайский, остальные."""
+    out: dict[str, dict] = {}
+    for code, info in TARGET_LANGUAGES.items():
+        out[code] = info
+        if code == "en":
+            out.update(CHAT_LANGUAGES)
+    return out
+
+
+def whisper_code(code: str) -> str:
+    """Наш код языка → код распознавания речи (Whisper)."""
+    return {"zh-tw": "zh", "fil": "tl"}.get(code, code)
+
 
 import re as _re
 
@@ -159,8 +185,10 @@ def name_of(code: str) -> str:
 
 
 def src(code: str) -> dict:
-    return SOURCE_LANGUAGES.get(code, SOURCE_LANGUAGES["ko"])
+    # «Голос в чат» переводит с языка игрока (русский и т. п.) — его нет среди языков оригинала манхвы
+    return SOURCE_LANGUAGES.get(code) or TARGET_LANGUAGES.get(code) or SOURCE_LANGUAGES["ko"]
 
 
 def tgt(code: str) -> dict:
-    return TARGET_LANGUAGES.get(code, TARGET_LANGUAGES["ru"])
+    # корейский, японский, китайский — только как язык чата в «Голосе в чат»
+    return TARGET_LANGUAGES.get(code) or CHAT_LANGUAGES.get(code) or TARGET_LANGUAGES["ru"]

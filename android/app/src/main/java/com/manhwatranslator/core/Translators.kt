@@ -422,9 +422,16 @@ class GeminiTranslator(private val key: String, private val model: String) : Tra
             .put("contents", JSONArray().put(JSONObject().put("role", "user")
                 .put("parts", JSONArray().put(JSONObject().put("text", LlmPrompt.user(req))))))
             .put("generationConfig", JSONObject().put("temperature", 0.3).put("responseMimeType", "application/json"))
-        val m = model.ifBlank { "gemini-2.5-flash-lite" }.trim()
-        val raw = Http.call("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent", "POST",
-            mapOf("x-goog-api-key" to key.trim()), body.toString(), title)
+        val m = model.ifBlank { Settings.GEMINI_MODEL }.trim()
+        val raw = try {
+            Http.call("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent", "POST",
+                mapOf("x-goog-api-key" to key.trim()), body.toString(), title)
+        } catch (e: TranslateException) {
+            // модель отключили или в названии опечатка — скажем прямо, а не «ошибка 404»
+            if (e.code == 404) throw TranslateException(trf("Gemini: модель «%s» недоступна — её отключили или в названии опечатка. Укажите в настройках другую, например %s.",
+                m, Settings.GEMINI_MODEL), 404)
+            throw e
+        }
         return try {
             val cand = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
             val parts = cand.getJSONObject("content").getJSONArray("parts")
