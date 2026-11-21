@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ["ATLATE_UI_LANG"] = "en"                 # до импорта программы: язык выбирается при загрузке
+os.environ.setdefault("ATLATE_NO_UPDATE_CHECK", "1")   # проверки не ходят в сеть за обновлениями
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 out = Path(sys.argv[1] if len(sys.argv) > 1 else "out")
@@ -190,6 +191,9 @@ def windows() -> None:
     win.show()
     verify("главное окно", win)
     win.grab().save(str(out / "main_en.png"))
+    win._update = ("9.9.9", "https://github.com/agoiel/ATlate/releases/latest")
+    win._rebuild()
+    verify("главное окно с плашкой обновления", win)
     win.show_list = getattr(win, "show_list", None)
     verify("окно со списком", win.list_window)
 
@@ -210,11 +214,16 @@ def windows() -> None:
     verify("редактор глоссария", ed)
     ed.close()
 
+    from app.models import Box, Bubble, PageResult
+    win.shown_result = PageResult(bubbles=[Bubble(Box(0, 0, 10, 10), [], text="a", translation="b")])
     win.enter_mini()
     for _ in range(5):
         app.processEvents()
     if win.mini is not None:
         verify("компактная панель", win.mini)
+        hints = [it.hint for it in win.mini._items("translate") if it.hint]
+        check("компактная панель: подсказка значка на английском", hints and not any(CYR.search(h) for h in hints),
+              str(hints))
         menu = getattr(win.mini, "_menu_items", None)
         if callable(menu):
             texts = [t for t in (getattr(i, "text", "") for i in menu()) if isinstance(t, str)]

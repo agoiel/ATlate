@@ -19,6 +19,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Build
+import android.widget.Toast
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -744,4 +745,12 @@ class Segmented(ctx: Context, private val options: List<Pair<String, String>>, s
             v.setTextColor(if (on) Brand.INK else Brand.CREAM)
         }
     }
+}
+
+
+/** Скопировать текст в буфер обмена. На Android 13+ система сама показывает, что скопировано. */
+fun copyToClipboard(ctx: Context, text: String, done: String) {
+    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("ATlate", text))
+    if (Build.VERSION.SDK_INT < 33) Toast.makeText(ctx, done, Toast.LENGTH_SHORT).show()
 }

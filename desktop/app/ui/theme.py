@@ -158,6 +158,7 @@ QFrame#segmentedPlain {{ background: {c.surface_alt}; border: 1px solid {c.borde
 QFrame#segmentedPlain QPushButton[kind="segment"] {{ color: {c.text2}; }}
 QFrame#segmentedPlain QPushButton[kind="segment"]:checked {{ background: {c.primary}; color: {c.on_primary}; }}
 QFrame#studioPromo {{ background: {c.surface}; border: 2px solid {c.primary}; border-radius: 18px; }}
+QFrame#updateBanner {{ background: {c.surface}; border: 1px solid {c.primary}; border-radius: 16px; }}
 QFrame#studioBar {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {INK}, stop:1 {HERO_END}); }}
 QLabel#studioTitle {{ color: {CREAM}; font-size: 13pt; font-weight: 700; }}
 QLabel#studioSub {{ color: rgba(243,227,204,0.75); font-size: 9pt; }}
@@ -233,6 +234,8 @@ _ICONS: dict[str, list[tuple[str, str]]] = {
              ("fill", "M5,18m-1.3,0a1.3,1.3 0 1,0 2.6,0a1.3,1.3 0 1,0 -2.6,0")],
     "keyboard": [("stroke", "M3,7h18v11H3z"), ("stroke", "M7,11h0.01"), ("stroke", "M11,11h0.01"),
                  ("stroke", "M15,11h0.01"), ("stroke", "M8,15h8")],
+    "copy": [("stroke", "M9,8.5h9.5a1,1 0 0,1 1,1v10a1,1 0 0,1 -1,1H9a1,1 0 0,1 -1,-1v-10a1,1 0 0,1 1,-1z"),
+             ("stroke", "M5,15.5V4.5a1,1 0 0,1 1,-1h9")],
     "folder": [("stroke", "M3,7a1,1 0 0,1 1,-1h5l2,2h8a1,1 0 0,1 1,1v9a1,1 0 0,1 -1,1H4a1,1 0 0,1 -1,-1z")],
     "code": [("stroke", "M8,7l-5,5 5,5"), ("stroke", "M16,7l5,5 -5,5"), ("stroke", "M13.5,4.5l-3,15")],
     "brush": [("stroke", "M14.5,4.5l5,5L9,20H4v-5z"), ("stroke", "M12.5,6.5l5,5")],

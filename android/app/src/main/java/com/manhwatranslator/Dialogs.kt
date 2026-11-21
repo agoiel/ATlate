@@ -136,7 +136,18 @@ object Dialogs {
         val d = base(ctx, box)
         val ok = PillButton(ctx, tr("Готово"), null, PillStyle.PRIMARY, 48)
         ok.onClick { d.dismiss() }
-        box.addView(ok, lp().margins(ctx, top = 16))
+        val copy = res.copyText()
+        if (copy.isEmpty()) {
+            box.addView(ok, lp().margins(ctx, top = 16))
+        } else {
+            // отдельную реплику можно выделить и скопировать долгим нажатием, всю страницу — кнопкой
+            val row = ui.horizontal()
+            val cp = PillButton(ctx, tr("Копировать"), null, PillStyle.OUTLINE, 48)
+            cp.onClick { copyToClipboard(ctx, copy, trf("Перевод скопирован: облаков %s", res.translations().size)) }
+            row.addView(cp, lp(0, weight = 1f))
+            row.addView(ok, lp(0, weight = 1f).margins(ctx, start = 10))
+            box.addView(row, lp().margins(ctx, top = 16))
+        }
         d.show()
     }
 

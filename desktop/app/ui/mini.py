@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from PySide6.QtCore import QEasingCurve, QPoint, QPointF, QRect, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (QColor, QCursor, QFont, QFontMetricsF, QGuiApplication, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPixmap, QRegion)
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QToolTip, QWidget
 
 from ..capture import exclude_from_capture
 from ..i18n import tr
@@ -59,6 +59,7 @@ class Item:
     icon: str = ""
     primary: bool = False
     enabled: bool = True
+    hint: str = ""         # подсказка при наведении (для действия-значка без надписи)
     x: float = 0.0         # место внутри вытянутой кнопки (от её начала) и ширина — считает раскладка
     w: float = 0.0
 
@@ -241,7 +242,8 @@ class MiniPanel(QWidget):
         g.items = self._items(g.key)
         x = float(BTN)
         for it in g.items:
-            it.w = 2 * CHIP_PAD + self._fm.horizontalAdvance(it.text) + (ICON + 6 if it.icon else 0)
+            it.w = (CHIP_H if not it.text else
+                    2 * CHIP_PAD + self._fm.horizontalAdvance(it.text) + (ICON + 6 if it.icon else 0))
             it.x = x
             x += it.w + CHIP_GAP
         g.width = x - CHIP_GAP + (BTN - CHIP_H) / 2
@@ -361,7 +363,11 @@ class MiniPanel(QWidget):
                 mode = Item("mode", tr("Режим: Скриншот"), "refresh")
             hide = Item("toggle", tr("Скрыть перевод"), "hide") if st.get("overlay_visible") \
                 else Item("toggle", tr("Показать перевод"), "eye")
-            return [main, mode, hide]
+            items = [main, mode, hide]
+            if st.get("can_copy"):
+                # только значок: с надписью кнопка вытягивалась бы шире окна панели
+                items.append(Item("copy", "", "copy", hint=tr("Копировать перевод")))
+            return items
         if group == "zone":
             has = bool(st.get("has_region"))
             return [Item("zone_new", tr("Новая"), "select", True),
@@ -467,6 +473,18 @@ class MiniPanel(QWidget):
             self._chip = None
             self._stretch(len(self.groups) if self._toast.isActive() else -1)
 
+    def _show_hint(self, chip, pos) -> None:
+        """Подсказка у действия-значка без надписи (например, «Копировать перевод»)."""
+        it = None
+        if chip is not None:
+            gi, k = chip
+            if 0 <= gi < len(self.groups) and 0 <= k < len(self.groups[gi].items):
+                it = self.groups[gi].items[k]
+        if it is not None and it.hint:
+            QToolTip.showText(self.mapToGlobal(pos.toPoint()), it.hint, self)
+        else:
+            QToolTip.hideText()
+
     def _open_hovered(self) -> None:
         if self._hover >= 0 and self._hover != self._open and self._drag is None:
             self._open_group(self._hover)
@@ -530,6 +548,7 @@ class MiniPanel(QWidget):
         if i != self._hover or chip != self._chip:
             changed_button = i != self._hover
             self._hover, self._chip = i, chip
+            self._show_hint(chip, pos)
             self._hl_anim.stop()
             self._hl = 0.0
             self._hl_anim.start()
@@ -725,6 +744,9 @@ class MiniPanel(QWidget):
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawPath(path)
                 fg = cream
+            if not it.text:
+                self._draw_icon(p, it.icon, fg.name(), r.center(), ICON)
+                continue
             x = r.left() + CHIP_PAD
             if it.icon:
                 self._draw_icon(p, it.icon, fg.name(), QPointF(x + ICON / 2, r.center().y()), ICON)

@@ -108,6 +108,14 @@ class PageResult:
     # Подробности для режима разработчика
     debug: "DebugInfo | None" = None
 
+    def translations(self) -> list[str]:
+        """Переводы облаков по порядку чтения (пустые пропускаются)."""
+        return [b.translation.strip() for b in self.bubbles if b.translation and b.translation.strip()]
+
+    def copy_text(self) -> str:
+        """Перевод страницы для буфера обмена: облака по порядку, между ними пустая строка."""
+        return "\n\n".join(self.translations())
+
 
 # ---------------------------------------------------------------- режим разработчика
 

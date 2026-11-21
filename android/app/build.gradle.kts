@@ -13,8 +13,8 @@ android {
         applicationId = "com.manhwatranslator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.6.5"
+        versionCode = 9
+        versionName = "0.6.6"
     }
 
     // BuildConfig.VERSION_NAME — номер версии в окне настроек берётся из сборки

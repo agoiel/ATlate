@@ -37,6 +37,7 @@ import com.manhwatranslator.core.Pipeline
 import com.manhwatranslator.core.Settings
 import com.manhwatranslator.core.TitleStore
 import com.manhwatranslator.core.Translators
+import com.manhwatranslator.core.Updates
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
     private lateinit var modeHint: TextView
     private lateinit var srcPicker: PickerView
     private lateinit var tgtPicker: PickerView
+    /** Место для плашки «вышла новая версия» (пустое, пока её нет). */
+    private lateinit var updateSlot: LinearLayout
     private lateinit var glossPicker: PickerView
     private lateinit var autoGloss: SwitchRow
     private lateinit var autoGlossHint: android.widget.TextView
@@ -87,6 +90,8 @@ class MainActivity : Activity() {
         root.addView(buildHero())
         root.addView(buildTiles(), lp().margins(this, 16, -34, 16, 0))
         val content = ui.vertical()
+        updateSlot = ui.vertical().apply { visibility = View.GONE }
+        content.addView(updateSlot)
         content.addView(buildLanguages(), lp().margins(this, top = 16))
         content.addView(buildTranslator(), lp().margins(this, top = 14))
         content.addView(buildGlossary(), lp().margins(this, top = 14))
@@ -111,6 +116,57 @@ class MainActivity : Activity() {
             root.setPadding(0, 0, 0, bottom + dp(24))
         }
         handleShare(intent)
+        showUpdate()
+        checkUpdates()
+    }
+
+    // ---------------------------------------------------------------- обновления
+    /** Раз в день спросить у GitHub, не вышла ли новая версия (в фоне). */
+    private fun checkUpdates(force: Boolean = false) {
+        if (!force && !Updates.due(s)) return
+        thread(isDaemon = true, name = "update-check") {
+            val r = Updates.fetch() ?: return@thread      // не удалось — попробуем при следующем запуске
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                s.updateCheckedAt = System.currentTimeMillis()
+                s.updateLatest = r.version
+                s.updateUrl = r.url
+                showUpdate()
+            }
+        }
+    }
+
+    /** Плашка «вышла новая версия» — только когда она действительно вышла. */
+    private fun showUpdate() {
+        updateSlot.removeAllViews()
+        val r = if (s.updateCheck) Updates.offer(s, BuildConfig.VERSION_NAME) else null
+        if (r == null) {
+            updateSlot.visibility = View.GONE
+            return
+        }
+        val card = ui.card()
+        card.addView(ui.cardHeader(trf("Вышла версия %s", r.version), R.drawable.ic_download,
+            trf("Сейчас у вас %s. Скачайте ATlate.apk и откройте его — приложение обновится, настройки сохранятся.",
+                BuildConfig.VERSION_NAME)))
+        val row = ui.horizontal()
+        val later = PillButton(this, tr("Позже"), null, PillStyle.OUTLINE, 44)
+        later.onClick {
+            s.updateSkip = r.version
+            showUpdate()
+        }
+        val get = PillButton(this, tr("Скачать"), R.drawable.ic_download, PillStyle.PRIMARY, 44)
+        get.onClick {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(r.url)))
+            } catch (_: Exception) {
+                toast(r.url)
+            }
+        }
+        row.addView(later, lp(0, weight = 1f))
+        row.addView(get, lp(0, weight = 1f).margins(this, start = 10))
+        card.addView(row, lp().margins(this, top = 12))
+        updateSlot.addView(card, lp().margins(this, top = 16))
+        updateSlot.visibility = View.VISIBLE
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -635,6 +691,11 @@ class MainActivity : Activity() {
         }, lp().margins(this, top = 2))
         body.addView(SwitchRow(this, tr("Повторять наклон текста"), tr("Перевод под тем же углом, что и оригинал"),
             s.keepTilt) { s.keepTilt = it }, lp().margins(this, top = 2))
+        body.addView(SwitchRow(this, tr("Проверять обновления"), tr("Раз в день узнавать на GitHub, не вышла ли новая версия"),
+            s.updateCheck) {
+            s.updateCheck = it
+            if (it) checkUpdates(force = true) else showUpdate()
+        }, lp().margins(this, top = 2))
         card.addView(body)
 
         header.setOnClickListener {

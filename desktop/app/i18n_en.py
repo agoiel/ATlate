@@ -617,4 +617,22 @@ EN: dict[str, str] = {
     "Универсальный (корейский)": "Universal (Korean)",
     "Универсальный (английский)": "Universal (English)",
     "Пример (корейский)": "Example (Korean)",
+    # 0.6.6: обновления
+    "Вышла версия {0}": "Version {0} is out",
+    "Сейчас у вас {0}. Что нового — на странице релиза.": "You have {0}. See what’s new on the release page.",
+    "Не напоминать об этой версии": "Don’t remind me about this version",
+    "Скачать": "Download",
+    "Проверять обновления": "Check for updates",
+    "Раз в день узнавать на GitHub, не вышла ли новая версия": "Once a day, check GitHub for a new version",
+    # 0.6.6: копирование
+    "Копировать перевод": "Copy translation",
+    " · {0} — копировать перевод": " · {0} — copy translation",
+    "Копировать нечего — сначала переведите страницу.": "Nothing to copy — translate a page first.",
+    "Перевод скопирован: облаков {0}.": "Translation copied: {0} bubbles.",
+    "Скопировано": "Copied",
+    "Скопировано облаков: {0}": "Bubbles copied: {0}",
+    "Щелчок по переводу — скопировать его": "Click a translation to copy it",
+    "Копировать всё": "Copy all",
+    "Скопировать перевод страницы — {0} или значок в компактной панели. В окне со списком отдельная реплика копируется щелчком.":
+        "Copy the page translation — {0} or the icon in the compact panel. In the list window, click a line to copy it.",
 }
