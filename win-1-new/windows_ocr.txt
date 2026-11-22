@@ -1,0 +1,4 @@
+attempt 1: sequential 1278 ms, parallel x3 497 ms, lines 4/4, same=True
+attempt 2: sequential 879 ms, parallel x3 493 ms, lines 4/4, same=True
+attempt 3: sequential 875 ms, parallel x3 497 ms, lines 4/4, same=True
+lines: Where are you going? | I told you to wait here! | THE NORTH ENNOATE | He is not coming back.

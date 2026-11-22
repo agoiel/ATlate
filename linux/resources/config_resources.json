@@ -1,0 +1,98 @@
+{
+  "source_lang": "en",
+  "auto_lang": false,
+  "target_lang": "ru",
+  "ocr_engine": "windows",
+  "ocr_mode": "thorough",
+  "ocr_upscale": 1.5,
+  "ocr_min_conf": 0.3,
+  "easyocr_gpu": false,
+  "bubble_gap": 1.1,
+  "bubble_row_gap": 1.5,
+  "bubble_border_check": true,
+  "skip_free_text": false,
+  "skip_cut_bubbles": false,
+  "keep_tilt": true,
+  "translator": "google_free",
+  "context_size": 0,
+  "request_interval": 0,
+  "free_fallback": true,
+  "glossary": "universal_ko.json",
+  "active_title": "",
+  "content_mode": "manhwa",
+  "full_width_select": false,
+  "theme": "system",
+  "ui_lang": "system",
+  "update_check": true,
+  "update_checked_at": 0,
+  "update_skip": "",
+  "update_found": null,
+  "translate_mode": "shot",
+  "always_on_top": false,
+  "window_size": null,
+  "dev_mode": false,
+  "parallel_ocr": true,
+  "studio_load": "normal",
+  "debug_boxes": true,
+  "translators": {
+    "yandex": {
+      "api_key": "",
+      "folder_id": ""
+    },
+    "lingva": {
+      "base_url": "https://lingva.ml"
+    },
+    "papago": {
+      "client_id": "",
+      "client_secret": ""
+    },
+    "claude": {
+      "api_key": "",
+      "model": "claude-haiku-5-5"
+    },
+    "deepl": {
+      "api_key": ""
+    },
+    "microsoft": {
+      "api_key": "",
+      "region": "global"
+    },
+    "gemini": {
+      "api_key": "",
+      "model": "gemini-flash-lite-latest"
+    },
+    "openai": {
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "",
+      "model": "qwen2.5:7b"
+    },
+    "google_free": {}
+  },
+  "display_mode": "overlay",
+  "overlay_font": "Segoe UI",
+  "overlay_max_font_size": 20,
+  "overlay_opacity": 0.95,
+  "auto_interval_ms": 300,
+  "word_hover": true,
+  "mini_mode": false,
+  "mini_pos": null,
+  "mini_collapse_delay": 1,
+  "voice_enabled": false,
+  "voice_my_lang": "",
+  "voice_chat_lang": "en",
+  "voice_model": "base",
+  "voice_mic": "",
+  "voice_sounds": true,
+  "voice_glossary": "game_ru_en.json",
+  "ui_page": "screen",
+  "hotkeys": {
+    "select": "<alt>+q",
+    "translate": "<alt>+w",
+    "toggle": "<alt>+e",
+    "auto": "<alt>+r",
+    "mini": "",
+    "copy": "<alt>+c",
+    "voice": "<alt>+v"
+  },
+  "last_region": null
+}

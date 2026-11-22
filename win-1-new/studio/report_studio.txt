@@ -1,0 +1,35 @@
+font: Pangolin Regular (D:\a\ATlate\ATlate\desktop\fonts\Pangolin-Regular.ttf)
+01_ko.png: FAILED OcrLanguageMissing: В Windows не установлен OCR для языка «Корейский (манхва)».
+Установленные: en-US.
+02_en.png: blocks 6, translated 6, overflow 0, error ''
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 27 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 25 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 27 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 31 lines 2
+   [free  ] 'BANGU' -> '[BANGU]' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 31 lines 1
+03_strip.png: blocks 18, translated 18, overflow 0, error ''
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 27 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 25 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 27 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 31 lines 2
+   [free  ] 'BANGU' -> '[BANGU]' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 31 lines 1
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 27 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 25 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 27 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 31 lines 2
+   [free  ] 'BANGU' -> '[BANGU]' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 31 lines 1
+   [bubble] 'Where are you going?' -> 'Куда ты собрался?' size 27 lines 1
+   [box   ] 'THE NORTHERN GATE' -> 'СЕВЕРНЫЕ ВОРОТА' size 25 lines 1
+   [bubble] 'I told you to wait here!' -> 'Я же сказал ждать здесь!' size 27 lines 2
+   [bubble] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 31 lines 2
+   [free  ] 'BANGU' -> '[BANGU]' size 36 lines 1
+   [box   ] 'He is not coming back.' -> 'Он не вернётся.' size 31 lines 1
+04_tilt_en.png: blocks 3, translated 3, overflow 1, error ''
+   [free  ] 'Where are you going ?' -> 'Куда ты собрался?' size 12 lines 1 tilt -45
+   [free  ] "Are you sure you're okay? That" -> 'Ты точно в порядке? Этот парен' size 12 lines 1 tilt +28
+   [free  ] 'BANG!' -> 'БАХ!' size 36 lines 1
+project reload ok: True
+tilt ok: False — 'Where are you going ': tilt -45, expected 15; 'BANG!': tilt +0, expected 22

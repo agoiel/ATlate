@@ -1,0 +1,19 @@
+{
+  "name": "t",
+  "source_lang": "ko",
+  "auto": true,
+  "entries": [
+    {
+      "source": "민준",
+      "target": "Минджун",
+      "note": "",
+      "auto": true
+    },
+    {
+      "source": "헌터",
+      "target": "охотник",
+      "note": "",
+      "auto": true
+    }
+  ]
+}

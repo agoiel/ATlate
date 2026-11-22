@@ -1,0 +1,7 @@
+[light] pages: 4, page 2 blocks: 6, rendered: True, status: Открыто страниц: 4, уже переведено: 3.
+selected: True, card open: True
+edited: block text = 'Новый текст перевода, который длиннее прежнего', rendered lines = 3
+moved: (517.3, 404.0) -> (553, 428)
+strip page blocks: 18
+[dark] pages: 4, page 2 blocks: 6, rendered: True, status: Открыто страниц: 4, уже переведено: 3.
+done
