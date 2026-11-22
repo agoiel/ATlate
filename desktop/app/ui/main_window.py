@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGrid
                                QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QScrollArea,
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
 
-from .. import __version__, i18n, languages, titles, voice
+from .. import __version__, feedback, i18n, languages, single, titles, voice
 from ..capture import Region, find_screen, grab_region, grab_region_raw, gray_thumb, qimage_to_pil
 from ..config import DATA_ROOT, GEMINI_MODEL, GLOSSARY_DIR, ROOT, Config
 from ..glossary import Glossary, list_glossaries, universal_for
@@ -252,9 +252,10 @@ class MainWindow(QWidget):
         if self.region:
             self.overlay.place(self.region)
         self._refresh_status()
-        QTimer.singleShot(500, self.check_ocr_language)
-        QTimer.singleShot(4000, self.check_updates)
-        QTimer.singleShot(6000, self.voice.preload)
+        # привязаны к окну: если окно удалят раньше, отложенное действие просто не выполнится
+        QTimer.singleShot(500, self, self.check_ocr_language)
+        QTimer.singleShot(4000, self, self.check_updates)
+        QTimer.singleShot(6000, self, self.voice.preload)
 
     # ================================================================ интерфейс
     def _build(self) -> None:
@@ -283,7 +284,8 @@ class MainWindow(QWidget):
         sp.addWidget(self._build_tiles())
         sp.addWidget(self._build_studio_banner())
         self.columns = Columns([self._build_languages(), self._build_translator(), self._build_title(),
-                                self._build_tuning(), self._build_hotkeys(), self._build_developer()])
+                                self._build_tuning(), self._build_hotkeys(), self._build_developer(),
+                                self._build_feedback()])
         sp.addWidget(self.columns)
         bl.addWidget(self.screen_page)
         self.voice_page = self._build_voice_page()
@@ -361,6 +363,7 @@ class MainWindow(QWidget):
         self.btn_hide = pill(tr("Скрыть перевод"), "heroOutline", "hide", tr("Горячая клавиша: {0}",
                                                                              hk.get('toggle', '')))
         self.btn_hide.clicked.connect(self.toggle_overlay)
+        self._sync_hide_button()
         for b in (self.btn_main, self.btn_select, self.btn_zone, self.btn_hide):
             flow.addWidget(b)
         lay.addWidget(flow_host)
@@ -1401,6 +1404,34 @@ class MainWindow(QWidget):
     def _on_voice_failed(self, message: str) -> None:
         self._set_status(message, True)
 
+    # ---------------------------------------------------------------- обратная связь
+    def _build_feedback(self) -> Card:
+        # адрес — прямо в подписи: его видно, даже когда карточка свёрнута
+        card = Card(tr("Обратная связь"), feedback.EMAIL, "mail", collapsible=True, collapsed=True)
+        card.add(caption(tr("Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась "
+                            "ошибка; если в папке программы есть файл error.log — приложите его к письму.")))
+        addr = label(feedback.EMAIL, "cardTitle")
+        addr.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        card.add(addr)
+        row = QWidget()
+        row.setObjectName("transparent")
+        flow = FlowLayout(8)
+        row.setLayout(flow)
+        write = pill(tr("Написать письмо"), "primary", "mail", tr("Откроется почта; версия программы уже вписана"))
+        write.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(feedback.mailto())))
+        copy = pill(tr("Скопировать адрес"), "tonal", "copy")
+        copy.clicked.connect(self._copy_feedback_address)
+        folder = pill(tr("Папка с журналом ошибок"), "tonal", "folder", tr("Там лежит error.log, если программа падала"))
+        folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(DATA_ROOT))))
+        for b in (write, copy, folder):
+            flow.addWidget(b)
+        card.add(row)
+        return card
+
+    def _copy_feedback_address(self) -> None:
+        QApplication.clipboard().setText(feedback.EMAIL)
+        self._set_status(tr("Адрес скопирован: {0}", feedback.EMAIL))
+
     # ---------------------------------------------------------------- для разработчиков
     def _build_developer(self) -> Card:
         c = self.cfg
@@ -1507,7 +1538,7 @@ class MainWindow(QWidget):
             job = _CompareJob(self.compare_signals, self.pipeline, image)
             self.pool.start(job)
 
-        QTimer.singleShot(120 if hidden else 0, go)
+        QTimer.singleShot(120 if hidden else 0, self, go)
 
     def _on_compared(self, text: str) -> None:
         self.busy = False
@@ -1552,7 +1583,7 @@ class MainWindow(QWidget):
         self._apply_source(lang)
         self.src_combo.setItemText(0, self._auto_title())
         self._refresh_auto_hint()
-        QTimer.singleShot(200, self.check_ocr_language)
+        QTimer.singleShot(200, self, self.check_ocr_language)
 
     def _apply_source(self, lang: str) -> None:
         """Сменить язык оригинала (вручную или автоопределением) и всё, что от него зависит."""
@@ -1579,7 +1610,7 @@ class MainWindow(QWidget):
 
     def _set_engine(self, engine: str) -> None:
         self._set("ocr_engine", engine)
-        QTimer.singleShot(200, self.check_ocr_language)
+        QTimer.singleShot(200, self, self.check_ocr_language)
 
     def _set_theme(self, mode: str) -> None:
         self.cfg["theme"] = mode
@@ -1685,7 +1716,8 @@ class MainWindow(QWidget):
             "live_on": self.live_on,
             "busy": self.busy,
             "has_region": self.region is not None,
-            "overlay_visible": self.overlay.isVisible() and not self.overlay.user_hidden,
+            # по выбору пользователя, а не по видимости окна: перед снимком экрана оно на миг прячется
+            "overlay_visible": not self.overlay.user_hidden and self.shown_result is not None,
             "zone_visible": self.overlay.show_frame,
             "can_copy": bool(self.shown_result is not None and self.shown_result.translations()),
         }
@@ -1851,6 +1883,7 @@ class MainWindow(QWidget):
         self.overlay.place(self.region)
         self.overlay.show_frame = True
         self.overlay.user_hidden = False
+        self._sync_hide_button()
         self.overlay.show()
         self.overlay.update()
         if hold:
@@ -1872,6 +1905,10 @@ class MainWindow(QWidget):
             return
         if self.busy:
             return
+        if self.overlay.user_hidden:
+            # перевод скрыли, а теперь просят перевести — значит, хотят его увидеть
+            self.overlay.user_hidden = False
+            self._sync_hide_button()
         # Если окно перевода (или компактная панель) не скрыто от снимков — прячем на время снимка
         hide_overlay = self.overlay.isVisible() and not self.overlay.excluded
         hide_mini = self._mini_in_shot()
@@ -1880,7 +1917,8 @@ class MainWindow(QWidget):
                 self.overlay.hide()
             if hide_mini:
                 self._mini_hide_for_shot(True)
-            QTimer.singleShot(120, lambda: self._grab_and_run(hide_overlay, hide_mini))
+            # привязан к окну: закроют окно в эти 120 мс — снимок просто не делается
+            QTimer.singleShot(120, self, lambda: self._grab_and_run(hide_overlay, hide_mini))
         else:
             self._grab_and_run(False, False)
 
@@ -2054,18 +2092,49 @@ class MainWindow(QWidget):
         self._set_status(tr("Перевод скопирован: облаков {0}.", len(res.translations())), notify=True)
 
     def toggle_overlay(self) -> None:
-        if self.overlay.isVisible():
+        """Скрыть или показать перевод.
+
+        Решает выбор пользователя (user_hidden), а не то, видно ли окно прямо сейчас. Раньше
+        проверялось isVisible(): если программа не умеет прятать окно от снимков экрана, перед
+        каждым снимком (в Live — каждые 0,7 с) окно на долю секунды скрывается, и нажатие в этот
+        момент превращало «Скрыть» в «Показать».
+        """
+        if not self.overlay.user_hidden:
             self.overlay.user_hidden = True
+            self.words.dismiss()
             self.overlay.hide()
             self.list_window.hide()
         else:
-            self.overlay.user_hidden = False
-            mode = self.cfg["display_mode"]
-            if mode in ("overlay", "both") and self.region:
-                self.overlay.show()
-            if mode in ("list", "both"):
-                self.list_window.show()
+            self._unhide_overlay()
+        self._sync_hide_button()
         self._sync_mini()
+
+    def _unhide_overlay(self) -> None:
+        self.overlay.user_hidden = False
+        mode = self.cfg["display_mode"]
+        if mode in ("overlay", "both") and self.region:
+            self.overlay.show()
+        if mode in ("list", "both") and self.shown_result is not None:
+            self.list_window.show()
+
+    def _sync_hide_button(self) -> None:
+        hidden = self.overlay.user_hidden
+        set_pill(self.btn_hide, tr("Показать перевод") if hidden else tr("Скрыть перевод"), "heroOutline",
+                 "eye" if hidden else "hide")
+
+    def bring_to_front(self) -> None:
+        """Программу запустили ещё раз: вторая копия закрылась, показываем эту (см. app/single.py)."""
+        if self.in_mini:
+            self.mini.show()
+            self.mini.raise_()
+            self.mini.toast(tr("ATlate уже запущен — вот он."))
+            return
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self._set_status(tr("ATlate уже запущен — вот его окно."))
 
     def reset_session(self) -> None:
         tid = self.cfg.get("active_title", "")
@@ -2189,6 +2258,7 @@ class MainWindow(QWidget):
             program, args = sys.executable, []
         else:
             program, args = sys.executable, [str(ROOT / "main.py")]
+        single.release()        # иначе новая копия примет эту (ещё закрывающуюся) за уже запущенную
         QProcess.startDetached(program, args, str(ROOT))
         self.close()
 
@@ -2309,6 +2379,7 @@ class HelpDialog(QDialog):
             tr("Для чата в онлайн-игре — вкладка «Голос»: скажите фразу ({0}), и перевод окажется в буфере "
                "обмена — вставьте его в чат (Ctrl+V). Игровые слова и ники добавьте в «Словарь для чата».",
                hk.get("voice") or "—"),
+            tr("Нашли ошибку или есть идея — напишите: {0} (карточка «Обратная связь» внизу).", feedback.EMAIL),
         ]
         for i, s in enumerate(steps, 1):
             row = QHBoxLayout()
@@ -2351,7 +2422,12 @@ def run_gui() -> int:
     sys.excepthook = _excepthook
     app, cfg = create_app()
     app.setQuitOnLastWindowClosed(False)
+    # одна копия: если программа уже открыта, она показывается, а эта закрывается (app/single.py)
+    holder: list[MainWindow] = []
+    if not single.claim(lambda: holder and holder[0].bring_to_front()):
+        return 0
     win = MainWindow(cfg)
+    holder.append(win)
     if cfg.get("mini_mode"):
         win.enter_mini()        # в прошлый раз программу закрыли в компактном режиме
     else:

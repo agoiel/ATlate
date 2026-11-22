@@ -406,6 +406,16 @@ object I18n {
         "Строк %s (проходы добавили %s, заменили %s) · облаков %s" to "Lines %s (passes added %s, replaced %s) · bubbles %s",
         "Ошибки проходов:" to "Pass errors:",
         "Ошибка:" to "Error:",
+        // обратная связь
+        "Обратная связь" to "Feedback",
+        "Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась ошибка." to "Found a bug, have an idea or a question — write. Tell what you were doing when the bug happened.",
+        "Написать письмо" to "Write an email",
+        "ATlate %s: отзыв" to "ATlate %s: feedback",
+        "Что случилось или что хочется улучшить:\n\n\nЧто делали перед этим:\n\n\nATlate %s · Android %s · %s\n" to "What happened or what could be better:\n\n\nWhat you were doing before that:\n\n\nATlate %s · Android %s · %s\n",
+        "Почта не найдена — адрес скопирован: %s" to "No mail app found — address copied: %s",
+        "Скопировать адрес" to "Copy the address",
+        "Адрес скопирован: %s" to "Address copied: %s",
+        "Нашли ошибку или есть идея — напишите: %s (карточка «Обратная связь» внизу)." to "Found a bug or have an idea — write to %s (the Feedback card at the bottom).",
         // «Слова на экране» и словарик
         "Словарик" to "Word list",
         "Удержите палец на слове в переводе и нажмите «В словарик» — слово оригинала попадёт сюда с переводом. Коснитесь слова, чтобы исправить его или дописать заметку (транскрипцию, род — что угодно)." to "Hold a finger on a word over the translation and tap Add to word list — the original word lands here with its translation. Tap a word to correct it or add a note (transcription, gender — anything).",

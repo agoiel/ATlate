@@ -8,6 +8,7 @@
 
 * FriBiDi из libs подгружается (app/__init__.py) — сложная вёрстка Pillow включена;
 * словари переносов Pyphen на месте;
+* одна копия программы: второй запуск находит первый (QtNetwork в сборке);
 * «Голос в чат» (с --voice ПАПКА_МОДЕЛИ [WAV]): запись звука (PortAudio) и распознавание речи
   работают в сборке — CTranslate2, VAD (onnxruntime) и токенизатор нашлись, а PyAV не нужен.
 Код возврата 1, если что-то не нашлось.
@@ -82,6 +83,21 @@ def _voice(model_dir: str, wav: str) -> list[tuple[str, bool]]:
     return out
 
 
+def _single() -> list[tuple[str, bool]]:
+    """Одна копия программы (app/single.py) работает в сборке: QtNetwork на месте."""
+    import uuid
+
+    from PySide6.QtCore import QCoreApplication
+
+    from app import single
+    _qapp = QCoreApplication.instance() or QCoreApplication(sys.argv)   # noqa: F841
+    name = "ATlate-frozen-" + uuid.uuid4().hex[:8]
+    ok = single.claim(lambda: None, name) and single.ask_running(name, 1000)
+    single.release()
+    return [("одна копия программы: локальный канал работает (QtNetwork)", bool(ok))]
+
+
+rows += _single()
 if "--voice" in sys.argv:
     i = sys.argv.index("--voice")
     rows += _voice(sys.argv[i + 1], sys.argv[i + 2] if len(sys.argv) > i + 2 else "")

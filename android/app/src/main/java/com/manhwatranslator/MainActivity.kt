@@ -48,6 +48,8 @@ class MainActivity : Activity() {
     companion object {
         /** Открыть словарик сразу (из меню плавающей кнопки) */
         const val EXTRA_VOCABULARY = "vocabulary"
+        /** Куда писать об ошибках и идеях (карточка «Обратная связь») */
+        const val FEEDBACK_EMAIL = "arcgobabuiss@gmail.com"
         private const val REQ_CAPTURE = 1
         private const val REQ_PICK = 2
         private const val REQ_NOTIF = 3
@@ -102,6 +104,7 @@ class MainActivity : Activity() {
         content.addView(buildGlossary(), lp().margins(this, top = 14))
         content.addView(buildTuning(), lp().margins(this, top = 14))
         content.addView(buildDeveloper(), lp().margins(this, top = 14))
+        content.addView(buildFeedback(), lp().margins(this, top = 14))
         content.addView(ui.caption(trf("ATlate %s · распознавание: Google ML Kit", BuildConfig.VERSION_NAME)).apply {
             gravity = Gravity.CENTER
             alpha = 0.8f
@@ -797,6 +800,51 @@ class MainActivity : Activity() {
     }
 
     // ================================================================ для разработчиков
+    // ---------------------------------------------------------------- обратная связь
+    private fun buildFeedback(): View {
+        val card = ui.card()
+        val header = ui.horizontal().apply { isClickable = true }
+        // адрес — прямо в подписи: его видно, даже когда карточка свёрнута
+        header.addView(ui.cardHeader(tr("Обратная связь"), R.drawable.ic_mail, FEEDBACK_EMAIL), lp(0, weight = 1f))
+        val chevron = ui.icon(R.drawable.ic_chevron, T.c.primary, 22)
+        header.addView(chevron)
+        card.addView(header)
+        val body = ui.vertical().apply { visibility = View.GONE }
+        body.addView(ui.caption(tr("Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась ошибка.")),
+            lp().margins(this, top = 12))
+        body.addView(ui.text(FEEDBACK_EMAIL, 17f, T.c.text, Fonts.medium).apply { setTextIsSelectable(true) },
+            lp().margins(this, top = 8))
+        val row = ui.horizontal()
+        val write = PillButton(this, tr("Написать письмо"), R.drawable.ic_mail, PillStyle.PRIMARY, 44)
+        write.onClick {
+            val subject = trf("ATlate %s: отзыв", BuildConfig.VERSION_NAME)
+            val text = trf("Что случилось или что хочется улучшить:\n\n\nЧто делали перед этим:\n\n\nATlate %s · Android %s · %s\n",
+                BuildConfig.VERSION_NAME, Build.VERSION.RELEASE, Build.MODEL)
+            val mail = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+                putExtra(Intent.EXTRA_EMAIL, arrayOf(FEEDBACK_EMAIL))
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            try {
+                startActivity(Intent.createChooser(mail, tr("Написать письмо")))
+            } catch (_: Exception) {
+                copyToClipboard(this, FEEDBACK_EMAIL, trf("Почта не найдена — адрес скопирован: %s", FEEDBACK_EMAIL))
+            }
+        }
+        val copy = PillButton(this, tr("Скопировать адрес"), null, PillStyle.TONAL, 44)
+        copy.onClick { copyToClipboard(this, FEEDBACK_EMAIL, trf("Адрес скопирован: %s", FEEDBACK_EMAIL)) }
+        row.addView(write, lp(0, weight = 1f))
+        row.addView(copy, lp(0, weight = 1f).margins(this, start = 8))
+        body.addView(row, lp().margins(this, top = 12))
+        card.addView(body)
+        header.setOnClickListener {
+            val open = body.visibility != View.VISIBLE
+            body.visibility = if (open) View.VISIBLE else View.GONE
+            chevron.animate().rotation(if (open) 180f else 0f).setDuration(180).start()
+        }
+        return card
+    }
+
     private fun buildDeveloper(): View {
         val card = ui.card()
         val header = ui.horizontal().apply { isClickable = true }

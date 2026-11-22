@@ -766,4 +766,18 @@ EN: dict[str, str] = {
     'Перевожу «{0}»…': 'Translating “{0}”…',
     '{0} — {1} · в словарике': '{0} — {1} · in the word list',
     '{0} — в словарике, перевод не получен': '{0} — in the word list, no translation received',
+    # обратная связь, одна копия программы
+    'ATlate {0}: отзыв': 'ATlate {0}: feedback',
+    'Что случилось или что хочется улучшить:\n\n\nЧто делали перед этим:\n\n\nATlate {0} · {1}\n': 'What happened or what could be better:\n\n\nWhat you were doing before that:\n\n\nATlate {0} · {1}\n',
+    'Обратная связь': 'Feedback',
+    'Написать письмо': 'Write an email',
+    'Откроется почта; версия программы уже вписана': 'Your mail app opens; the app version is already filled in',
+    'Скопировать адрес': 'Copy the address',
+    'Папка с журналом ошибок': 'Error log folder',
+    'Там лежит error.log, если программа падала': 'error.log is there if the app has crashed',
+    'Адрес скопирован: {0}': 'Address copied: {0}',
+    'ATlate уже запущен — вот его окно.': 'ATlate is already running — here is its window.',
+    'Нашли ошибку или есть идея — напишите: {0} (карточка «Обратная связь» внизу).': 'Found a bug or have an idea — write to {0} (the Feedback card at the bottom).',
+    'Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась ошибка; если в папке программы есть файл error.log — приложите его к письму.': 'Found a bug, have an idea or a question — write. Tell what you were doing when the bug happened; if there is an error.log file in the app folder, attach it to the email.',
+    'ATlate уже запущен — вот он.': 'ATlate is already running — here it is.',
 }

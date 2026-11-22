@@ -1,4 +1,5 @@
-"""Функции 0.6.6: проверка обновлений, копирование перевода, журнал переводов, профили тайтлов.
+"""Функции 0.6.6+: проверка обновлений, копирование перевода, журнал переводов, профили тайтлов,
+одна копия программы и «Скрыть перевод».
 
     QT_QPA_PLATFORM=offscreen python tools/test_features.py out/
 
@@ -304,11 +305,85 @@ def test_profiles() -> None:
         titles.TITLES_DIR = real_dir
 
 
+def test_single() -> None:
+    """Вторая копия программы не открывается, а показывает первую (app/single.py)."""
+    import subprocess
+    import time
+    import uuid
+
+    from app import single
+
+    name = "ATlate-test-" + uuid.uuid4().hex[:8]       # не мешает настоящей запущенной программе
+    shown = []
+    check("первая копия занимает имя", single.claim(lambda: shown.append(1), name))
+    code = ("import sys; sys.path.insert(0, {root!r})\n"
+            "from PySide6.QtCore import QCoreApplication\n"
+            "app = QCoreApplication([])\n"
+            "from app import single\n"
+            "print('running' if single.ask_running({name!r}, 3000) else 'alone')\n").format(
+                root=str(Path(__file__).resolve().parents[1]), name=name)
+    proc = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+    end = time.time() + 20
+    while proc.poll() is None and time.time() < end:
+        app.processEvents()
+        time.sleep(0.02)
+    out_text = (proc.communicate(timeout=5)[0] or "").strip()
+    for _ in range(50):
+        if shown:
+            break
+        app.processEvents()
+        time.sleep(0.02)
+    check("вторая копия видит первую и просит её показаться", out_text == "running" and shown == [1],
+          f"{out_text!r}, показов {len(shown)}")
+    single.release()
+    check("после release (перезапуск) имя свободно", not single.ask_running(name, 300))
+
+    # «Скрыть перевод» — по выбору пользователя, а не по видимости окна в этот миг
+    from app.capture import Region
+    from app.ui.main_window import MainWindow
+    cfg = new_cfg()
+    win = MainWindow(cfg)
+    win.region = Region(win.screen().name(), 10, 10, 300, 200)
+    win.overlay.place(win.region)
+    win._on_done(page(("안녕", "Привет")), 1.0, None)
+    settle()
+    win.overlay.hide()              # как перед снимком экрана, когда окно нельзя спрятать от снимков
+    win.toggle_overlay()
+    win.overlay.show() if not win.overlay.user_hidden else None     # снимок готов: окно вернули бы
+    check("«Скрыть перевод» в миг снимка скрывает, а не показывает",
+          win.overlay.user_hidden and not win.overlay.isVisible() and win.btn_hide.text() == "Показать перевод",
+          win.btn_hide.text())
+    check("компактная панель знает, что перевод скрыт", not win._mini_state()["overlay_visible"])
+    win.toggle_overlay()
+    check("и показывает снова", not win.overlay.user_hidden and win.overlay.isVisible()
+          and win.btn_hide.text() == "Скрыть перевод")
+    win.overlay.user_hidden = True
+    win.busy = True                 # перевод не запускаем — проверяем только, что скрытие снято
+    win.busy = False
+    import app.ui.main_window as mw
+    real_grab = mw.grab_region
+    mw.grab_region = lambda region: (None, 1.0)
+    real_run = win._run
+    win._run = lambda image, k, token=None, live=False: None
+    win.translate_now()
+    import time as _t
+    end = _t.time() + 0.5           # снимок делается через 120 мс после «Перевести»
+    while _t.time() < end:
+        app.processEvents()
+        _t.sleep(0.01)
+    mw.grab_region = real_grab
+    win._run = real_run
+    check("«Перевести» после «Скрыть» снова показывает перевод", not win.overlay.user_hidden
+          and win.btn_hide.text() == "Скрыть перевод")
+    win.close()
+
+
 def main() -> int:
     test_updates()
     test_copy()
     test_history()
     test_profiles()
+    test_single()
     failed = [r for r in rows if not r[0]]
     print(f"failed: {len(failed)}")
     return 1 if failed else 0
