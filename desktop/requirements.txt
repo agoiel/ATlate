@@ -1,21 +1,30 @@
-PySide6-Essentials>=6.6
-numpy>=1.24
-Pillow>=10.0
-requests>=2.31
-pynput>=1.7.6
-pyphen>=0.14                 # словари переносов для тайпа в Студии
-faster-whisper==1.2.1        # «Голос в чат»: распознавание речи на компьютере (модель скачивается отдельно)
-sounddevice>=0.4.6           # «Голос в чат»: запись с микрофона
+# Точные версии: релиз собирается из тех же библиотек, что проверены в CI, и не сломается,
+# когда выйдет новая несовместимая версия. Обновлять — вручную, проверив CI (Desktop on Windows).
+PySide6-Essentials==6.12.0
+numpy==2.5.5
+Pillow==13.0.0
+requests==2.34.2
+pynput==1.8.2
+pyphen==0.18.1               # словари переносов для тайпа в Студии
+
+# «Голос в чат»: распознавание речи на компьютере (модель скачивается отдельно) и запись с микрофона
+faster-whisper==1.2.1
+ctranslate2==4.9.1
+onnxruntime==1.32.0
+tokenizers==0.23.3
+huggingface-hub==2.4.0
+av==19.0.2                   # нужен faster-whisper при импорте; в exe не входит (см. app/voice.py)
+sounddevice==0.5.6
 
 # Windows OCR (встроенный в Windows 10/11)
-winrt-runtime; sys_platform == "win32"
-winrt-Windows.Foundation; sys_platform == "win32"
-winrt-Windows.Foundation.Collections; sys_platform == "win32"
-winrt-Windows.Globalization; sys_platform == "win32"
-winrt-Windows.Graphics.Imaging; sys_platform == "win32"
-winrt-Windows.Media.Ocr; sys_platform == "win32"
-winrt-Windows.Security.Cryptography; sys_platform == "win32"
-winrt-Windows.Storage.Streams; sys_platform == "win32"
+winrt-runtime==4.2.0; sys_platform == "win32"
+winrt-Windows.Foundation==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Foundation.Collections==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Globalization==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Media.Ocr==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Security.Cryptography==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Storage.Streams==4!10.0.28000.2957; sys_platform == "win32"
 
 # EasyOCR (запасной движок, тяжёлый ~1–2 ГБ) — ставится отдельно:
 #   .venv\Scripts\python -m pip install easyocr

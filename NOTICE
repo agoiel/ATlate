@@ -1,0 +1,51 @@
+ATlate — screen translator for manhwa, manga and manhua
+Copyright (C) 2026 agoiel (https://github.com/agoiel/ATlate)
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, version 3 of the License (see the LICENSE file).
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+
+ADDITIONAL PERMISSION UNDER GNU GPL VERSION 3 SECTION 7
+-------------------------------------------------------
+
+If you modify this Program, or any covered work, by linking or combining it with
+Google ML Kit or Google Play services libraries (or a modified version of those
+libraries), containing parts covered by the terms of their own licenses, the
+licensors of this Program grant you additional permission to convey the
+resulting work. Corresponding Source for a non-source form of such a combination
+shall include the source code for the parts of this Program used as well as that
+of the covered work, but not the source code of those libraries.
+
+
+THIRD-PARTY COMPONENTS
+----------------------
+
+ATlate uses the following components, each under its own license.
+
+Windows version (bundled into the exe):
+  Qt for Python (PySide6) / Qt ...... LGPL-3.0
+  NumPy ............................. BSD-3-Clause
+  Pillow ............................ MIT-CMU (HPND)
+  Requests .......................... Apache-2.0
+  pynput ............................ LGPL-3.0
+  Pyphen (hyphenation dictionaries) . GPL-2.0+ / LGPL-2.1+ / MPL-1.1
+  python-winrt ...................... MIT
+  faster-whisper (with Silero VAD) .. MIT
+  CTranslate2 ....................... MIT
+  ONNX Runtime ...................... MIT
+  Hugging Face tokenizers, hub ...... Apache-2.0
+  sounddevice / PortAudio ........... MIT
+  GNU FriBiDi ....................... LGPL-2.1+
+  Pangolin font ..................... SIL Open Font License 1.1
+
+Downloaded by the program when the user asks for it (not bundled):
+  Whisper speech models (faster-whisper conversions by SYSTRAN) .. MIT
+
+Android version:
+  Google ML Kit, Google Play services ... Google APIs Terms of Service /
+                                          ML Kit Terms of Service

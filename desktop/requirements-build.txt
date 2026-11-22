@@ -1,0 +1,3 @@
+# Сборка exe (release.yml и проверки на Windows) — тоже точные версии
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10

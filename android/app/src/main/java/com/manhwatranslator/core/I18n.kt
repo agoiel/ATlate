@@ -407,6 +407,7 @@ object I18n {
         "Ошибки проходов:" to "Pass errors:",
         "Ошибка:" to "Error:",
         // обратная связь
+        "не найдено — проверьте адрес сервера и название модели" to "not found — check the server address and the model name",
         "Обратная связь" to "Feedback",
         "Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась ошибка." to "Found a bug, have an idea or a question — write. Tell what you were doing when the bug happened.",
         "Написать письмо" to "Write an email",

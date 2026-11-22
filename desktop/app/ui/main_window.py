@@ -15,7 +15,7 @@ import traceback
 import numpy as np
 from PIL import Image
 from PySide6.QtCore import QObject, QRect, QRunnable, QSize, Qt, QThreadPool, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFont, QIcon, QImage, QPainter, QPixmap
+from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
                                QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QScrollArea,
                                QSizePolicy, QTextBrowser, QVBoxLayout, QWidget)
@@ -2188,6 +2188,9 @@ class MainWindow(QWidget):
 
     def offer_ocr_install(self, lang: str, force: bool = False) -> None:
         if self._installing or sys.platform != "win32":
+            return
+        if QGuiApplication.platformName() in ("offscreen", "minimal"):
+            # окна без экрана (проверки в CI): вопрос было бы некому увидеть, и он ждал бы вечно
             return
         if lang in self._install_declined and not force:
             return

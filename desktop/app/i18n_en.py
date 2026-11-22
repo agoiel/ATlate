@@ -780,4 +780,5 @@ EN: dict[str, str] = {
     'Нашли ошибку или есть идея — напишите: {0} (карточка «Обратная связь» внизу).': 'Found a bug or have an idea — write to {0} (the Feedback card at the bottom).',
     'Нашли ошибку, есть идея или вопрос — напишите. Расскажите, что делали, когда случилась ошибка; если в папке программы есть файл error.log — приложите его к письму.': 'Found a bug, have an idea or a question — write. Tell what you were doing when the bug happened; if there is an error.log file in the app folder, attach it to the email.',
     'ATlate уже запущен — вот он.': 'ATlate is already running — here it is.',
+    'не найдено — проверьте адрес сервера и название модели': 'not found — check the server address and the model name',
 }

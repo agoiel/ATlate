@@ -9,7 +9,7 @@ exit /b 1
 
 :build
 echo Installing PyInstaller...
-".venv\Scripts\python.exe" -m pip install --upgrade pyinstaller
+".venv\Scripts\python.exe" -m pip install -r requirements-build.txt
 if errorlevel 1 goto fail
 
 rem FriBiDi: proper Arabic and Thai text layout in Studio. Needs MSYS2 (https://www.msys2.org);

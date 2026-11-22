@@ -1,6 +1,54 @@
 # ATlate
 
 [![Android APK](https://github.com/agoiel/ATlate/actions/workflows/android.yml/badge.svg)](https://github.com/agoiel/ATlate/actions/workflows/android.yml)
+[![Desktop on Windows](https://github.com/agoiel/ATlate/actions/workflows/desktop-windows.yml/badge.svg)](https://github.com/agoiel/ATlate/actions/workflows/desktop-windows.yml)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+
+Screen translator for manhwa, manga and manhua — Windows and Android, free and open source.
+Переводчик манхвы, манги и маньхуа прямо с экрана — для Windows и Android, бесплатный и открытый.
+
+**[⬇ Download / Скачать](https://github.com/agoiel/ATlate/releases/latest)** · [English](#english) · [Русский](#по-русски)
+
+![The page and the same page with ATlate's translation over the bubbles](docs/screenshots/screen-translator.png)
+
+## English
+
+ATlate reads the text on your screen and puts the translation right over the speech bubbles —
+in any reader app or website, nothing to save or upload.
+
+- **Screen translator** (Windows and Android) — select an area once, then translate with one key or let
+  **Live** translate by itself when the page stops scrolling. Text recognition runs on your device.
+  Tilted text gets a tilted translation; captions, boxes and sound effects are handled too.
+- **Studio** (Windows) — translate a whole chapter: it finds the text on every page, erases it
+  (cleaning) and typesets the translation into the bubbles. Everything can be fixed by hand, then exported.
+- **Words on screen & word list** — rest the mouse (or hold a finger) on an unfamiliar word: the original
+  shows up with **Copy** and **Add to word list**. The list keeps the word, its translation, your note and the
+  phrase it came from; export it to CSV for Anki.
+- **Voice to chat** (Windows) — for online games: hold a key, say a phrase, and its translation is in the
+  clipboard, ready to paste into the game chat. Speech is recognized offline (Whisper).
+- **Translators** — free Google, Yandex, DuckDuckGo and Lingva; DeepL, Microsoft and Papago with a key;
+  AI translators Gemini, Claude and any OpenAI-compatible server (including local models); an offline
+  translator on Android. Glossaries and per-series context keep names and terms consistent.
+- **Source languages:** Korean, Japanese, Chinese (simplified and traditional), English, German, Spanish,
+  Portuguese, Indonesian, Filipino and any other Latin-script language. **18 target languages.**
+  Interface in English and Russian.
+
+| Words on screen | Studio: before and after |
+|---|---|
+| ![Copy and Add to word list over the original word](docs/screenshots/word-list-hover.png) | ![A page before and after the Studio](docs/screenshots/studio.png) |
+
+| Main window | Voice to chat |
+|---|---|
+| ![ATlate main window](docs/screenshots/main-window.png) | ![The Voice tab](docs/screenshots/voice-tab.png) |
+
+**Install.** Download from [Releases](https://github.com/agoiel/ATlate/releases/latest):
+`ATlate.apk` for Android 8.0+ (needs Google Play services) or `ATlate-windows.zip` for Windows 10/11 —
+unzip and run `ATlate.exe`, no Python needed. The builds are not signed, so Windows SmartScreen and
+Play Protect may warn about an unknown app: choose “More info → Run anyway” / “Install anyway”.
+
+**Feedback:** arcgobabuiss@gmail.com — also in the app (Feedback card). **License:** [GPL-3.0](LICENSE).
+
+## По-русски
 
 **ATlate** — инструмент для перевода манхвы, манги и маньхуа. Подходит и тем, кто
 просто читает, и тем, кто переводит тайтлы целиком.
@@ -26,6 +74,10 @@
 - **Компактный режим** (Windows) — вместо большого окна остаётся маленькая панель поверх экрана. При наведении она раскрывается: перевод, зона и выход из режима, кнопка под мышью сама вытягивается вбок, и в ней появляются её действия. Сама сворачивается через несколько секунд.
 - **Режим «Текст на экране»** — для обычного текста: игр, сайтов, интерфейсов.
 - **Слова на экране и словарик** — незнакомое слово можно выучить: на ПК задержите на нём мышь, на телефоне — палец. Плашка перевода на время прячется, слово оригинала подсвечивается, над ним появляются «Копировать» и «В словарик». В словарике — слово, перевод (из глоссария тайтла или от переводчика), ваша заметка (например, транскрипция) и фраза, где слово встретилось. Словарик можно править, искать по нему и выгрузить в CSV для карточек Anki. Выключается в настройках.
+
+| Слова на экране | Словарик |
+|---|---|
+| ![«Копировать» и «В словарик» над словом оригинала](docs/screenshots/word-list-hover.png) | ![Окно «Словарик»](docs/screenshots/word-list.png) |
 
 ### Студия (Windows)
 
@@ -201,6 +253,17 @@ Google, Яндекс без ключа и DuckDuckGo работают через
 не загружаются, распознавание выполняется на устройстве. Голос с микрофона («Голос в чат») тоже
 распознаётся на компьютере и никуда не отправляется — переводчику уходит только распознанный текст. Ключи API хранятся только
 на вашем устройстве.
+
+## Обратная связь
+
+Нашли ошибку, есть идея или вопрос — пишите на **arcgobabuiss@gmail.com** (адрес есть и в самой программе,
+в карточке «Обратная связь»). Если программа на ПК падала, приложите файл `error.log` из её папки.
+
+## Лицензия
+
+ATlate — свободная программа под лицензией [GNU GPL v3](LICENSE): её можно бесплатно использовать,
+изучать, изменять и распространять, но любая программа на её основе тоже должна быть открытой и под
+той же лицензией. Сторонние компоненты и их лицензии — в файле [NOTICE](NOTICE).
 
 ## Сборка из исходников
 
