@@ -24,11 +24,12 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install
-        run: python -m pip install -q PySide6-Essentials numpy Pillow requests pynput pyphen pyinstaller faster-whisper==1.2.1 sounddevice
+        # те же точные версии, из которых собирается релиз (requirements*.txt)
+        run: python -m pip install -q -r requirements.txt -r requirements-build.txt
       - name: FriBiDi for Arabic and Thai text layout (the same step as in the release build)
         shell: pwsh
         run: ./tools/get_fribidi.ps1
