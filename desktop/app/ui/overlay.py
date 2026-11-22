@@ -76,6 +76,14 @@ class OverlayWindow(QWidget):
     # ------------------------------------------------------------ рисование
     def paintEvent(self, _):
         p = QPainter(self)
+        # p.end() — в любом случае: если рисование упадёт, незакрытый QPainter ломает окно
+        # (Qt: «endPaint() called with active painter»), и на экране может остаться старая картинка
+        try:
+            self._paint(p)
+        finally:
+            p.end()
+
+    def _paint(self, p: QPainter) -> None:
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         if self.show_frame:
@@ -107,7 +115,6 @@ class OverlayWindow(QWidget):
             p.setPen(QPen(QColor(217, 178, 124), 2))
             p.setBrush(QColor(217, 178, 124, 50))
             p.drawRoundedRect(self.mark.adjusted(-3, -2, 3, 2), 5, 5)
-        p.end()
 
 
 def _fit(text: str, rect: QRect, family: str, max_size: int, min_size: int = 8):
@@ -143,7 +150,8 @@ def paint_plates(p: QPainter, bubbles, k: float, bounds: QRect, cfg) -> None:
         else:
             box = b.box.scaled(1 / k)
             bw, bh, cx, cy = box.w, box.h, box.cx, box.cy
-            line_h = max(8.0, (sum(l.box.h for l in b.lines) / len(b.lines)) / k)
+            heights = [ln.box.h for ln in b.lines] or [b.box.h]
+            line_h = max(8.0, (sum(heights) / len(heights)) / k)
         screen = b.kind == "screen"
         pad = 2.0 if screen else max(4.0, 0.35 * line_h)
         if tilted and screen:

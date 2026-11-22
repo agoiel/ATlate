@@ -252,6 +252,7 @@ _ICONS: dict[str, list[tuple[str, str]]] = {
              ("stroke", "M10.5,8l4,4 -4,4")],
     "window": [("stroke", "M4,5h16v14H4z"), ("stroke", "M4,9h16")],
     "power": [("stroke", "M12,4v8"), ("stroke", "M7.6,7.4a6.5,6.5 0 1,0 8.8,0")],
+    "mail": [("stroke", "M4,6h16v12H4z"), ("stroke", "M4,7l8,6 8,-6")],
     "bookmark": [("stroke", "M7,4h10a1,1 0 0,1 1,1v15l-6,-4 -6,4V5a1,1 0 0,1 1,-1z"), ("stroke", "M10,9h4")],
     "mic": [("stroke", "M12,3.5a3,3 0 0,1 3,3v5a3,3 0 0,1 -6,0v-5a3,3 0 0,1 3,-3z"),
             ("stroke", "M6,11a6,6 0 0,0 12,0"), ("stroke", "M12,17v3.5"), ("stroke", "M9,20.5h6")],
